@@ -1,0 +1,706 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.Win32;
+using System.Windows.Forms;
+using Microsoft.Web.WebView2.WinForms;
+using MotionDesk.Services;
+
+namespace MotionDesk.Widgets
+{
+    [ClassInterface(ClassInterfaceType.AutoDual)]
+    [ComVisible(true)]
+    public sealed class WallpaperBridge : IDisposable
+    {
+        private AudioPeakService? _audio;
+        private readonly string? _screenDeviceName;
+
+        public WallpaperBridge(string? screenDeviceName = null)
+        {
+            _screenDeviceName = screenDeviceName;
+        }
+
+        public float GetAudioPeak()
+        {
+            _audio ??= new AudioPeakService();
+            return _audio.GetPeak();
+        }
+
+        public void Dispose() => _audio?.Dispose();
+
+        public string GetPerformanceMode() => WallpaperSettings.Load().PerformanceMode;
+
+        public bool GetIsLightTheme()
+        {
+            var settings = WallpaperSettings.Load();
+            return settings.ThemeMode switch
+            {
+                "Light" => true,
+                "Dark" => false,
+                _ => ThemeService.IsLightTheme(), // Follow / Custom βασίζονται στα Windows εκτός αν έχει επιλεγεί παλέτα ρητά
+            };
+        }
+
+        // Επιστρέφει JSON με mode, palette name/χρώματα και τις ρυθμίσεις animation (ταχύτητα/glow/πάχος γραμμής).
+        public string GetWaveConfigJson()
+        {
+            var settings = WallpaperSettings.Load();
+            bool light = GetIsLightTheme();
+            var palette = WavePalettes.Resolve(settings.PaletteName, light);
+
+            return JsonSerializer.Serialize(new
+            {
+                mode = settings.Mode,
+                waveStyle = settings.WaveStyle,
+                background = palette.Background,
+                wave = palette.WaveColor,
+                peak = palette.PeakColor,
+                glow = palette.GlowColor,
+                highlight = palette.HighlightColor,
+                speed = settings.WaveSpeed,
+                glowIntensity = settings.GlowIntensity,
+                lineThickness = settings.LineThickness,
+                performanceMode = settings.PerformanceMode
+            });
+        }
+
+        // Αν αυτή η οθόνη έχει "καρφιτσωμένο" δικό της βίντεο (ScreenVideoOverride), το
+        // χρησιμοποιεί αντί για το κοινό playlist — έτσι υποστηρίζεται διαφορετικό βίντεο ανά
+        // οθόνη χωρίς να χρειάζεται ξεχωριστό playlist/shuffle state ανά οθόνη.
+        private string? PinnedVideoForThisScreen(WallpaperSettings settings)
+        {
+            if (_screenDeviceName != null && settings.ScreenVideoOverride.TryGetValue(_screenDeviceName, out var pinned) && File.Exists(pinned))
+                return pinned;
+            return null;
+        }
+
+        public string GetCurrentVideoUri()
+        {
+            var settings = WallpaperSettings.Load();
+            if (settings.Mode != "Video") return string.Empty;
+
+            string? path = PinnedVideoForThisScreen(settings) ?? settings.CurrentPlaylistFile();
+            return string.IsNullOrEmpty(path) ? string.Empty : new Uri(path).AbsoluteUri;
+        }
+
+        // Καλείται από το JS όταν ένα βίντεο τελειώνει (advance) ή αποτυγχάνει να παιχτεί (skip).
+        public string AdvanceVideo()
+        {
+            var settings = WallpaperSettings.Load();
+
+            // Μια "καρφιτσωμένη" οθόνη δεν προχωράει ποτέ στο κοινό playlist — ξαναπαίζει το
+            // ίδιο βίντεο (ο βρόχος <video loop> στο ίδιο το HTML το χειρίζεται ήδη συνήθως,
+            // αλλά αν φτάσει ως εδώ μέσω 'error', ξαναγυρνάμε στο ίδιο αρχείο).
+            var pinned = PinnedVideoForThisScreen(settings);
+            if (pinned != null) return new Uri(pinned).AbsoluteUri;
+
+            settings.AdvancePlaylist();
+            settings.Save();
+
+            string? path = settings.CurrentPlaylistFile();
+            return string.IsNullOrEmpty(path) ? string.Empty : new Uri(path).AbsoluteUri;
+        }
+    }
+
+    public sealed class WavePalette
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Background { get; set; } = "#05070d";
+        public string WaveColor { get; set; } = "#0b3d91";
+        public string PeakColor { get; set; } = "#00d2ff";
+        public string GlowColor { get; set; } = "#00e5ff";
+        public string HighlightColor { get; set; } = "#ffffff";
+    }
+
+    // Προκαθορισμένες παλέτες, εμπνευσμένες από το Windows 11 "Bloom" wallpaper — ξεχωριστές
+    // για Light και Dark θέμα, ώστε το "Follow Windows" να επιλέγει αυτόματα τη σωστή ομάδα.
+    public static class WavePalettes
+    {
+        public static readonly WavePalette[] Light =
+        {
+            new() { Name = "Ice Blue / Cyan",  Background = "#eaf6ff", WaveColor = "#bfe4ff", PeakColor = "#3aa0ff", GlowColor = "#00d2ff", HighlightColor = "#ffffff" },
+            new() { Name = "Aqua / Emerald",   Background = "#eafaf3", WaveColor = "#bdeedd", PeakColor = "#12b886", GlowColor = "#37e6b0", HighlightColor = "#ffffff" },
+            new() { Name = "Pearl / Violet",   Background = "#f3eefc", WaveColor = "#ddc8f7", PeakColor = "#8a5cf6", GlowColor = "#c084fc", HighlightColor = "#ffffff" },
+        };
+
+        public static readonly WavePalette[] Dark =
+        {
+            new() { Name = "Windows Blue / Cyan", Background = "#050b18", WaveColor = "#0b3d91", PeakColor = "#00d2ff", GlowColor = "#00e5ff", HighlightColor = "#ffffff" },
+            new() { Name = "Deep Blue / Purple",  Background = "#07081a", WaveColor = "#1c2a6b", PeakColor = "#7c5cff", GlowColor = "#b18cff", HighlightColor = "#ffffff" },
+            new() { Name = "Cyan / Magenta",      Background = "#05100f", WaveColor = "#0a4d4a", PeakColor = "#ff3ec9", GlowColor = "#00f5d4", HighlightColor = "#ffffff" },
+            new() { Name = "Indigo / Orange",     Background = "#080714", WaveColor = "#241a5e", PeakColor = "#ff9f43", GlowColor = "#ffcf86", HighlightColor = "#ffffff" },
+        };
+
+        public static IEnumerable<string> AllNames => Light.Concat(Dark).Select(p => p.Name).Distinct();
+
+        public static WavePalette Resolve(string name, bool light)
+        {
+            var group = light ? Light : Dark;
+            return group.FirstOrDefault(p => p.Name == name) ?? group[0];
+        }
+    }
+
+    public sealed class WallpaperSettings
+    {
+        public string Mode { get; set; } = "Waves"; // "Waves" | "Video" | "Particles"
+        public string WaveStyle { get; set; } = "Ribbons"; // "Ribbons" | "Aurora" — παραλλαγές ΜΕΣΑ στο Waves mode
+        public string VideoPath { get; set; } = string.Empty; // legacy single-video field, kept for back-compat
+        public List<string> VideoPaths { get; set; } = new();
+        public bool Shuffle { get; set; } = false;
+        public int CurrentVideoIndex { get; set; } = 0;
+
+        public string PerformanceMode { get; set; } = "Balanced";
+        public string ThemeMode { get; set; } = "Follow"; // Follow | Light | Dark
+        public string PaletteName { get; set; } = "Windows Blue / Cyan";
+        public double WaveSpeed { get; set; } = 1.0;      // 0.3 - 2.0
+        public double GlowIntensity { get; set; } = 1.0;  // 0 - 2.0
+        public double LineThickness { get; set; } = 1.0;  // 0.5 - 2.0
+
+        // Screen.DeviceName -> "καρφιτσωμένο" βίντεο σε ΜΙΑ συγκεκριμένη οθόνη, ανεξάρτητο από
+        // το κοινό playlist/shuffle των υπόλοιπων — ζητήθηκε ρητά "διαφορετικό βίντεο ανά οθόνη".
+        // Οθόνες χωρίς entry εδώ συνεχίζουν να μοιράζονται το κανονικό playlist.
+        public Dictionary<string, string> ScreenVideoOverride { get; set; } = new();
+
+        public static readonly string[] SupportedVideoExtensions =
+        {
+            ".mp4", ".m4v", ".webm", ".mov", ".ogv", ".ogg",
+            ".avi", ".mkv", ".wmv", ".mpeg", ".mpg", ".m2ts", ".ts"
+        };
+
+        private static string ConfigPath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "MotionDeskStudio", "wallpaper.json");
+
+        public static WallpaperSettings Load()
+        {
+            try
+            {
+                if (File.Exists(ConfigPath))
+                {
+                    var loaded = JsonSerializer.Deserialize<WallpaperSettings>(File.ReadAllText(ConfigPath));
+                    if (loaded != null)
+                    {
+                        loaded.MigrateLegacyVideoPath();
+                        return loaded;
+                    }
+                }
+            }
+            // Confirmed crash: IOException (π.χ. το αρχείο κλειδωμένο στιγμιαία από άλλο write —
+            // πραγματικό σενάριο, όχι μόνο σε δοκιμές: antivirus scan, OneDrive sync, ή απλά δύο
+            // threads που διαβάζουν/γράφουν σχεδόν ταυτόχρονα, αφού το WallpaperSettings.Load()
+            // καλείται συχνότατα σε όλη την εφαρμογή) ΔΕΝ πιανόταν εδώ, μόνο JsonException — μια
+            // στιγμιαία κλειδωμένη ανάγνωση κατά την ΕΚΚΙΝΗΣΗ (μέσα στον constructor του
+            // MainWindow, πριν καν ξεκινήσει το Application.Run) έριχνε unhandled exception που
+            // τερμάτιζε ολόκληρη την εφαρμογή αμέσως. Fail-soft όπως και το AppSettings.Load().
+            catch (JsonException) { }
+            catch (IOException) { }
+
+            return new WallpaperSettings { PerformanceMode = AppSettings.Load().WallpaperPerformanceMode };
+        }
+
+        public void Save()
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
+            File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this));
+        }
+
+        private void MigrateLegacyVideoPath()
+        {
+            if (!string.IsNullOrEmpty(VideoPath) && !VideoPaths.Contains(VideoPath))
+            {
+                VideoPaths.Insert(0, VideoPath);
+            }
+        }
+
+        public string? CurrentPlaylistFile()
+        {
+            var playable = VideoPaths.Where(File.Exists).ToList();
+            if (playable.Count == 0) return null;
+
+            if (CurrentVideoIndex < 0 || CurrentVideoIndex >= playable.Count) CurrentVideoIndex = 0;
+            return playable[CurrentVideoIndex];
+        }
+
+        public void AdvancePlaylist()
+        {
+            var playable = VideoPaths.Where(File.Exists).ToList();
+            if (playable.Count == 0) { CurrentVideoIndex = 0; return; }
+
+            if (Shuffle && playable.Count > 1)
+            {
+                int next;
+                do { next = Random.Shared.Next(playable.Count); } while (next == CurrentVideoIndex);
+                CurrentVideoIndex = next;
+            }
+            else
+            {
+                CurrentVideoIndex = (CurrentVideoIndex + 1) % playable.Count;
+            }
+        }
+
+        public void AddVideoFiles(IEnumerable<string> paths)
+        {
+            foreach (var p in paths)
+            {
+                if (SupportedVideoExtensions.Contains(Path.GetExtension(p).ToLowerInvariant()) && !VideoPaths.Contains(p))
+                    VideoPaths.Add(p);
+            }
+        }
+
+        public int AddVideoFolder(string folderPath)
+        {
+            if (!Directory.Exists(folderPath)) return 0;
+
+            var found = Directory.EnumerateFiles(folderPath, "*.*", SearchOption.TopDirectoryOnly)
+                .Where(f => SupportedVideoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                .ToList();
+
+            AddVideoFiles(found);
+            return found.Count;
+        }
+    }
+
+    // Ζωντανή επιφάνεια εργασίας πίσω από τα εικονίδια: είτε ένα βίντεο (ή playlist βίντεο)
+    // είτε τα procedural, theme-aware "MotionDesk Waves" — ένα ΚΑΙ ΜΟΝΟ engine (WebView2/Canvas)
+    // χειρίζεται και τις δύο περιπτώσεις, ώστε να μην υπάρχουν πολλαπλά ασύνδετα rendering paths.
+    public sealed class WallpaperWindow : Form
+    {
+        private WebView2? _webView;
+        private WallpaperBridge? _bridge;
+        private bool _initializing;
+        private System.Windows.Forms.Timer? _reattachTimer;
+
+        public Screen TargetScreen { get; }
+        // True μόλις το SetParent προς το WorkerW πετύχει έστω μία φορά — από εκεί και πέρα ένα
+        // Show()/Hide() δεν το ξανα-βγάζει μπροστά από τα εικονίδια (το SetParent είναι μόνιμο),
+        // οπότε ο caller (WallpaperHostEngine.Enable) μπορεί να το ξανα-δείξει απευθείας χωρίς να
+        // περάσει ξανά από όλο το attach dance.
+        public bool IsAttached { get; private set; }
+
+        public WallpaperWindow(Screen targetScreen)
+        {
+            TargetScreen = targetScreen;
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.Manual;
+            ShowInTaskbar = false;
+            Bounds = targetScreen.Bounds;
+            BackColor = Color.Black;
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get { var cp = base.CreateParams; cp.ExStyle |= WS_EX_TOOLWINDOW; return cp; }
+        }
+
+        // ΚΡΙΣΙΜΟ: η προηγούμενη εκδοχή έκανε Show() πρώτα και ξεκινούσε το attach ΜΕΣΑ στο
+        // OnShown — δηλαδή το παράθυρο γινόταν ορατό ως κανονικό, πλήρους-οθόνης, ΜΠΡΟΣΤΑ από
+        // την επιφάνεια εργασίας για όσο διαρκούσε το (πλέον ασύγχρονο) attach, πριν καν προλάβει
+        // να μπει πίσω από τα εικονίδια. Αυτό ακριβώς ήταν το bug "συμπεριφέρεται σαν προστασία
+        // οθόνης / μαύρη οθόνη που αναβοσβήνει πριν φανεί η επιφάνεια εργασίας" — ένα regression
+        // από το προηγούμενο πέρασμα (η ασύγχρονη εκδοχή έλυσε το πάγωμα του UI thread, αλλά
+        // άνοιξε αυτό το ορατό "flash"). Διόρθωση: ΠΟΤΕ Show()/Visible=true πριν επιβεβαιωθεί ότι
+        // το SetParent πέτυχε — το BeginAttach() παρακάτω ξεκινά μόνο το attach (η πρόσβαση στο
+        // Handle αναγκάζει τη δημιουργία του native handle χωρίς να κάνει το Form ορατό), και το
+        // TryAttachAsync είναι το ΜΟΝΟ σημείο που καλεί Show(), αφού πρώτα έχει ήδη γίνει
+        // SendToBack πίσω από τα εικονίδια.
+        public void BeginAttach() => _ = TryAttachAsync();
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            if (!_initializing) _ = InitializeWebViewAsync();
+        }
+
+        // Αν το SetParent αποτύχει (π.χ. η Explorer μόλις επανεκκινήθηκε και δεν έχει ακόμη
+        // φτιάξει το WorkerW), ΔΕΝ αφήνουμε το μαύρο, πλήρους-οθόνης wallpaper window ως κανονικό
+        // top-level παράθυρο -> θα έκρυβε ΟΛΑ τα εικονίδια της επιφάνειας εργασίας (αυτό ήταν το
+        // αναφερόμενο bug). Το κρατάμε ΑΟΡΑΤΟ (ποτέ δεν έγινε Show() ακόμη) μέχρι να πετύχει το
+        // attach, με retry κάθε δευτερόλεπτο.
+        //
+        // Παλαιότερο bug fix (παραμένει): το WallpaperInterop.AttachToDesktop περιέχει ένα retry
+        // loop με SendMessageTimeout(...,1000ms) × έως 8 προσπάθειες + Thread.Sleep — δηλαδή μέχρι
+        // και ~8.5 δευτερόλεπτα blocking στην ΠΡΩΤΗ ενεργοποίηση wallpaper μιας συνεδρίας.
+        // Τρέχει σε background thread (Task.Run) — τα Win32 calls δεν έχουν thread-affinity
+        // περιορισμό (λειτουργούν πάνω σε HWNDs, όχι σε managed Controls).
+        private async Task TryAttachAsync()
+        {
+            IntPtr handle = Handle;
+            Rectangle bounds = TargetScreen.Bounds;
+            bool attached = await Task.Run(() => WallpaperInterop.AttachToDesktop(handle, bounds));
+            if (IsDisposed) return;
+
+            if (attached)
+            {
+                IsAttached = true;
+                SendToBack();
+                _reattachTimer?.Stop();
+                if (!Visible) Show(); else BringToFront();
+                return;
+            }
+
+            _reattachTimer ??= new System.Windows.Forms.Timer { Interval = 1000 };
+            _reattachTimer.Tick -= ReattachTick;
+            _reattachTimer.Tick += ReattachTick;
+            _reattachTimer.Start();
+        }
+
+        private async void ReattachTick(object? sender, EventArgs e)
+        {
+            if (IsDisposed) { _reattachTimer?.Stop(); return; }
+            _reattachTimer?.Stop(); // αποφυγή επικαλυπτόμενων προσπαθειών όσο η τρέχουσα εκκρεμεί
+            IntPtr handle = Handle;
+            Rectangle bounds = TargetScreen.Bounds;
+            bool attached = await Task.Run(() => WallpaperInterop.AttachToDesktop(handle, bounds));
+            if (IsDisposed) return;
+
+            if (attached)
+            {
+                IsAttached = true;
+                SendToBack();
+                if (!Visible) Show(); else BringToFront();
+            }
+            else
+            {
+                _reattachTimer?.Start();
+            }
+        }
+
+        public Task RefreshAsync() => RefreshWebViewAsync();
+
+        // Αυτόματη παύση όταν μια άλλη εφαρμογή είναι πλήρους οθόνης (ζητήθηκε ρητά στο
+        // roadmap) — καθαρά εξοικονόμηση CPU/μπαταρίας, αφού το wallpaper έτσι κι αλλιώς δεν
+        // είναι ορατό πίσω από ένα fullscreen παράθυρο.
+        public async Task SetPausedAsync(bool paused)
+        {
+            if (_webView?.CoreWebView2 == null) return;
+            try { await _webView.CoreWebView2.ExecuteScriptAsync($"window.motionDeskSetPaused?.({(paused ? "true" : "false")});"); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
+        }
+
+        private async Task InitializeWebViewAsync()
+        {
+            if (_initializing || IsDisposed) return;
+            _initializing = true;
+            try
+            {
+                _webView = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.Black };
+                Controls.Add(_webView);
+                await _webView.EnsureCoreWebView2Async(await WebView2Support.CreateEnvironmentAsync());
+                if (IsDisposed || _webView.CoreWebView2 == null) return;
+                _bridge = new WallpaperBridge(TargetScreen.DeviceName);
+                _webView.CoreWebView2.AddHostObjectToScript("wallpaper", _bridge);
+                string htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "widgets", "wallpaper", "index.html");
+                if (File.Exists(htmlPath)) _webView.CoreWebView2.Navigate(htmlPath);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Wallpaper WebView2 initialization failed: {ex}");
+            }
+            finally { _initializing = false; }
+        }
+
+        private async Task RefreshWebViewAsync()
+        {
+            if (_webView?.CoreWebView2 == null) return;
+            try { await _webView.CoreWebView2.ExecuteScriptAsync("window.motionDeskRefresh?.();"); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _reattachTimer?.Stop();
+                _reattachTimer?.Dispose();
+                _reattachTimer = null;
+                _bridge?.Dispose();
+                _bridge = null;
+                _webView?.Dispose();
+                _webView = null;
+            }
+            base.Dispose(disposing);
+        }
+
+        private const int WS_EX_TOOLWINDOW = 0x00000080;
+    }
+
+    // Ένα WallpaperWindow ανά οθόνη, ώστε το video/waves να καλύπτει σωστά (cover) κάθε
+    // monitor αντί να τεντώνεται σε ολόκληρο το virtual desktop σαν μία μεγάλη εικόνα.
+    public sealed class WallpaperHostEngine
+    {
+        private static WallpaperHostEngine? _instance;
+        public static WallpaperHostEngine Instance => _instance ??= new WallpaperHostEngine();
+
+        private readonly List<WallpaperWindow> _windows = new();
+        private bool _enabled;
+        private bool _pausedForFullscreen;
+        private System.Windows.Forms.Timer? _fullscreenCheckTimer;
+        private readonly ExplorerRestartWatcher _explorerWatcher = new();
+
+        public bool IsEnabled => _enabled && _windows.Any(w => !w.IsDisposed && w.Visible);
+
+        private WallpaperHostEngine()
+        {
+            SystemEvents.DisplaySettingsChanged += (_, _) => { if (_enabled) RebuildWindows(); };
+            SystemEvents.UserPreferenceChanged += (_, e) =>
+            {
+                if (e.Category == UserPreferenceCategory.General) _ = RefreshAllAsync();
+            };
+
+            // Explorer.exe επανεκκινήθηκε -> το παλιό WorkerW (και το wallpaper window που ήταν
+            // child του) καταστράφηκε. Ξαναφτιάξε τα παράθυρα από την αρχή (βλ. σχόλιο στο
+            // ExplorerRestartWatcher). Μικρή καθυστέρηση πριν το rebuild ώστε η καινούρια Explorer
+            // να έχει προλάβει να στήσει το δικό της Progman/WorkerW (one-shot timer· ο ίδιος
+            // WndProc τρέχει ήδη στο UI thread, οπότε δεν χρειάζεται Invoke/marshalling).
+            _explorerWatcher.ExplorerRestarted += () =>
+            {
+                if (!_enabled) return;
+                var delay = new System.Windows.Forms.Timer { Interval = 1500 };
+                delay.Tick += (_, _) => { delay.Stop(); delay.Dispose(); if (_enabled) RebuildWindows(); };
+                delay.Start();
+            };
+        }
+
+        // Ελέγχει κάθε 2 δευτερόλεπτα αν το τρέχον foreground παράθυρο καλύπτει ολόκληρη μια
+        // οθόνη (borderless fullscreen — παιχνίδι, video player κ.λπ.) και παύει/συνεχίζει το
+        // rendering αναλόγως. Ζητήθηκε ρητά στο roadmap.
+        private void EnsureFullscreenWatcher()
+        {
+            if (_fullscreenCheckTimer != null) return;
+            _fullscreenCheckTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+            _fullscreenCheckTimer.Tick += (_, _) =>
+            {
+                if (!_enabled) return;
+
+                // Ασφαλιστική δικλείδα πέρα από το TaskbarCreated broadcast: αν το WorkerW στο
+                // οποίο είμαστε reparented δεν υπάρχει πλέον (π.χ. μετά από sleep/resume ή reset
+                // του GPU driver, όχι απαραίτητα πλήρη επανεκκίνηση της Explorer), τα windows μας
+                // έχουν ήδη καταστραφεί σιωπηλά μαζί του. Rebuild πριν προλάβει ο χρήστης να το
+                // παρατηρήσει ως "εξαφανίστηκε το wallpaper".
+                if (_windows.Count > 0 && _windows.Any(w => !w.IsDisposed) && !WallpaperInterop.IsWorkerWAlive())
+                {
+                    RebuildWindows();
+                    return;
+                }
+
+                bool fullscreen = IsForegroundWindowFullscreen();
+                if (fullscreen == _pausedForFullscreen) return;
+                _pausedForFullscreen = fullscreen;
+                foreach (var w in _windows) _ = w.SetPausedAsync(fullscreen);
+            };
+            _fullscreenCheckTimer.Start();
+        }
+
+        private static bool IsForegroundWindowFullscreen()
+        {
+            IntPtr hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero) return false;
+            if (!GetWindowRect(hwnd, out var rect)) return false;
+
+            var sb = new System.Text.StringBuilder(256);
+            GetClassName(hwnd, sb, sb.Capacity);
+            string cls = sb.ToString();
+            if (cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") return false;
+
+            var screen = Screen.FromRectangle(new Rectangle(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top));
+            var bounds = screen.Bounds;
+            return rect.Left <= bounds.Left && rect.Top <= bounds.Top && rect.Right >= bounds.Right && rect.Bottom >= bounds.Bottom;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+        public void EnsureStarted() => Enable();
+
+        public void Enable()
+        {
+            var app = AppSettings.Load();
+            if (app.AutoPerformanceMode)
+            {
+                var recommended = PerformanceModeManager.GetRecommendedMode();
+                var settings = WallpaperSettings.Load();
+                if (recommended != settings.PerformanceMode) { settings.PerformanceMode = recommended; settings.Save(); }
+            }
+
+            _enabled = true;
+            bool freshlyBuilt = _windows.Count == 0;
+            if (freshlyBuilt)
+            {
+                // Το RebuildWindows() ήδη ξεκινάει BeginAttach() για κάθε νέο παράθυρο — αυτά θα
+                // γίνουν Show() μόνα τους μόλις (και ΜΟΝΟ μόλις) πετύχει το attach πίσω από τα
+                // εικονίδια. Αν εδώ καλούσαμε Show() απευθείας, θα ξαναεμφανιζόταν το ίδιο bug
+                // ("μαύρη οθόνη σαν προστασία οθόνης, πριν φανεί η επιφάνεια εργασίας") — θα
+                // δείχναμε το παράθυρο ΠΡΙΝ προλάβει να μπει πίσω από τα εικονίδια.
+                RebuildWindows();
+            }
+            else
+            {
+                // Ήδη υπάρχοντα παράθυρα (π.χ. Disable -> Enable χωρίς αλλαγή mode): αν έχουν ήδη
+                // επιτύχει attach μία φορά, το SetParent παραμένει — ασφαλές να τα ξαναδείξουμε
+                // απευθείας. Όσα ακόμη περιμένουν attach (σπάνιο — π.χ. προηγούμενη αποτυχία σε
+                // εξέλιξη) τα χειρίζεται ήδη μόνος του ο δικός τους reattach timer.
+                foreach (var w in _windows)
+                {
+                    if (!w.IsAttached) continue;
+                    if (!w.Visible) w.Show();
+                    else w.BringToFront();
+                }
+            }
+            EnsureFullscreenWatcher();
+        }
+
+        public void Disable()
+        {
+            _enabled = false;
+            foreach (var w in _windows) w.Hide();
+            _fullscreenCheckTimer?.Stop();
+            _pausedForFullscreen = false;
+        }
+
+        private void RebuildWindows()
+        {
+            foreach (var w in _windows) w.Dispose();
+            _windows.Clear();
+
+            foreach (var screen in Screen.AllScreens)
+            {
+                var window = new WallpaperWindow(screen);
+                _windows.Add(window);
+                // BeginAttach (ΟΧΙ Show) — το παράθυρο γίνεται ορατό ΜΟΝΟ αφού πρώτα επιβεβαιωθεί
+                // ότι μπήκε πίσω από τα εικονίδια, βλ. σχόλιο στο WallpaperWindow.BeginAttach.
+                if (_enabled) window.BeginAttach();
+            }
+        }
+
+        private Task RefreshAllAsync() => Task.WhenAll(_windows.Select(w => w.RefreshAsync()));
+
+        public void SetMode(string mode)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.Mode = mode;
+            settings.Save();
+            Enable();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetVideo(string path)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.AddVideoFiles(new[] { path });
+            settings.Mode = "Video";
+            settings.CurrentVideoIndex = settings.VideoPaths.IndexOf(path);
+            settings.Save();
+            Enable();
+            _ = RefreshAllAsync();
+        }
+
+        public int AddVideoFolder(string folder)
+        {
+            var settings = WallpaperSettings.Load();
+            int added = settings.AddVideoFolder(folder);
+            if (added > 0)
+            {
+                settings.Mode = "Video";
+                settings.Save();
+                Enable();
+                _ = RefreshAllAsync();
+            }
+            return added;
+        }
+
+        public void SetShuffle(bool shuffle)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.Shuffle = shuffle;
+            settings.Save();
+        }
+
+        public void RemoveVideo(string path)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.VideoPaths.Remove(path);
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void ClearVideo()
+        {
+            var settings = WallpaperSettings.Load();
+            settings.VideoPaths.Clear();
+            settings.VideoPath = string.Empty;
+            settings.Mode = "Waves";
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetWaveStyle(string style)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.WaveStyle = style;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetPalette(string paletteName)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.PaletteName = paletteName;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        // Καρφιτσώνει/ξεκαρφιτσώνει ένα συγκεκριμένο βίντεο σε μία οθόνη — ζητήθηκε ρητά
+        // "διαφορετικό βίντεο ανά οθόνη" αντί για το ίδιο κοινό playlist παντού.
+        public void SetScreenVideoOverride(string screenDeviceName, string? videoPath)
+        {
+            var settings = WallpaperSettings.Load();
+            if (string.IsNullOrEmpty(videoPath)) settings.ScreenVideoOverride.Remove(screenDeviceName);
+            else settings.ScreenVideoOverride[screenDeviceName] = videoPath;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public string? GetScreenVideoOverride(string screenDeviceName) =>
+            WallpaperSettings.Load().ScreenVideoOverride.TryGetValue(screenDeviceName, out var p) ? p : null;
+
+        public void SetThemeMode(string themeMode)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.ThemeMode = themeMode;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetWaveTuning(double speed, double glow, double thickness)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.WaveSpeed = speed;
+            settings.GlowIntensity = glow;
+            settings.LineThickness = thickness;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetPerformanceMode(string mode)
+        {
+            if (string.IsNullOrWhiteSpace(mode)) mode = "Balanced";
+            var settings = WallpaperSettings.Load();
+            settings.PerformanceMode = mode;
+            settings.Save();
+            var app = AppSettings.Load();
+            app.WallpaperPerformanceMode = mode;
+            app.Save();
+            _ = RefreshAllAsync();
+        }
+    }
+}
