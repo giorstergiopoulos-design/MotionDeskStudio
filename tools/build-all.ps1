@@ -28,7 +28,7 @@ function Update-Repo($p) {
     if ($SkipPull) { return }
     Push-Location $p.Path
     try {
-        if (git status --porcelain) { throw "Local changes in $($p.Path) - commit/stash first (pull skipped)." }
+        if (git status --porcelain --untracked-files=no) { throw "Local changes in $($p.Path) - commit/stash first (pull skipped)." }
         Run git @('fetch','origin',$p.Branch)
         Run git @('checkout',$p.Branch)
         Run git @('pull','--ff-only','origin',$p.Branch)
