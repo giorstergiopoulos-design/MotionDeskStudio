@@ -58,7 +58,7 @@ namespace MotionDesk.Widgets
             return JsonSerializer.Serialize(new
             {
                 mode = effectiveMode,
-                desk = effectiveMode == "Desktop" ? MotionDesk.Services.DesktopWallpaperReader.Read() : null,
+                desk = effectiveMode == "Desktop" ? DeskInfo() : null,
                 infoFont = string.IsNullOrWhiteSpace(settings.InfoFont) ? "Segoe UI Light" : settings.InfoFont,
                 waveStyle = settings.WaveStyle,
                 background = palette.Background,
@@ -105,7 +105,14 @@ namespace MotionDesk.Widgets
         }
 
         // Current Windows wallpaper (polled by the "Desktop" mode so a slideshow / a changed wallpaper is picked up)
-        public string GetDesktopWallpaperJson() => JsonSerializer.Serialize(MotionDesk.Services.DesktopWallpaperReader.Read());
+        public string GetDesktopWallpaperJson() => JsonSerializer.Serialize(DeskInfo());
+
+        // lower-case keys on purpose: index.html reads d.uri / d.style / d.color (the record's PascalCase names did not match)
+        private static object DeskInfo()
+        {
+            var i = MotionDesk.Services.DesktopWallpaperReader.Read();
+            return new { uri = i.Uri, style = i.Style, color = i.Color, stamp = i.Stamp };
+        }
 
         // Live weather for the "Weather" wallpaper mode (cached 10 min in WeatherService; the JS side polls every 10 min).
         public async System.Threading.Tasks.Task<string> GetWeatherJson()

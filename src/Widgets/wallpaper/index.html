@@ -449,6 +449,8 @@ let deskTimer = null;
 function applyDesk(d) {
     const el = document.getElementById('desk');
     if (!el || !d) return;
+    // αποδοχή και κεφαλαίων ονομάτων πεδίων (PascalCase) για ασφάλεια
+    d = { uri: d.uri ?? d.Uri, style: d.style ?? d.Style, color: d.color ?? d.Color };
     el.style.backgroundColor = d.color || '#101418';
     el.style.backgroundImage = d.uri ? `url("${d.uri}")` : 'none';
     const st = d.style || 'Fill';

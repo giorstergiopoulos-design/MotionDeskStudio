@@ -25,6 +25,12 @@ namespace MotionDesk.Services
                 if (SystemParametersInfo(SPI_GETDESKWALLPAPER, (uint)sb.Capacity, sb, 0))
                 {
                     var path = sb.ToString();
+                    // Slideshow / Spotlight: the API can return an empty path — Windows keeps the current frame in TranscodedWallpaper
+                    if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                    {
+                        var transcoded = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Microsoft", "Windows", "Themes", "TranscodedWallpaper");
+                        if (File.Exists(transcoded)) path = transcoded;
+                    }
                     if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
                     {
                         stamp = File.GetLastWriteTimeUtc(path).Ticks;
