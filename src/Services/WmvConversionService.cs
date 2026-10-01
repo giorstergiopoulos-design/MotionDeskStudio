@@ -107,8 +107,14 @@ namespace MotionDesk.Services
             string outputPath = Path.Combine(CacheDir, $"{Path.GetFileNameWithoutExtension(wmvPath)}_{QuickHash(wmvPath)}.mp4");
             if (File.Exists(outputPath)) return outputPath;
 
+            // Γράφουμε πρώτα σε προσωρινό αρχείο και μετονομάζουμε μόνο σε επιτυχία — αλλιώς μια
+            // διακοπή/αποτυχία άφηνε μισό .mp4 που το cache (File.Exists) θα επέστρεφε για πάντα
+            // ως "έτοιμο". Το -pix_fmt yuv420p και το scale σε ζυγές διαστάσεις είναι απαραίτητα
+            // για libx264 (αλλιώς αποτυγχάνει σε WMV με περιττό πλάτος/ύψος ή μη-4:2:0 pixel format).
+            string tempPath = outputPath + ".partial.mp4";
             var psi = new ProcessStartInfo(ffmpeg,
-                $"-y -i \"{wmvPath}\" -c:v libx264 -preset veryfast -crf 23 -c:a aac -movflags +faststart \"{outputPath}\"")
+                $"-y -i \"{wmvPath}\" -vf \"scale=trunc(iw/2)*2:trunc(ih/2)*2\" -pix_fmt yuv420p " +
+                $"-c:v libx264 -preset veryfast -crf 23 -c:a aac -movflags +faststart \"{tempPath}\"")
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -120,10 +126,25 @@ namespace MotionDesk.Services
             {
                 using var proc = Process.Start(psi);
                 if (proc == null) return null;
+                // ΚΡΙΣΙΜΟ: το FFmpeg γράφει συνεχώς πρόοδο στο stderr. Αν το pipe δεν διαβάζεται, γεμίζει
+                // (~4KB) και το FFmpeg μπλοκάρει για πάντα — τα μεγάλα .wmv "κόλλαγαν" χωρίς σφάλμα.
+                var errTask = proc.StandardError.ReadToEndAsync();
+                var outTask = proc.StandardOutput.ReadToEndAsync();
                 await proc.WaitForExitAsync();
-                return proc.ExitCode == 0 && File.Exists(outputPath) ? outputPath : null;
+                await Task.WhenAll(errTask, outTask);
+
+                if (proc.ExitCode == 0 && File.Exists(tempPath))
+                {
+                    File.Move(tempPath, outputPath, overwrite: true);
+                    return outputPath;
+                }
+                return null;
             }
             catch { return null; }
+            finally
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            }
         }
 
         private static string QuickHash(string path)
