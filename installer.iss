@@ -17,6 +17,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+AppMutex=MotionDeskStudio.SingleInstance
 ; Η εφαρμογή είναι win-x64 (framework-dependent, native WebView2Loader.dll x64) — ο installer
 ; πρέπει να τρέχει ΜΟΝΟ σε 64-bit-ικανά συστήματα, όχι σε καθαρό x86. Το "x64compatible" είναι
 ; το σύγχρονο identifier (το απλό "x64" είναι πλέον deprecated στο Inno Setup 6.7+).

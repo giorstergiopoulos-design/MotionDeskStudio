@@ -56,10 +56,70 @@ namespace MotionDesk.Widgets
                 _hookHandle = SetWindowsHookEx(WH_MOUSE_LL, _hookProc, hMod, 0);
             }
             catch { _hookHandle = IntPtr.Zero; }
+
+            // Αν η εφαρμογή τερματίστηκε/κράσαρε ενώ τα εικονίδια ήταν κρυμμένα (το state file υπάρχει
+            // ΜΟΝΟ όσο είναι κρυμμένα), τα εικονίδια έμεναν για πάντα εκτός οθόνης (-10000,-10000).
+            // Τα επαναφέρουμε στην εκκίνηση.
+            if (File.Exists(StateFilePath)) RestoreIfHidden();
+        }
+
+        // Επαναφέρει τα κρυμμένα εικονίδια (αν υπάρχουν) — καλείται στην έξοδο και στην εκκίνηση.
+        public void RestoreIfHidden()
+        {
+            if (!_hidden && !File.Exists(StateFilePath)) return;
+            try
+            {
+                IntPtr list = FindDesktopListView();
+                if (list == IntPtr.Zero) return;
+                GetWindowThreadProcessId(list, out uint pid);
+                IntPtr hProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
+                if (hProcess == IntPtr.Zero) return;
+                try { RestorePositions(hProcess, list); }
+                finally { CloseHandle(hProcess); }
+                _hidden = false;
+                DeskContainerHostEngine.Instance.SetQuickHidden(false);
+            }
+            catch { }
+        }
+
+        private static IntPtr FindDesktopListView()
+        {
+            IntPtr defView = IntPtr.Zero;
+            IntPtr progman = FindWindow("Progman", null);
+            if (progman != IntPtr.Zero) defView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
+            if (defView == IntPtr.Zero)
+            {
+                IntPtr w = IntPtr.Zero;
+                while ((w = FindWindowEx(IntPtr.Zero, w, "WorkerW", null)) != IntPtr.Zero)
+                {
+                    defView = FindWindowEx(w, IntPtr.Zero, "SHELLDLL_DefView", null);
+                    if (defView != IntPtr.Zero) break;
+                }
+            }
+            return defView == IntPtr.Zero ? IntPtr.Zero : FindWindowEx(defView, IntPtr.Zero, "SysListView32", null);
+        }
+
+        // Επαναφορά ΒΑΣΕΙ ΟΝΟΜΑΤΟΣ (όχι index): αν προστέθηκε/διαγράφηκε αρχείο στην επιφάνεια εργασίας
+        // όσο τα εικονίδια ήταν κρυμμένα, τα indexes μετατοπίζονται και η επαναφορά κατά index
+        // τοποθετούσε λάθος εικονίδια σε λάθος θέσεις.
+        private static void RestorePositions(IntPtr hProcess, IntPtr hwndList)
+        {
+            var byName = new Dictionary<string, SavedIconPos>(StringComparer.OrdinalIgnoreCase);
+            foreach (var sv in LoadState()) byName.TryAdd(sv.Name, sv);
+
+            int count = SendMessage(hwndList, LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero).ToInt32();
+            for (int i = 0; i < count; i++)
+            {
+                string name = GetItemTextRemote(hProcess, hwndList, i);
+                if (Whitelist.Contains(name)) continue;
+                if (byName.TryGetValue(name, out var sv)) SetItemPositionRemote(hwndList, i, sv.X, sv.Y);
+            }
+            try { File.Delete(StateFilePath); } catch { }
         }
 
         public void Stop()
         {
+            RestoreIfHidden(); // μην αφήνεις τα εικονίδια του χρήστη εκτός οθόνης όταν κλείνει η εφαρμογή
             if (_hookHandle != IntPtr.Zero) { UnhookWindowsHookEx(_hookHandle); _hookHandle = IntPtr.Zero; }
             _hookProc = null;
         }
@@ -143,11 +203,7 @@ namespace MotionDesk.Widgets
                 }
                 else
                 {
-                    foreach (var s in LoadState())
-                    {
-                        if (!Whitelist.Contains(s.Name))
-                            SetItemPositionRemote(hwndList, s.Index, s.X, s.Y);
-                    }
+                    RestorePositions(hProcess, hwndList);
                     _hidden = false;
                 }
 
@@ -313,6 +369,8 @@ namespace MotionDesk.Widgets
         [StructLayout(LayoutKind.Sequential)]
         private struct LVHITTESTINFO { public POINT pt; public uint flags; public int iItem; public int iSubItem; public int iGroup; }
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string? lpszClass, string? lpszWindow);
         [DllImport("user32.dll")] private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
         [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(IntPtr hhk);
         [DllImport("user32.dll")] private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);

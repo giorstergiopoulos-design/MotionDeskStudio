@@ -159,6 +159,7 @@ namespace MotionDesk.UI
             }
             if (_navButtons.TryGetValue("Dashboard", out var dashboardButton))
                 SetActiveButton(dashboardButton);
+            UpdateAnimationTimers(); // παράθυρο ακόμη αόρατο (π.χ. --background) → οι animations ξεκινούν μόνο όταν εμφανιστεί
         }
 
         private void OnWindowsPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
@@ -340,6 +341,26 @@ namespace MotionDesk.UI
             bool visible = Visible && WindowState != FormWindowState.Minimized;
             if (_brandPulseTimer != null) _brandPulseTimer.Enabled = visible;
             if (_headerWaveTimer != null) _headerWaveTimer.Enabled = visible;
+        }
+
+        // ΔΙΟΡΘΩΣΗ πραγματικού bug: το κλείσιμο (X) του κύριου παραθύρου το ΚΑΤΕΣΤΡΕΦΕ — και το
+        // FormClosed handler σταματούσε ZoneSnapEngine + όλα τα global hotkeys (Ctrl+Alt+G/M/Shift+βέλη)
+        // ενώ η εφαρμογή συνέχιζε να ζει στο tray (DeskZones/συντομεύσεις "έσβηναν" σιωπηλά), και το
+        // επόμενο άνοιγμα ξανάτρεχε όλον τον constructor (επαναφορά "Last Session" ξανά). Η ρύθμιση
+        // MinimizeToTray (προεπιλογή true) υπήρχε αλλά ΔΕΝ χρησιμοποιούνταν πουθενά. Τώρα το X κρύβει
+        // στο tray· η πραγματική έξοδος γίνεται μόνο από το "Έξοδος" του tray menu (CloseReason != UserClosing).
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (e.CloseReason == CloseReason.UserClosing && AppSettings.Load().MinimizeToTray)
+            {
+                e.Cancel = true;
+                // Φεύγουμε από βαριές σελίδες (live equalizer: WASAPI capture + timer 25Hz) ώστε να μην
+                // τρέχουν αόρατες στο παρασκήνιο.
+                if (_currentPageKey is "AudioEnhancement" or "Performance") NavigateTo("Dashboard");
+                Hide();
+                return;
+            }
+            base.OnFormClosing(e);
         }
 
         protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); UpdateAnimationTimers(); }

@@ -19,6 +19,11 @@ namespace MotionDesk
                 return;
             }
 
+            // Single-instance: δύο ταυτόχρονες εκτελέσεις θα πάλευαν για τα ίδια global hotkeys,
+            // θα έφτιαχναν διπλά wallpaper windows/tray icons και θα έγραφαν τα ίδια config αρχεία.
+            using var singleInstance = new System.Threading.Mutex(true, @"Local\MotionDeskStudio.SingleInstance", out bool isFirst);
+            if (!isFirst) return;
+
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (s, e) => ReportError(e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => ReportError(e.ExceptionObject as Exception);
@@ -26,6 +31,8 @@ namespace MotionDesk
             ApplicationConfiguration.Initialize();
             Application.Run(new TrayApplicationContext());
         }
+
+        private static DateTime _lastErrorDialog = DateTime.MinValue;
 
         private static void ReportError(Exception? ex)
         {
@@ -38,7 +45,12 @@ namespace MotionDesk
                 System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(logPath)!);
                 System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:O}] {ex}\n\n");
             }
-            catch (System.IO.IOException) { }
+            catch (Exception) { }
+
+            // Ένα exception μέσα σε timer tick επαναλαμβάνεται κάθε tick — χωρίς όριο, ο χρήστης έβλεπε
+            // ατέλειωτη αλληλουχία modal διαλόγων. Ένας διάλογος ανά 30s αρκεί (όλα καταγράφονται στο crash.log).
+            if ((DateTime.Now - _lastErrorDialog).TotalSeconds < 30) return;
+            _lastErrorDialog = DateTime.Now;
 
             MessageBox.Show($"Παρουσιάστηκε σφάλμα:\n\n{ex.Message}", "MotionDesk Studio",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
