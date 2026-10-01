@@ -454,7 +454,7 @@ let infoTimer = null;
 function updateWeatherInfo() {
     const box = document.getElementById('wxInfo');
     if (!box) return;
-    if (cfg.mode !== 'Weather' || !cfg.weatherInfo || !window.WeatherWallpaper) { box.style.display = 'none'; return; }
+    if (!cfg.weatherInfo || !window.WeatherWallpaper) { box.style.display = 'none'; return; }   // το cfg.weatherInfo ισχύει ήδη ανά mode (βλ. C#)
     const i = WeatherWallpaper.info();
     const lang = cfg.lang === 'el' ? 'el-GR' : 'en-US';
     document.documentElement.lang = cfg.lang === 'el' ? 'el' : 'en';   // σωστά κεφαλαία στα ελληνικά (χωρίς τόνους) στο text-transform
@@ -616,7 +616,8 @@ window.motionDeskRefresh = async () => {
     try { cfg = JSON.parse(await b.GetWaveConfigJson()); } catch (e) { /* keep previous cfg */ }
 
     if (window.WeatherWallpaper) {
-        WeatherWallpaper.setConfig({ weatherSim: cfg.weatherSim || 'Auto', timeSim: cfg.timeSim || 'Auto', windSim: cfg.windSim || 'Auto', glass: cfg.weatherGlass !== false, lat: cfg.weatherLat, lon: cfg.weatherLon });
+        const wx = cfg.mode === 'Weather';   // οι προσομοιώσεις (καιρός/ώρα/άνεμος) ισχύουν μόνο στο Weather mode — τα υπόλοιπα modes δείχνουν την πραγματική ώρα/θερμοκρασία
+        WeatherWallpaper.setConfig({ weatherSim: wx ? (cfg.weatherSim || 'Auto') : 'Auto', timeSim: wx ? (cfg.timeSim || 'Auto') : 'Auto', windSim: wx ? (cfg.windSim || 'Auto') : 'Auto', glass: cfg.weatherGlass !== false, lat: cfg.weatherLat, lon: cfg.weatherLon });
     }
     clearInterval(rotationTimer);
     rotationTimer = null;
@@ -625,12 +626,12 @@ window.motionDeskRefresh = async () => {
     clearInterval(infoTimer);
     infoTimer = null;
     updateWeatherInfo();
-    if (cfg.mode === 'Weather' && cfg.weatherInfo) infoTimer = setInterval(updateWeatherInfo, 1000);
+    if (cfg.weatherInfo) infoTimer = setInterval(updateWeatherInfo, 1000);
 
     clearInterval(weatherTimer);
     weatherTimer = null;
-    if (cfg.mode === 'Weather') {
-        refreshWeather();
+    if (cfg.mode === 'Weather' || cfg.weatherInfo) {
+        refreshWeather();   // και για την ένδειξη θερμοκρασίας πάνω από βίντεο/Waves/Particles
         weatherTimer = setInterval(refreshWeather, 10 * 60 * 1000);
     }
 

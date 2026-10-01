@@ -78,7 +78,7 @@ namespace MotionDesk.Widgets
                 weatherLon = settings.WeatherLon,
                 rotateMinutes = settings.RotateEveryMinutes,
                 windSim = settings.WindSimulation,
-                weatherInfo = settings.WeatherShowInfo,
+                weatherInfo = settings.WeatherShowInfo && (settings.Mode == "Weather" || settings.InfoOnAllModes),
                 infoX = Math.Clamp(settings.WeatherInfoX, 0, 100),
                 infoY = Math.Clamp(settings.WeatherInfoY, 0, 100),
                 infoScale = Math.Clamp(settings.WeatherInfoScale, 40, 250),
@@ -240,6 +240,7 @@ namespace MotionDesk.Widgets
         // Clock / date / temperature overlay of the Weather mode. Position is the CENTRE of the block, in % of the screen
         // (default: horizontally centred, in the upper third so it sits in the sky and not on the horizon/desktop icons).
         public bool WeatherShowInfo { get; set; } = true;
+        public bool InfoOnAllModes { get; set; } = true;     // the overlay also appears over videos / Waves / Particles
         public int WeatherInfoX { get; set; } = 50;
         public int WeatherInfoY { get; set; } = 34;
         public int WeatherInfoScale { get; set; } = 100;  // % of the default size
@@ -1016,10 +1017,11 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
             _ = RefreshAllAsync();
         }
 
-        public void SetWeatherInfo(bool show, int x, int y, int scale, bool fahrenheit)
+        public void SetWeatherInfo(bool show, bool allModes, int x, int y, int scale, bool fahrenheit)
         {
             var settings = WallpaperSettings.Load();
             settings.WeatherShowInfo = show;
+            settings.InfoOnAllModes = allModes;
             settings.WeatherInfoX = Math.Clamp(x, 0, 100);
             settings.WeatherInfoY = Math.Clamp(y, 0, 100);
             settings.WeatherInfoScale = Math.Clamp(scale, 40, 250);

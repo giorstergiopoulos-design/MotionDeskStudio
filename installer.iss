@@ -1,5 +1,5 @@
 #define MyAppName "MotionDesk Studio"
-#define MyAppVersion "1.7.5"
+#define MyAppVersion "1.7.6"
 #define MyAppPublisher "MotionDesk Team"
 #define MyAppExeName "MotionDesk.exe"
 

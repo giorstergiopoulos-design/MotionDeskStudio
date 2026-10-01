@@ -1262,6 +1262,7 @@ namespace MotionDesk.UI
                 v => WallpaperHostEngine.Instance.SetWaveTuning(WallpaperSettings.Load().WaveSpeed, WallpaperSettings.Load().GlowIntensity, v / 10.0)));
             }
 
+            BuildInfoOverlaySection(panel, settings);
             BuildWallpaperScheduleSection(panel, settings);
 
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionPerformance"));
@@ -1281,10 +1282,38 @@ namespace MotionDesk.UI
         private static readonly string[] TimeSimIds = { "Auto", "Dawn", "Day", "Dusk", "Night" };
         private static readonly string[] WindSimIds = { "Auto", "Calm", "LightBreeze", "FreshBreeze", "Strong", "Gale" };
 
+        // Weather-mode only: simulated weather / wind / time of day + window-glass effect
         private void BuildWeatherWallpaperSection(Panel panel, WallpaperSettings settings)
         {
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionWeather"));
             AddText(panel, LocalizationManager.T("Wallpaper.WeatherIntro"));
+
+            // simulated weather / time of day (Automatic = live)
+            FlowLayoutPanel ComboRow(string labelKey, string[] ids, string idPrefix, string currentId, Action<string> onChange)
+            {
+                var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+                row.Controls.Add(new Label { Text = LocalizationManager.T(labelKey), AutoSize = false, Width = 150, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody });
+                var labels = ids.Select(id => LocalizationManager.T(idPrefix + id)).ToArray();
+                var combo = new FlatComboBox { Width = 240 };
+                combo.SetItems(labels, labels[Math.Max(0, Array.IndexOf(ids, currentId))]);
+                combo.SelectedIndexChanged += (_, _) => { int i = combo.SelectedIndex; if (i >= 0 && i < ids.Length) onChange(ids[i]); };
+                row.Controls.Add(combo);
+                return row;
+            }
+            panel.Controls.Add(ComboRow("Wallpaper.WeatherSimLabel", WeatherSimIds, "Wallpaper.Sim.", settings.WeatherSimulation, id => WallpaperHostEngine.Instance.SetWeatherSimulation(id)));
+            panel.Controls.Add(ComboRow("Wallpaper.WindSimLabel", WindSimIds, "Wallpaper.Wind.", settings.WindSimulation, id => WallpaperHostEngine.Instance.SetWindSimulation(id)));
+            panel.Controls.Add(ComboRow("Wallpaper.TimeSimLabel", TimeSimIds, "Wallpaper.Time.", settings.TimeSimulation, id => WallpaperHostEngine.Instance.SetTimeSimulation(id)));
+
+            var glass = new CheckBox { Text = LocalizationManager.T("Wallpaper.WeatherGlass"), AutoSize = true, Checked = settings.WeatherGlass, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 6, 0, 10) };
+            glass.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetWeatherGlass(glass.Checked);
+            panel.Controls.Add(glass);
+        }
+
+        // ALL wallpaper modes (videos, Waves, Particles, Weather): live weather, location and the clock / date / temperature overlay
+        private void BuildInfoOverlaySection(Panel panel, WallpaperSettings settings)
+        {
+            AddSection(panel, LocalizationManager.T("Wallpaper.SectionInfo"));
+            AddText(panel, LocalizationManager.T("Wallpaper.InfoIntro"));
 
             var liveLabel = new Label { Text = LocalizationManager.T("Wallpaper.WeatherLoading"), AutoSize = true, MaximumSize = new Size(740, 0), Font = UiTheme.FontBody, ForeColor = UiTheme.AccentCyan, Margin = new Padding(0, 0, 0, 12) };
             panel.Controls.Add(liveLabel);
@@ -1324,35 +1353,22 @@ namespace MotionDesk.UI
             locRow.Controls.Add(setBtn);
             panel.Controls.Add(locRow);
 
-            // simulated weather / time of day (Automatic = live)
-            FlowLayoutPanel ComboRow(string labelKey, string[] ids, string idPrefix, string currentId, Action<string> onChange)
-            {
-                var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
-                row.Controls.Add(new Label { Text = LocalizationManager.T(labelKey), AutoSize = false, Width = 150, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody });
-                var labels = ids.Select(id => LocalizationManager.T(idPrefix + id)).ToArray();
-                var combo = new FlatComboBox { Width = 240 };
-                combo.SetItems(labels, labels[Math.Max(0, Array.IndexOf(ids, currentId))]);
-                combo.SelectedIndexChanged += (_, _) => { int i = combo.SelectedIndex; if (i >= 0 && i < ids.Length) onChange(ids[i]); };
-                row.Controls.Add(combo);
-                return row;
-            }
-            panel.Controls.Add(ComboRow("Wallpaper.WeatherSimLabel", WeatherSimIds, "Wallpaper.Sim.", settings.WeatherSimulation, id => WallpaperHostEngine.Instance.SetWeatherSimulation(id)));
-            panel.Controls.Add(ComboRow("Wallpaper.WindSimLabel", WindSimIds, "Wallpaper.Wind.", settings.WindSimulation, id => WallpaperHostEngine.Instance.SetWindSimulation(id)));
-            panel.Controls.Add(ComboRow("Wallpaper.TimeSimLabel", TimeSimIds, "Wallpaper.Time.", settings.TimeSimulation, id => WallpaperHostEngine.Instance.SetTimeSimulation(id)));
-
             // ---- clock / date / temperature overlay + its position (centre of the block, % of the screen)
             TrackBar? infoX = null, infoY = null, infoScale = null;
-            CheckBox? infoShow = null, infoF = null;
+            CheckBox? infoShow = null, infoF = null, infoAll = null;
             void CommitInfo()
             {
-                if (infoX == null || infoY == null || infoScale == null || infoShow == null || infoF == null) return;
-                WallpaperHostEngine.Instance.SetWeatherInfo(infoShow.Checked, infoX.Value, infoY.Value, infoScale.Value, infoF.Checked);
+                if (infoX == null || infoY == null || infoScale == null || infoShow == null || infoF == null || infoAll == null) return;
+                WallpaperHostEngine.Instance.SetWeatherInfo(infoShow.Checked, infoAll.Checked, infoX.Value, infoY.Value, infoScale.Value, infoF.Checked);
             }
             infoShow = new CheckBox { Text = LocalizationManager.T("Wallpaper.WeatherInfo"), AutoSize = true, Checked = settings.WeatherShowInfo, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 8, 0, 4) };
             infoF = new CheckBox { Text = LocalizationManager.T("Wallpaper.Fahrenheit"), AutoSize = true, Checked = settings.WeatherFahrenheit, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 0, 0, 6) };
+            infoAll = new CheckBox { Text = LocalizationManager.T("Wallpaper.InfoAllModes"), AutoSize = true, Checked = settings.InfoOnAllModes, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 0, 0, 4) };
             infoShow.CheckedChanged += (_, _) => CommitInfo();
+            infoAll.CheckedChanged += (_, _) => CommitInfo();
             infoF.CheckedChanged += (_, _) => CommitInfo();
             panel.Controls.Add(infoShow);
+            panel.Controls.Add(infoAll);
             panel.Controls.Add(infoF);
             panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoX"), settings.WeatherInfoX, 0, 100, v => $"{v}%", CommitInfo, t => infoX = t));
             panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoY"), settings.WeatherInfoY, 0, 100, v => $"{v}%", CommitInfo, t => infoY = t));
@@ -1364,10 +1380,6 @@ namespace MotionDesk.UI
                 if (infoY != null) infoY.Value = 34;
                 if (infoScale != null) infoScale.Value = 100;
             }));
-
-            var glass = new CheckBox { Text = LocalizationManager.T("Wallpaper.WeatherGlass"), AutoSize = true, Checked = settings.WeatherGlass, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 6, 0, 10) };
-            glass.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetWeatherGlass(glass.Checked);
-            panel.Controls.Add(glass);
         }
 
         private async System.Threading.Tasks.Task RefreshLiveWeatherLabelAsync(Label target, double lat, double lon)
@@ -2222,7 +2234,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         // ακολουθούν την επιλεγμένη γλώσσα — πριν ήταν hardcoded και μισές ελληνικά / μισές αγγλικά.
         private static readonly (string Version, string Date)[] VersionHistory =
         {
-            ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
+            ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
         };
 
 
