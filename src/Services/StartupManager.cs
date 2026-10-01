@@ -16,7 +16,7 @@ namespace MotionDesk.Services
                 {
                     if (enable)
                     {
-                        string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                        string? exePath = Environment.ProcessPath;
                         if (key != null && exePath != null)
                         {
                             // "--background": ζητήθηκε ρητά ότι όταν η εφαρμογή έχει αποθηκευμένα

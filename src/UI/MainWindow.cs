@@ -123,6 +123,7 @@ namespace MotionDesk.UI
             _hotkeys.RegisterCtrlAltShift(Keys.Up, () => ZoneSnapEngine.MoveForegroundWindowToZone(ZoneSnapEngine.ZoneDirection.Up));
             _hotkeys.RegisterCtrlAltShift(Keys.Down, () => ZoneSnapEngine.MoveForegroundWindowToZone(ZoneSnapEngine.ZoneDirection.Down));
 
+            ThemeManager.UiContext = System.Threading.SynchronizationContext.Current;
             ThemeManager.Changed += OnThemeOrLanguageChanged;
             ThemeManager.Repainted += OnThemeRepainted;
             LocalizationManager.Changed += OnThemeOrLanguageChanged;

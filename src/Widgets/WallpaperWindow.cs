@@ -460,7 +460,17 @@ namespace MotionDesk.Widgets
         {
             _paused = paused; // θυμόμαστε την κατάσταση ώστε να εφαρμοστεί και μετά από (re)navigation
             if (_webView?.CoreWebView2 == null) return;
-            try { await _webView.CoreWebView2.ExecuteScriptAsync($"window.motionDeskSetPaused?.({(paused ? "true" : "false")});"); }
+            var core = _webView.CoreWebView2;
+            try
+            {
+                // Πρώτα ξυπνάμε ένα ενδεχομένως suspended WebView2 — αλλιώς το script δεν εκτελείται.
+                if (!paused) { try { core.Resume(); } catch { } }
+                await core.ExecuteScriptAsync($"window.motionDeskSetPaused?.({(paused ? "true" : "false")});");
+                // Σε κρυμμένο παράθυρο (wallpaper απενεργοποιημένο) το TrySuspend παγώνει πλήρως τη
+                // διεργασία rendering (0% CPU/GPU, λιγότερη RAM). Απαιτεί IsVisible=false — αν το
+                // παράθυρο είναι ακόμα ορατό (π.χ. fullscreen pause) απλώς επιστρέφει false, χωρίς βλάβη.
+                if (paused && !Visible) await core.TrySuspendAsync();
+            }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
         }
 
@@ -531,15 +541,30 @@ namespace MotionDesk.Widgets
         private bool _pausedForFullscreen;
         private System.Windows.Forms.Timer? _fullscreenCheckTimer;
         private readonly ExplorerRestartWatcher _explorerWatcher = new();
+        private System.Threading.Timer? _displayDebounce;
+        private readonly SynchronizationContext _ui;
 
         public bool IsEnabled => _enabled && _windows.Any(w => !w.IsDisposed && w.Visible);
 
         private WallpaperHostEngine()
         {
-            SystemEvents.DisplaySettingsChanged += (_, _) => { if (_enabled) RebuildWindows(); };
+            // Το SystemEvents καλεί τους handlers από ΔΙΚΟ ΤΟΥ thread (όχι το UI thread) — το RebuildWindows()
+            // /RefreshAllAsync() πειράζουν Forms/WebView2 και ΠΡΕΠΕΙ να τρέχουν στο UI thread. Καταγράφουμε
+            // το UI SynchronizationContext εδώ (ο constructor τρέχει στο UI thread) και κάνουμε Post.
+            _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+
+            // Debounce: το DisplaySettingsChanged στέλνεται σε ριπές (πολλά events για μία αλλαγή
+            // ανάλυσης/οθόνης/docking) — κάθε RebuildWindows() καταστρέφει και ξαναφτιάχνει ΟΛΑ τα
+            // WebView2 (αργό, βαρύ σε RAM/GPU). Περιμένουμε να "ησυχάσει" η ριπή και ξαναχτίζουμε ΜΙΑ φορά.
+            SystemEvents.DisplaySettingsChanged += (_, _) =>
+            {
+                _displayDebounce?.Dispose();
+                _displayDebounce = new System.Threading.Timer(_ => _ui.Post(__ => { if (_enabled) RebuildWindows(); }, null),
+                    null, 1200, System.Threading.Timeout.Infinite);
+            };
             SystemEvents.UserPreferenceChanged += (_, e) =>
             {
-                if (e.Category == UserPreferenceCategory.General) _ = RefreshAllAsync();
+                if (e.Category == UserPreferenceCategory.General) _ui.Post(__ => { _ = RefreshAllAsync(); }, null);
             };
 
             // Explorer.exe επανεκκινήθηκε -> το παλιό WorkerW (και το wallpaper window που ήταν
@@ -663,7 +688,7 @@ namespace MotionDesk.Widgets
             _enabled = false;
             // Ρητή παύση ΠΡΙΝ το Hide — ένα κρυμμένο WebView2 συνεχίζει αλλιώς να αποκωδικοποιεί
             // video/τρέχει canvas σε χαμηλότερο ρυθμό, καταναλώνοντας CPU/GPU για κάτι αόρατο.
-            foreach (var w in _windows) { _ = w.SetPausedAsync(true); w.Hide(); }
+            foreach (var w in _windows) { w.Hide(); _ = w.SetPausedAsync(true); }
             _fullscreenCheckTimer?.Stop();
             _pausedForFullscreen = false;
         }

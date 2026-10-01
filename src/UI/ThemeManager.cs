@@ -160,8 +160,20 @@ namespace MotionDesk.UI
         // widgets/DeskContainers) αλλά πρέπει να ξαναζωγραφιστούν όλα τα ήδη ανοιχτά widgets.
         public static void NotifyChanged() => Changed?.Invoke();
 
+        // UI SynchronizationContext — ορίζεται από το MainWindow (UI thread). Το SystemEvents.
+        // UserPreferenceChanged καλείται από ΔΙΚΟ ΤΟΥ thread· χωρίς marshalling, τα widgets
+        // ενημέρωναν χρώματα/Region από foreign thread (cross-thread exception/crash όταν άλλαζε το
+        // θέμα των Windows με ThemeMode=Follow).
+        public static System.Threading.SynchronizationContext? UiContext { get; set; }
+
         public static void RefreshFromWindows()
         {
+            var ui = UiContext;
+            if (ui != null && System.Threading.SynchronizationContext.Current != ui)
+            {
+                ui.Post(_ => RefreshFromWindows(), null);
+                return;
+            }
             if (AppSettings.Load().ThemeMode == "Follow")
             {
                 var resolved = Resolve("Follow");
