@@ -52,8 +52,8 @@ function Build-GearWin($p) {
     Push-Location $p.Path
     try {
         Run dotnet @('test','wpf\OptimizerWpf.Tests','-c','Release')
-        # OptimizerWpf.iss expects wpf\OptimizerWpf\publish\win-x64
-        Run dotnet @('publish','wpf\OptimizerWpf','-c','Release','-r','win-x64','--self-contained','false','-o','wpf\OptimizerWpf\publish\win-x64')
+        # self-contained (as documented in OptimizerWpf.iss) - no .NET install needed on the target PC; OptimizerWpf.iss expects wpf\OptimizerWpf\publish\win-x64
+        Run dotnet @('publish','wpf\OptimizerWpf','-c','Release','-r','win-x64','--self-contained','true','-o','wpf\OptimizerWpf\publish\win-x64')
         if (-not $NoInstaller) { Run $Iscc @('installer\OptimizerWpf.iss'); "-> $($p.Path)\installer\Output\" }
     } finally { Pop-Location }
 }
