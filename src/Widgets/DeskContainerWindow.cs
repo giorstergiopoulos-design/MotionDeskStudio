@@ -42,6 +42,9 @@ namespace MotionDesk.Widgets
         private System.Windows.Forms.Timer? _rollUpAnimTimer;
         private System.Windows.Forms.Timer? _hoverPollTimer;
         private Label? _lockLabelRef;
+        private string _filter = "";
+        private Panel? _titleBarRef;
+        public string AutoCollectExtensions { get; set; } = "";
         private long _lastTitleDownTick;
         private Point _lastTitleDownPos;
         private int _expandedHeight;
@@ -88,6 +91,7 @@ namespace MotionDesk.Widgets
             // (Dock=Right/Left μέσα του), ίδιο μοτίβο με το CreateNativePanel των widgets — καμία
             // ανάγκη για SendToBack πλέον, αφού δεν ανταγωνίζονται πια το _grid στο ίδιο επίπεδο.
             var titleBar = new Panel { Dock = DockStyle.Top, Height = TitleBarHeight, BackColor = Color.Transparent };
+            _titleBarRef = titleBar;
             titleBar.MouseDown += (_, e) =>
             {
                 if (e.Button != MouseButtons.Left) return;
@@ -122,7 +126,18 @@ namespace MotionDesk.Widgets
                 // Κεντραρισμένος τίτλος: συμμετρική δέσμευση χώρου 2 κουμπιών αριστερά/δεξιά ώστε το κέντρο να είναι το κέντρο του παραθύρου.
                 var textRect = new RectangleF(TitleBarHeight * 2, 0, Math.Max(20, titleBar.Width - TitleBarHeight * 4), TitleBarHeight);
                 using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
-                e.Graphics.DrawString(_title, font, titleBrush, textRect, sf);
+                // title + item count ("Projects  12", or "3 / 12" while a search is active) — the count in a quieter colour
+                string count = _filter.Length > 0 ? $"{_grid.Controls.Count} / {_items.Count}" : _items.Count.ToString();
+                var titleSize = e.Graphics.MeasureString(_title, font, (int)textRect.Width, sf);
+                using var countFont = new Font("Segoe UI", 9f);
+                var countSize = e.Graphics.MeasureString(count, countFont);
+                float totalW = Math.Min(textRect.Width, titleSize.Width + 10 + countSize.Width);
+                float startX = textRect.X + (textRect.Width - totalW) / 2f;
+                var titleRect = new RectangleF(startX, textRect.Y, Math.Max(10, totalW - 10 - countSize.Width), textRect.Height);
+                using var leftSf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+                e.Graphics.DrawString(_title, font, titleBrush, titleRect, leftSf);
+                using var countBrush = new SolidBrush(Color.FromArgb(150, 255, 255, 255));
+                e.Graphics.DrawString(count, countFont, countBrush, new RectangleF(titleRect.Right + 10, textRect.Y, countSize.Width + 2, textRect.Height), leftSf);
                 using var separator = new Pen(Color.FromArgb(160, AccentColor), 2f);
                 e.Graphics.DrawLine(separator, 0, TitleBarHeight - 1, titleBar.Width, TitleBarHeight - 1);
             };
@@ -204,10 +219,12 @@ namespace MotionDesk.Widgets
             foreach (var item in _items.ToArray())
             {
                 string path = item.Path;
+                if (_filter.Length > 0 && Path.GetFileName(path).IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
                 var tile = new ContainerIconTile(path, RemovePath, () => IncrementOpenCount(path));
                 _grid.Controls.Add(tile);
             }
             _grid.ResumeLayout();
+            _titleBarRef?.Invalidate();       // the item count in the title follows the list
         }
 
         private void RemovePath(string path)
@@ -278,12 +295,14 @@ namespace MotionDesk.Widgets
                 QueueSave();
             };
             organizeMenu.DropDownItems.Add(defaultItem);
-            organizeMenu.DropDownItems.Add(LocalizationManager.T("DCMenu.ManageRules"), null, (_, _) => ShowSortingRulesInfo());
+            organizeMenu.DropDownItems.Add(LocalizationManager.T("DCMenu.AutoCollect"), null, (_, _) => EditAutoCollectRule());
             sortMenu.DropDownItems.Add(organizeMenu);
             menu.Items.Add(sortMenu);
 
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(LocalizationManager.T("DCMenu.AddFiles"), null, (_, _) => AddViaDialog());
+            menu.Items.Add(LocalizationManager.T("DCMenu.Find"), null, (_, _) => FindInContainer());
+            if (_filter.Length > 0) menu.Items.Add(LocalizationManager.T("DCMenu.ClearFind"), null, (_, _) => { _filter = ""; RebuildGrid(); });
             var lockItem = new ToolStripMenuItem(IsLocked ? LocalizationManager.T("DCMenu.Unlock") : LocalizationManager.T("DCMenu.Lock"));
             lockItem.Click += (_, _) => { IsLocked = !IsLocked; if (_lockLabelRef != null) _lockLabelRef.Text = IsLocked ? "🔒" : "🔓"; QueueSave(); };
             menu.Items.Add(lockItem);
@@ -429,6 +448,66 @@ namespace MotionDesk.Widgets
                 LocalizationManager.T("DeskContainer.SortingRulesTitle"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
+        // Small single-line input dialog (same look as the rename dialog)
+        private string? PromptText(string title, string prompt, string initial)
+        {
+            using var dialog = new Form { Text = title, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(440, 150), FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary };
+            var label = new Label { Text = prompt, Location = new Point(14, 12), Size = new Size(412, 50), ForeColor = UiTheme.TextSecondary };
+            var box = new TextBox { Text = initial, Location = new Point(14, 66), Width = 412 };
+            var ok = new Button { Text = LocalizationManager.T("Common.OK"), DialogResult = DialogResult.OK, Location = new Point(250, 104), Size = new Size(86, 30) };
+            var cancel = new Button { Text = LocalizationManager.T("Common.Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(342, 104), Size = new Size(86, 30) };
+            dialog.Controls.AddRange(new Control[] { label, box, ok, cancel });
+            dialog.AcceptButton = ok; dialog.CancelButton = cancel;
+            return dialog.ShowDialog(this) == DialogResult.OK ? box.Text.Trim() : null;
+        }
+
+        private void FindInContainer()
+        {
+            var text = PromptText(LocalizationManager.T("DeskContainer.FindTitle"), LocalizationManager.T("DeskContainer.FindPrompt"), _filter);
+            if (text == null) return;
+            _filter = text;
+            RebuildGrid();
+        }
+
+        private void EditAutoCollectRule()
+        {
+            var text = PromptText(LocalizationManager.T("DeskContainer.AutoCollectTitle"), LocalizationManager.T("DeskContainer.AutoCollectPrompt"), AutoCollectExtensions);
+            if (text == null) return;
+            AutoCollectExtensions = NormalizeExtensions(text);
+            QueueSave();
+            if (AutoCollectExtensions.Length > 0) CollectFromDesktop();
+        }
+
+        private static string NormalizeExtensions(string raw) =>
+            string.Join(", ", raw.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(e => e.Trim().TrimStart('*').TrimStart('.').ToLowerInvariant())
+                .Where(e => e.Length > 0 && e.All(char.IsLetterOrDigit)).Distinct());
+
+        public bool MatchesAutoCollect(string path)
+        {
+            if (AutoCollectExtensions.Length == 0) return false;
+            var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+            return ext.Length > 0 && AutoCollectExtensions.Split(',').Any(e => e.Trim() == ext);
+        }
+
+        // Adds a desktop file when it matches this container's rule (called by the desktop watcher on the UI thread)
+        public void TryAutoCollect(string path)
+        {
+            if (!IsDisposed && MatchesAutoCollect(path) && File.Exists(path)) AddPaths(new[] { path });
+        }
+
+        // Scans the current desktop folders for files that already match the rule
+        public void CollectFromDesktop()
+        {
+            var found = new List<string>();
+            foreach (var dir in DeskContainerHostEngine.DesktopFolders())
+            {
+                try { found.AddRange(Directory.EnumerateFiles(dir).Where(MatchesAutoCollect)); }
+                catch (Exception) { /* inaccessible folder */ }
+            }
+            if (found.Count > 0) AddPaths(found);
+        }
+
         private void ShowContainerSettings()
         {
             using var dialog = new Form
@@ -551,7 +630,8 @@ namespace MotionDesk.Widgets
                     PlaceNewIconsHereByDefault = DeskContainerHostEngine.Instance.DefaultContainerId == _containerId,
                     AccentColorArgb = AccentColor.ToArgb(),
                     WindowOpacity = Opacity,
-                    SortMode = _sortMode.ToString()
+                    SortMode = _sortMode.ToString(),
+                    AutoCollectExtensions = AutoCollectExtensions
                 };
                 MotionDesk.Services.AtomicFile.WriteAllText(path, JsonSerializer.Serialize(state));
             }
@@ -583,6 +663,7 @@ namespace MotionDesk.Widgets
                         AccentColor = Color.FromArgb(state.AccentColorArgb == 0 ? Color.FromArgb(0, 170, 255).ToArgb() : state.AccentColorArgb);
                         Opacity = state.WindowOpacity is > 0 and <= 1 ? state.WindowOpacity : 1.0;
                         Enum.TryParse(state.SortMode, out _sortMode);
+                        AutoCollectExtensions = state.AutoCollectExtensions ?? "";
                         // ΔΕΝ φιλτράρουμε τα στοιχεία που λείπουν: ένας offline δίσκος/USB/δικτυακός πόρος εξαφάνιζε μόνιμα τα στοιχεία του
                         // (το επόμενο save τα έσβηνε). Μένουν ως εικονίδιο που ο χρήστης αφαιρεί χειροκίνητα.
                         if (state.Items != null) _items = state.Items.ToList();
@@ -758,6 +839,8 @@ namespace MotionDesk.Widgets
         public int AccentColorArgb { get; set; }
         public double WindowOpacity { get; set; } = 1.0;
         public string SortMode { get; set; } = "None";
+        // File types (extensions, comma-separated) that are collected automatically from the desktop into this container
+        public string AutoCollectExtensions { get; set; } = "";
     }
 
     // Snapshot ενός DeskContainer για αποθήκευση μέσα σε ένα WorkspaceProfile (π.χ. "Last
@@ -817,6 +900,45 @@ namespace MotionDesk.Widgets
             }
         }
 
+        // ---- desktop watcher: new files matching a container's "auto-collect" rule are added to it automatically
+        public static IEnumerable<string> DesktopFolders()
+        {
+            var user = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+            if (!string.IsNullOrEmpty(user) && Directory.Exists(user)) yield return user;
+            if (!string.IsNullOrEmpty(common) && Directory.Exists(common)) yield return common;
+        }
+
+        private readonly List<FileSystemWatcher> _desktopWatchers = new();
+        private System.Threading.SynchronizationContext? _ui;
+
+        private void EnsureDesktopWatchers()
+        {
+            if (_desktopWatchers.Count > 0) return;
+            _ui = System.Threading.SynchronizationContext.Current;
+            foreach (var dir in DesktopFolders())
+            {
+                try
+                {
+                    var w = new FileSystemWatcher(dir) { NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime, IncludeSubdirectories = false, EnableRaisingEvents = true };
+                    w.Created += (_, e) => OnDesktopFile(e.FullPath);
+                    w.Renamed += (_, e) => OnDesktopFile(e.FullPath);
+                    _desktopWatchers.Add(w);
+                }
+                catch (Exception) { /* a watcher is a convenience, never fatal */ }
+            }
+        }
+
+        private void OnDesktopFile(string path)
+        {
+            // files that are still being written can be locked for a moment: marshal to the UI thread after a short delay
+            System.Threading.Tasks.Task.Delay(800).ContinueWith(_ =>
+            {
+                void Run() { foreach (var c in _active.ToArray()) c.TryAutoCollect(path); }
+                if (_ui != null) _ui.Post(_ => Run(), null); else Run();
+            });
+        }
+
         public DeskContainerWindow SpawnContainer(string containerId, string title, int x, int y, int width, int height)
         {
             var existing = _active.Find(c => c.Tag as string == containerId);
@@ -827,6 +949,7 @@ namespace MotionDesk.Widgets
 
             var container = new DeskContainerWindow(containerId, title, x, y, width, height) { Tag = containerId };
             _active.Add(container);
+            EnsureDesktopWatchers();
             container.FormClosed += (s, e) => _active.Remove(container);
             container.Show();
             return container;

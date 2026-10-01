@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.IO;
 using System.Text.Json;
@@ -14,6 +15,8 @@ namespace MotionDesk.Services
         public bool ShowSystemMonitor { get; set; }
         public bool RestoreLastSession { get; set; } = true;
         public bool MinimizeToTray { get; set; } = true;
+        // DeskZones: applications (process names, without .exe) whose windows are never snapped (e.g. media players, games)
+        public List<string> ZoneExcludedApps { get; set; } = new();
         public bool StartWallpaperWithWindows { get; set; }
         public bool EnableAnimations { get; set; } = true;
         public string ThemeMode { get; set; } = "Follow"; // Follow | Light | Dark

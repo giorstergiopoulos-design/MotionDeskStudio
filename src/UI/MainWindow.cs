@@ -999,6 +999,24 @@ namespace MotionDesk.UI
             containersRefreshTimer.Start();
             panel.Disposed += (_, _) => containersRefreshTimer.Dispose();
 
+            // Applications that are never snapped (one process name per line, e.g. vlc, obs64)
+            AddSection(panel, LocalizationManager.T("DeskZones.SectionExcludedApps"));
+            AddText(panel, LocalizationManager.T("DeskZones.ExcludedAppsHint"));
+            var excludedBox = new TextBox
+            {
+                Multiline = true, Width = 360, Height = 90, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true, Font = UiTheme.FontBody,
+                BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 10),
+                Text = string.Join(Environment.NewLine, AppSettings.Load().ZoneExcludedApps)
+            };
+            excludedBox.Leave += (_, _) =>
+            {
+                var a = AppSettings.Load();
+                a.ZoneExcludedApps = excludedBox.Text.Split(new[] { '\r', '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => Path.GetFileNameWithoutExtension(x.Trim())).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                a.Save();
+            };
+            panel.Controls.Add(excludedBox);
+
             SetPage("Page.DeskZones.Title", panel);
         }
 

@@ -367,12 +367,27 @@ namespace MotionDesk.Widgets
         // Ορίζεται από το κύριο παράθυρο: επιστρέφει true για τα παράθυρα της δικής μας διεργασίας που ΕΠΙΤΡΕΠΕΤΑΙ να κουμπώνουν.
         public static Func<IntPtr, bool>? AllowOwnWindow { get; set; }
 
+        // Applications the user excluded from snapping (Settings → DeskZones). Matched by process name, case-insensitive, ".exe" optional.
+        private static bool IsExcludedApp(uint pid)
+        {
+            try
+            {
+                var excluded = MotionDesk.Services.AppSettings.Load().ZoneExcludedApps;
+                if (excluded == null || excluded.Count == 0) return false;
+                using var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+                var name = proc.ProcessName;
+                return excluded.Any(e => string.Equals(System.IO.Path.GetFileNameWithoutExtension(e.Trim()), name, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception) { return false; }   // process already gone / access denied -> treat as not excluded
+        }
+
         private static bool IsCandidateWindow(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd)) return false;
 
             GetWindowThreadProcessId(hwnd, out uint pid);
             if (pid == (uint)Environment.ProcessId && AllowOwnWindow?.Invoke(hwnd) != true) return false;
+            if (pid != (uint)Environment.ProcessId && IsExcludedApp(pid)) return false;
 
             var sb = new StringBuilder(256);
             GetClassName(hwnd, sb, sb.Capacity);

@@ -29,6 +29,8 @@ namespace MotionDesk.Widgets
         // No layout | Focus | Columns | Rows | Grid | PriorityGrid | Custom
         public string Template { get; set; } = "Rows";
         public List<ZoneRect> Zones { get; set; } = new();
+        // "WxH" of the monitor this layout was made for — lets a layout follow its monitor when Windows renumbers \\.\DISPLAYn after a reconnect
+        public string? Resolution { get; set; }
     }
 
     // Πραγματική συμπεριφορά στυλ FancyZones (PowerToys), όχι Fences: τα layouts είναι ΔΕΔΟΜΕΝΑ
@@ -74,6 +76,27 @@ namespace MotionDesk.Widgets
         {
             var map = Load();
             if (map.TryGetValue(screenDeviceName, out var data)) return data;
+
+            // No layout under this device name: when a monitor is reconnected Windows can hand it a different \\.\DISPLAYn name.
+            // Adopt an ORPHANED layout (its key is not a currently connected screen) that was made for the same resolution.
+            try
+            {
+                var screen = Screen.AllScreens.FirstOrDefault(sc => sc.DeviceName == screenDeviceName);
+                if (screen != null)
+                {
+                    string res = $"{screen.Bounds.Width}x{screen.Bounds.Height}";
+                    var connected = new HashSet<string>(Screen.AllScreens.Select(sc => sc.DeviceName));
+                    var orphan = map.FirstOrDefault(kv => !connected.Contains(kv.Key) && kv.Value.Resolution == res);
+                    if (orphan.Value != null)
+                    {
+                        map[screenDeviceName] = orphan.Value;
+                        map.Remove(orphan.Key);
+                        Save();
+                        return orphan.Value;
+                    }
+                }
+            }
+            catch (Exception) { /* fall through to the default layout */ }
             // Προεπιλογή για μια οθόνη που δεν έχει ρυθμιστεί ακόμα: 3 στήλες, το πιο κοινό
             // πρώτο-run layout στο πραγματικό FancyZones.
             return BuildTemplate("Columns", 3, 2);
@@ -82,6 +105,8 @@ namespace MotionDesk.Widgets
         public static void SetLayout(string screenDeviceName, ZoneLayoutData data)
         {
             var map = Load();
+            var scr = Screen.AllScreens.FirstOrDefault(sc => sc.DeviceName == screenDeviceName);
+            if (scr != null) data.Resolution = $"{scr.Bounds.Width}x{scr.Bounds.Height}";
             map[screenDeviceName] = data;
             Save();
         }

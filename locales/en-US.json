@@ -487,5 +487,14 @@
   "Wallpaper.RotateMinutesFormat": "every {0} min",
   "Wallpaper.SectionSchedule": "Schedule by time of day",
   "Wallpaper.ScheduleNote": "Switch the wallpaper mode automatically by the clock — for example calm waves during the day and the weather scene at night. Windows may wrap past midnight. The schedule only changes the mode; it never turns the wallpaper on by itself.",
-  "Wallpaper.ScheduleEnable": "Use the schedule"
+  "Wallpaper.ScheduleEnable": "Use the schedule",
+  "DCMenu.AutoCollect": "Auto-collect files by type…",
+  "DCMenu.Find": "Find in container…",
+  "DCMenu.ClearFind": "Clear search",
+  "DeskContainer.FindTitle": "Find in container",
+  "DeskContainer.FindPrompt": "Show only the items whose name contains:",
+  "DeskContainer.AutoCollectTitle": "Auto-collect rule",
+  "DeskContainer.AutoCollectPrompt": "File types to collect from the desktop into this container automatically (for example: pdf, docx, xlsx). Existing and new desktop files of these types are added; the files themselves are not moved. Leave empty to turn the rule off.",
+  "DeskZones.SectionExcludedApps": "Applications that never snap",
+  "DeskZones.ExcludedAppsHint": "Windows of these applications are ignored by DeskZones (for example a video player or a game). One process name per line, as shown in Task Manager without \".exe\" (e.g. vlc, obs64)."
 }
