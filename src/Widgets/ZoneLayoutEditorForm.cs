@@ -137,19 +137,25 @@ namespace MotionDesk.Widgets
                 if (c is TemplateCard card) card.SetSelected(card.Template == _selectedTemplate);
         }
 
-        // Ζητήθηκε ρητά: το ρυθμιζόμενο πλήθος στηλών/σειρών ΜΟΝΟ στο "Custom" — τα presets
-        // (Columns/Rows/Grid) κρατούν το δικό τους σταθερό, τυπικό σχήμα, όπως στο πραγματικό
-        // FancyZones (3 στήλες/2 σειρές/3×2 πλέγμα από προεπιλογή, χωρίς ρύθμιση).
+        // ΔΙΟΡΘΩΣΗ πραγματικού bug (ζητήθηκε ρητά): "επέλεξα δύο σειρές, μου δείχνει τρεις
+        // στήλες" — το "Rows" preset ήταν ΚΛΕΙΔΩΜΕΝΟ σε σταθερό πλήθος (χωρίς stepper), οπότε ο
+        // μόνος τρόπος να αλλάξει ο χρήστης το πλήθος σειρών ήταν να περάσει σε "Custom" — αλλά
+        // το "Custom" εφαρμόζει ΠΑΝΤΑ πλήρες πλέγμα (στήλες ΚΑΙ σειρές μαζί, ίδιος κώδικας με το
+        // "Grid"), οπότε αλλάζοντας μόνο το stepper σειρών εμφανιζόταν αναπάντεχα ΚΑΙ η
+        // προεπιλεγμένη στήλωση (3 στήλες) μαζί με τις 2 σειρές — αυτό έβλεπε ο χρήστης ως
+        // "3 στήλες" αντί για τις 2 σειρές που περίμενε. Τώρα το κάθε preset δείχνει ΜΟΝΟ το
+        // δικό του σχετικό stepper (Columns->στήλες, Rows->σειρές, Grid/Custom->και τα δύο) και
+        // BuildSelected() περνάει πάντα τις τρέχουσες τιμές — το "Rows" με 2 σειρές είναι πλέον
+        // πραγματικά 2 πλήρους-πλάτους σειρές, όχι πλέγμα.
         private void RefreshStepperVisibility()
         {
-            bool showSteppers = _selectedTemplate == "Custom";
-            _colsLabel.Visible = _colsStepper.Visible = showSteppers;
-            _rowsLabel.Visible = _rowsStepper.Visible = showSteppers;
+            bool showCols = _selectedTemplate is "Columns" or "Grid" or "Custom";
+            bool showRows = _selectedTemplate is "Rows" or "Grid" or "Custom";
+            _colsLabel.Visible = _colsStepper.Visible = showCols;
+            _rowsLabel.Visible = _rowsStepper.Visible = showRows;
         }
 
-        // Μόνο το "Custom" χρησιμοποιεί τις τιμές _cols/_rows από τα steppers — τα presets
-        // εφαρμόζουν πάντα το δικό τους σταθερό σχήμα (προεπιλεγμένες τιμές του BuildTemplate).
-        private ZoneLayoutData BuildSelected() => _selectedTemplate == "Custom"
+        private ZoneLayoutData BuildSelected() => _selectedTemplate is "Columns" or "Rows" or "Grid" or "Custom"
             ? ZoneLayoutStore.BuildTemplate(_selectedTemplate, _cols, _rows)
             : ZoneLayoutStore.BuildTemplate(_selectedTemplate);
 

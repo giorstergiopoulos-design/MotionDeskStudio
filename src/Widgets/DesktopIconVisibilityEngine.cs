@@ -1,0 +1,336 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
+
+namespace MotionDesk.Widgets
+{
+    // Fences-style: διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας κρύβει όλα τα εικονίδια
+    // εκτός από μια λίστα εξαιρέσεων (Ο Υπολογιστής μου / φάκελος χρήστη / Πίνακας Ελέγχου / Κάδος
+    // Ανακύκλωσης) — ζητήθηκε ρητά. Windows δεν εκθέτει καμία επίσημη API για "απόκρυψη
+    // συγκεκριμένου εικονιδίου" (μόνο global on/off για ΟΛΑ μαζί) — η μόνη γνωστή τεχνική, ίδια με
+    // αυτή που χρησιμοποιεί το ίδιο το Stardock Fences και κάθε clone του, είναι να μετακινηθεί
+    // κάθε μη-εξαιρούμενο item του SysListView32 της επιφάνειας εργασίας εκτός ορατής περιοχής
+    // (LVM_SETITEMPOSITION) — αυτό ΔΕΝ διαγράφει/μετονομάζει τίποτα, είναι πλήρως αναστρέψιμο
+    // (αποθηκεύουμε τις αρχικές θέσεις και τις επαναφέρουμε στο επόμενο διπλό-κλικ).
+    //
+    // Επειδή το SysListView32 της επιφάνειας εργασίας ανήκει στη διεργασία explorer.exe (άλλη
+    // διεργασία), η ανάγνωση κειμένου/θέσης ανά item απαιτεί κλασική cross-process τεχνική
+    // (VirtualAllocEx/WriteProcessMemory/ReadProcessMemory/VirtualFreeEx στη διεργασία explorer.exe)
+    // — ακριβώς η ίδια τεχνική που χρησιμοποιεί κάθε υπάρχον εργαλείο αυτής της κατηγορίας. Το
+    // LVM_SETITEMPOSITION δεν χρειάζεται δείκτη (packed lParam), οπότε είναι απλό SendMessage.
+    public sealed class DesktopIconVisibilityEngine
+    {
+        private static DesktopIconVisibilityEngine? _instance;
+        public static DesktopIconVisibilityEngine Instance => _instance ??= new DesktopIconVisibilityEngine();
+
+        private static readonly HashSet<string> Whitelist = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "This PC", "Ο Υπολογιστής μου", "Υπολογιστής μου", "Υπολογιστής",
+            "Control Panel", "Πίνακας Ελέγχου",
+            "Recycle Bin", "Κάδος Ανακύκλωσης",
+            Environment.UserName,
+        };
+
+        private IntPtr _hookHandle = IntPtr.Zero;
+        private LowLevelMouseProc? _hookProc;
+        private uint _lastDownTime;
+        private Point _lastDownPos;
+        private bool _hidden;
+
+        private static string StateFilePath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "desktopicons_hidden_state.json");
+
+        public void Start()
+        {
+            if (_hookHandle != IntPtr.Zero) return;
+            try
+            {
+                _hookProc = HookProc;
+                using var curModule = System.Diagnostics.Process.GetCurrentProcess().MainModule;
+                IntPtr hMod = curModule != null ? GetModuleHandle(curModule.ModuleName) : IntPtr.Zero;
+                _hookHandle = SetWindowsHookEx(WH_MOUSE_LL, _hookProc, hMod, 0);
+            }
+            catch { _hookHandle = IntPtr.Zero; }
+        }
+
+        public void Stop()
+        {
+            if (_hookHandle != IntPtr.Zero) { UnhookWindowsHookEx(_hookHandle); _hookHandle = IntPtr.Zero; }
+            _hookProc = null;
+        }
+
+        private IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            try
+            {
+                if (nCode >= 0 && wParam.ToInt64() == WM_LBUTTONDOWN)
+                {
+                    var data = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+                    uint now = data.time;
+                    var pos = new Point(data.pt.X, data.pt.Y);
+                    bool isDoubleClick = (now - _lastDownTime) <= GetDoubleClickTime()
+                        && Math.Abs(pos.X - _lastDownPos.X) <= GetSystemMetrics(SM_CXDOUBLECLK)
+                        && Math.Abs(pos.Y - _lastDownPos.Y) <= GetSystemMetrics(SM_CYDOUBLECLK);
+                    _lastDownTime = now;
+                    _lastDownPos = pos;
+
+                    if (isDoubleClick)
+                    {
+                        _lastDownTime = 0; // "καταναλώνει" το ζευγάρι — ένα τρίτο συνεχόμενο κλικ δεν μετράει ξανά ως 2ο μισό
+                        HandlePossibleDesktopDoubleClick(pos);
+                    }
+                }
+            }
+            catch { /* ένας κακός χειρισμός εδώ δεν πρέπει ΠΟΤΕ να ρίξει το global hook / την εφαρμογή */ }
+            return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
+        }
+
+        private void HandlePossibleDesktopDoubleClick(Point screenPos)
+        {
+            IntPtr hwnd = WindowFromPoint(screenPos);
+            if (hwnd == IntPtr.Zero) return;
+            if (GetClassNameOf(hwnd) != "SysListView32") return;
+
+            // Επιβεβαίωση ότι είναι όντως το ListView της επιφάνειας εργασίας (μέσα σε
+            // SHELLDLL_DefView) και όχι κάποιο άλλο ListView (π.χ. σε παράθυρο Explorer).
+            IntPtr parent = GetParent(hwnd);
+            if (GetClassNameOf(parent) != "SHELLDLL_DefView") return;
+
+            var client = screenPos;
+            ScreenToClient(hwnd, ref client);
+            if (!IsEmptyAreaHit(hwnd, client)) return;
+
+            ToggleDesktopIcons(hwnd);
+        }
+
+        private static string GetClassNameOf(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return string.Empty;
+            var sb = new StringBuilder(256);
+            GetClassName(hwnd, sb, sb.Capacity);
+            return sb.ToString();
+        }
+
+        private void ToggleDesktopIcons(IntPtr hwndList)
+        {
+            int count = SendMessage(hwndList, LVM_GETITEMCOUNT, IntPtr.Zero, IntPtr.Zero).ToInt32();
+            if (count <= 0) return;
+
+            GetWindowThreadProcessId(hwndList, out uint pid);
+            IntPtr hProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
+            if (hProcess == IntPtr.Zero) return;
+
+            try
+            {
+                if (!_hidden)
+                {
+                    var saved = new List<SavedIconPos>();
+                    for (int i = 0; i < count; i++)
+                    {
+                        string name = GetItemTextRemote(hProcess, hwndList, i);
+                        var pos = GetItemPositionRemote(hProcess, hwndList, i);
+                        saved.Add(new SavedIconPos { Index = i, Name = name, X = pos.X, Y = pos.Y });
+                        if (!Whitelist.Contains(name))
+                            SetItemPositionRemote(hwndList, i, -10000, -10000);
+                    }
+                    SaveState(saved);
+                    _hidden = true;
+                }
+                else
+                {
+                    foreach (var s in LoadState())
+                    {
+                        if (!Whitelist.Contains(s.Name))
+                            SetItemPositionRemote(hwndList, s.Index, s.X, s.Y);
+                    }
+                    _hidden = false;
+                }
+
+                // Ίδια χειρονομία, ίδια συμπεριφορά με τα πραγματικά Fences: το quick-hide της
+                // επιφάνειας εργασίας κρύβει/ξαναδείχνει επίσης όλα τα DeskContainers, εκτός από
+                // όσα ο χρήστης έχει σημειώσει ρητά "Exclude from quick-hide".
+                DeskContainerHostEngine.Instance.SetQuickHidden(_hidden);
+            }
+            catch { }
+            finally { CloseHandle(hProcess); }
+        }
+
+        private static bool IsEmptyAreaHit(IntPtr hwndList, Point clientPoint)
+        {
+            GetWindowThreadProcessId(hwndList, out uint pid);
+            IntPtr hProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, false, pid);
+            if (hProcess == IntPtr.Zero) return false;
+            IntPtr remoteHit = IntPtr.Zero;
+            try
+            {
+                remoteHit = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)Marshal.SizeOf<LVHITTESTINFO>(), MEM_COMMIT, PAGE_READWRITE);
+                if (remoteHit == IntPtr.Zero) return false;
+                var hit = new LVHITTESTINFO { pt = new POINT { X = clientPoint.X, Y = clientPoint.Y } };
+                if (!WriteProcessMemory(hProcess, remoteHit, ref hit, Marshal.SizeOf<LVHITTESTINFO>(), out _)) return false;
+                SendMessage(hwndList, LVM_HITTEST, IntPtr.Zero, remoteHit);
+                var buf = new byte[Marshal.SizeOf<LVHITTESTINFO>()];
+                if (!ReadProcessMemory(hProcess, remoteHit, buf, buf.Length, out _)) return false;
+                int iItem = BitConverter.ToInt32(buf, 12); // pt(8) + flags(4) = offset 12
+                return iItem < 0; // κανένα item κάτω από το σημείο -> κενή περιοχή
+            }
+            catch { return false; }
+            finally
+            {
+                if (remoteHit != IntPtr.Zero) VirtualFreeEx(hProcess, remoteHit, 0, MEM_RELEASE);
+                CloseHandle(hProcess);
+            }
+        }
+
+        private static string GetItemTextRemote(IntPtr hProcess, IntPtr hwndList, int index)
+        {
+            const int bufChars = 260;
+            int bufBytes = bufChars * 2;
+            IntPtr remoteText = IntPtr.Zero, remoteItem = IntPtr.Zero;
+            try
+            {
+                remoteText = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)bufBytes, MEM_COMMIT, PAGE_READWRITE);
+                remoteItem = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)Marshal.SizeOf<LVITEM>(), MEM_COMMIT, PAGE_READWRITE);
+                if (remoteText == IntPtr.Zero || remoteItem == IntPtr.Zero) return string.Empty;
+
+                var item = new LVITEM { mask = LVIF_TEXT, iItem = index, iSubItem = 0, pszText = remoteText, cchTextMax = bufChars };
+                if (!WriteProcessMemory(hProcess, remoteItem, ref item, Marshal.SizeOf<LVITEM>(), out _)) return string.Empty;
+                SendMessage(hwndList, LVM_GETITEMTEXT, (IntPtr)index, remoteItem);
+
+                var localBuf = new byte[bufBytes];
+                if (!ReadProcessMemory(hProcess, remoteText, localBuf, bufBytes, out _)) return string.Empty;
+                string text = Encoding.Unicode.GetString(localBuf);
+                int nullIdx = text.IndexOf('\0');
+                return nullIdx >= 0 ? text[..nullIdx] : text;
+            }
+            catch { return string.Empty; }
+            finally
+            {
+                if (remoteText != IntPtr.Zero) VirtualFreeEx(hProcess, remoteText, 0, MEM_RELEASE);
+                if (remoteItem != IntPtr.Zero) VirtualFreeEx(hProcess, remoteItem, 0, MEM_RELEASE);
+            }
+        }
+
+        private static Point GetItemPositionRemote(IntPtr hProcess, IntPtr hwndList, int index)
+        {
+            IntPtr remotePt = IntPtr.Zero;
+            try
+            {
+                remotePt = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)Marshal.SizeOf<POINT>(), MEM_COMMIT, PAGE_READWRITE);
+                if (remotePt == IntPtr.Zero) return Point.Empty;
+                SendMessage(hwndList, LVM_GETITEMPOSITION, (IntPtr)index, remotePt);
+                var buf = new byte[Marshal.SizeOf<POINT>()];
+                if (!ReadProcessMemory(hProcess, remotePt, buf, buf.Length, out _)) return Point.Empty;
+                return new Point(BitConverter.ToInt32(buf, 0), BitConverter.ToInt32(buf, 4));
+            }
+            catch { return Point.Empty; }
+            finally { if (remotePt != IntPtr.Zero) VirtualFreeEx(hProcess, remotePt, 0, MEM_RELEASE); }
+        }
+
+        private static void SetItemPositionRemote(IntPtr hwndList, int index, int x, int y)
+        {
+            IntPtr lParam = (IntPtr)(((y & 0xFFFF) << 16) | (x & 0xFFFF));
+            SendMessage(hwndList, LVM_SETITEMPOSITION, (IntPtr)index, lParam);
+        }
+
+        private static void SaveState(List<SavedIconPos> saved)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(StateFilePath)!);
+                File.WriteAllText(StateFilePath, JsonSerializer.Serialize(saved));
+            }
+            catch (IOException) { }
+        }
+
+        private static List<SavedIconPos> LoadState()
+        {
+            try
+            {
+                if (File.Exists(StateFilePath))
+                    return JsonSerializer.Deserialize<List<SavedIconPos>>(File.ReadAllText(StateFilePath)) ?? new();
+            }
+            catch (JsonException) { }
+            catch (IOException) { }
+            return new();
+        }
+
+        private sealed class SavedIconPos
+        {
+            public int Index { get; set; }
+            public string Name { get; set; } = "";
+            public int X { get; set; }
+            public int Y { get; set; }
+        }
+
+        // ---- Win32 interop ----
+
+        private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        private const int WH_MOUSE_LL = 14;
+        private const int WM_LBUTTONDOWN = 0x0201;
+        private const int SM_CXDOUBLECLK = 36;
+        private const int SM_CYDOUBLECLK = 37;
+
+        private const uint LVM_GETITEMCOUNT = 0x1004;      // LVM_FIRST + 4
+        private const uint LVM_GETITEMTEXT = 0x1073;       // LVM_GETITEMTEXTW = LVM_FIRST + 115
+        private const uint LVM_GETITEMPOSITION = 0x1010;   // LVM_FIRST + 16
+        private const uint LVM_SETITEMPOSITION = 0x100F;   // LVM_FIRST + 15
+        private const uint LVM_HITTEST = 0x1012;           // LVM_FIRST + 18
+        private const uint LVIF_TEXT = 0x0001;
+
+        private const uint MEM_COMMIT = 0x1000;
+        private const uint MEM_RELEASE = 0x8000;
+        private const uint PAGE_READWRITE = 0x04;
+        private const uint PROCESS_VM_OPERATION = 0x0008;
+        private const uint PROCESS_VM_READ = 0x0010;
+        private const uint PROCESS_VM_WRITE = 0x0020;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT { public int X; public int Y; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MSLLHOOKSTRUCT { public POINT pt; public uint mouseData; public uint flags; public uint time; public IntPtr dwExtraInfo; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LVITEM
+        {
+            public uint mask;
+            public int iItem;
+            public int iSubItem;
+            public uint state;
+            public uint stateMask;
+            public IntPtr pszText;
+            public int cchTextMax;
+            public int iImage;
+            public IntPtr lParam;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LVHITTESTINFO { public POINT pt; public uint flags; public int iItem; public int iSubItem; public int iGroup; }
+
+        [DllImport("user32.dll")] private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+        [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+        [DllImport("user32.dll")] private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+        [DllImport("kernel32.dll")] private static extern IntPtr GetModuleHandle(string? lpModuleName);
+        [DllImport("user32.dll")] private static extern uint GetDoubleClickTime();
+        [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
+        [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point p);
+        [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr hWnd);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+        [DllImport("user32.dll")] private static extern bool ScreenToClient(IntPtr hWnd, ref Point lpPoint);
+        [DllImport("user32.dll")] private static extern void GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+        [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("kernel32.dll")] private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
+        [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr hObject);
+        [DllImport("kernel32.dll")] private static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
+        [DllImport("kernel32.dll")] private static extern bool VirtualFreeEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint dwFreeType);
+        [DllImport("kernel32.dll")] private static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, ref LVITEM buffer, int nSize, out IntPtr lpNumberOfBytesWritten);
+        [DllImport("kernel32.dll")] private static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, ref LVHITTESTINFO buffer, int nSize, out IntPtr lpNumberOfBytesWritten);
+        [DllImport("kernel32.dll")] private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, int dwSize, out IntPtr lpNumberOfBytesRead);
+    }
+}

@@ -11,6 +11,7 @@ namespace MotionDesk.Widgets
         private const int WM_HOTKEY = 0x0312;
         private const uint MOD_CONTROL = 0x0002;
         private const uint MOD_ALT = 0x0001;
+        private const uint MOD_SHIFT = 0x0004;
 
         private int _nextId = 9000;
         private readonly System.Collections.Generic.Dictionary<int, Action> _handlers = new();
@@ -25,6 +26,27 @@ namespace MotionDesk.Widgets
             int id = _nextId++;
             _handlers[id] = onPressed;
             RegisterHotKey(Handle, id, MOD_CONTROL | MOD_ALT, (uint)key);
+        }
+
+        // Υπερφόρτωση για πλήκτρα χωρίς απλή χαρακτήρα-αναπαράσταση (βελάκια κ.λπ.) — το Keys enum
+        // έχει ήδη τους σωστούς Win32 virtual-key κωδικούς, απλή μετατροπή.
+        public void RegisterCtrlAlt(Keys key, Action onPressed)
+        {
+            int id = _nextId++;
+            _handlers[id] = onPressed;
+            RegisterHotKey(Handle, id, MOD_CONTROL | MOD_ALT, (uint)key);
+        }
+
+        // ΣΗΜΑΝΤΙΚΟ (βρέθηκε κατά τη δοκιμή του keyboard zone navigation): το απλό Ctrl+Alt+βελάκι
+        // είναι ΗΔΗ δεσμευμένο συστημικά σε πολλά μηχανήματα από τον οδηγό γραφικών Intel/NVIDIA/AMD
+        // (περιστροφή οθόνης) — το δικό μας RegisterHotKey απέτυχε σιωπηλά (ERROR_HOTKEY_ALREADY_
+        // REGISTERED) χωρίς το combo να κάνει ΤΙΠΟΤΑ, επιβεβαιωμένο με αυτοτελή δοκιμή RegisterHotKey
+        // σε αυτό το μηχάνημα. Το Ctrl+Alt+Shift+βελάκι είναι πολύ λιγότερο πιθανό να συγκρουστεί.
+        public void RegisterCtrlAltShift(Keys key, Action onPressed)
+        {
+            int id = _nextId++;
+            _handlers[id] = onPressed;
+            RegisterHotKey(Handle, id, MOD_CONTROL | MOD_ALT | MOD_SHIFT, (uint)key);
         }
 
         protected override void WndProc(ref Message m)

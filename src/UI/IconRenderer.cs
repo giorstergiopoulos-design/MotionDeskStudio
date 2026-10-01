@@ -34,9 +34,10 @@ namespace MotionDesk.UI
                 case "About": DrawInfo(g, pen, brush); break;
                 case "Clock": DrawClock(g, pen); break;
                 case "Network": DrawNetwork(g, pen, brush); break;
-                case "AudioVisualizer": DrawAudio(g, pen); break;
+                case "AudioVisualizer": case "AudioEnhancement": DrawAudio(g, pen); break;
                 case "Weather": DrawWeather(g, pen, brush); break;
                 case "SystemMonitor": DrawPulse(g, pen); break;
+                case "Disk": DrawDisk(g, pen, brush); break;
                 case "Save": DrawSave(g, pen); break;
                 case "Restore": DrawRestore(g, pen); break;
                 case "Close": DrawClose(g, pen); break;
@@ -247,6 +248,16 @@ namespace MotionDesk.UI
             g.DrawEllipse(pen, 2.5f, 2.5f, 15, 15);
             g.DrawEllipse(pen, 6.2f, 6.2f, 7.6f, 7.6f);
             g.DrawEllipse(pen, 9.1f, 9.1f, 1.8f, 1.8f);
+        }
+
+        // Δίσκος/μονάδα αποθήκευσης — κύλινδρος (drive) με μια γραμμή χωρητικότητας από κάτω.
+        private static void DrawDisk(Graphics g, Pen pen, Brush brush)
+        {
+            g.DrawEllipse(pen, 4f, 3f, 12, 4);
+            g.DrawLine(pen, 4f, 5f, 4f, 15f);
+            g.DrawLine(pen, 16f, 5f, 16f, 15f);
+            g.DrawArc(pen, 4f, 13f, 12, 4, 0, 180);
+            g.FillEllipse(brush, 9f, 8.5f, 2.2f, 2.2f);
         }
 
         private static void DrawContainer(Graphics g, Pen pen)

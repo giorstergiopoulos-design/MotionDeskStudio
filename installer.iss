@@ -1,5 +1,5 @@
 #define MyAppName "MotionDesk Studio"
-#define MyAppVersion "1.2.9"
+#define MyAppVersion "1.6.2"
 #define MyAppPublisher "MotionDesk Team"
 #define MyAppExeName "MotionDesk.exe"
 
@@ -22,13 +22,35 @@ PrivilegesRequired=admin
 ; το σύγχρονο identifier (το απλό "x64" είναι πλέον deprecated στο Inno Setup 6.7+).
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+SetupIconFile=assets\MotionDesk.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
+DisableWelcomePage=no
 
+[CustomMessages]
+greek.UpdateDetected=Εντοπίστηκε ήδη εγκατεστημένη έκδοση %1 του {#MyAppName}.%n%nΘα ενημερωθεί στην έκδοση {#MyAppVersion}.
+english.UpdateDetected=An existing installation of {#MyAppName} version %1 was detected.%n%nIt will be updated to version {#MyAppVersion}.
+greek.KeepDataPromptText=Να διαγραφούν επίσης οι ρυθμίσεις, τα προφίλ και τα αποθηκευμένα DeskZones/DeskContainers του {#MyAppName};
+english.KeepDataPromptText=Do you also want to delete {#MyAppName}'s settings, profiles and saved DeskZones/DeskContainers?
+
+; Ρητό αίτημα χρήστη: "να έχει πληροφορίες και δομή και λειτουργίες όπως του gearwin" — ίδιο μοτίβο
+; με τον installer του GearWin (../installer/OptimizerWpf.iss): σελίδα "Πληροφορίες" (InfoBeforeFile)
+; πριν την επιλογή φακέλου, υποχρεωτική σελίδα άδειας (LicenseFile) ανά γλώσσα, μήνυμα ανίχνευσης
+; ήδη-εγκατεστημένης έκδοσης, και ερώτηση επιβεβαίωσης στην απεγκατάσταση. Μόνο EL/EN εδώ γιατί η
+; ίδια η εφαρμογή (LocalizationManager, locales/) υποστηρίζει προς το παρόν μόνο αυτές τις 2 γλώσσες
+; — αντίθετα με το GearWin που έχει πλήρη υποστήριξη 14 γλωσσών ήδη μέσα στην ίδια την εφαρμογή.
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "greek"; MessagesFile: "compiler:Languages\Greek.isl"; LicenseFile: "installer\license_el.txt"; InfoBeforeFile: "installer\app_description_el.txt"
+Name: "english"; MessagesFile: "compiler:Default.isl"; LicenseFile: "installer\license_en.txt"; InfoBeforeFile: "installer\app_description_en.txt"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 Name: "autostart"; Description: "Αυτόματη εκκίνηση με την είσοδο στα Windows (System Tray)"; GroupDescription: "Ρυθμίσεις Εκκίνησης:"
+; Προαιρετική εξάρτηση — ζητήθηκε ρητά "να εμφανιζεται η δυνατοτητα εγκαταστασης dependencies
+; οπως το ffmpeg". Το FFmpeg χρειάζεται μόνο για αναπαραγωγή/μετατροπή .wmv βίντεο ως κινούμενο
+; wallpaper (WmvConversionService) — δεν είναι απαραίτητο για την υπόλοιπη εφαρμογή, γι' αυτό
+; είναι tickbox και όχι υποχρεωτικό όπως το WebView2/.NET Runtime. Εγκαθίσταται μέσω winget (ίδιο
+; πακέτο, Gyan.FFmpeg, με αυτό που ήδη ψάχνει το WmvConversionService.FindFfmpeg()).
+Name: "installffmpeg"; Description: "Εγκατάσταση FFmpeg (για αναπαραγωγή βίντεο .wmv ως κινούμενο wallpaper)"; GroupDescription: "Πρόσθετες εξαρτήσεις:"; Flags: unchecked; Check: IsWingetAvailable and not IsFfmpegInstalled
 
 [Files]
 ; Κύρια αρχεία εφαρμογής (δημιουργούνται από: dotnet publish -c Release -r win-x64)
@@ -56,7 +78,12 @@ Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"
 ; 2. Έλεγχος και εγκατάσταση .NET 8.0 Desktop Runtime (εάν δεν υπάρχει).
 Filename: "{tmp}\windowsdesktop-runtime-8.0-win-x64.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Εγκατάσταση .NET 8.0 Desktop Runtime..."; Check: not IsDotNet8Installed
 
-; 3. Εκκίνηση της εφαρμογής μετά το τέλος της εγκατάστασης
+; 3. Προαιρετική εγκατάσταση FFmpeg μέσω winget (μόνο αν ο χρήστης επέλεξε το tickbox παραπάνω).
+; "& exit 0" αποτρέπει το Inno Setup από το να δείξει σφάλμα αν το winget γυρίσει μη-μηδενικό
+; exit code (π.χ. "no applicable update found" όταν είναι ήδη εγκατεστημένο).
+Filename: "{cmd}"; Parameters: "/C winget install --id Gyan.FFmpeg -e --silent --accept-package-agreements --accept-source-agreements & exit 0"; StatusMsg: "Εγκατάσταση FFmpeg..."; Flags: runhidden; Tasks: installffmpeg
+
+; 4. Εκκίνηση της εφαρμογής μετά το τέλος της εγκατάστασης
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
@@ -92,9 +119,57 @@ begin
             HasDotNet8SubKey('SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App');
 end;
 
+// Ελέγχει αν το winget (App Installer) υπάρχει στο σύστημα, ώστε το tickbox του FFmpeg να μην
+// εμφανίζεται καν σε μηχανήματα χωρίς winget (θα απέτυχε σιωπηλά χωρίς αυτό τον έλεγχο).
+function IsWingetAvailable: Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := Exec(ExpandConstant('{cmd}'), '/C where winget >nul 2>nul', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+// Γρήγορος έλεγχος αν υπάρχει ήδη FFmpeg (PATH ή γνωστός φάκελος winget) — ίδια λογική με το
+// WmvConversionService.FindFfmpeg() της ίδιας της εφαρμογής, ώστε να μην προτείνουμε εγκατάσταση
+// αν υπάρχει ήδη.
+function IsFfmpegInstalled: Boolean;
+var
+  ResultCode: Integer;
+begin
+  if Exec(ExpandConstant('{cmd}'), '/C where ffmpeg >nul 2>nul', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+  begin
+    Result := True;
+    exit;
+  end;
+  Result := FileExists(ExpandConstant('{localappdata}\Microsoft\WinGet\Links\ffmpeg.exe'));
+end;
+
+// Ίδιο μοτίβο ανίχνευσης ενημέρωσης με το GearWin installer: διαβάζει το DisplayVersion από το
+// registry uninstall key που γράφει το ίδιο το Inno Setup σε κάθε εγκατάσταση, ελέγχοντας ΚΑΙ τις
+// δύο όψεις του registry (64-bit πρώτα, 32-bit fallback).
+function GetInstalledVersion(): String;
+var
+  sVersion: String;
+begin
+  sVersion := '';
+  if not RegQueryStringValue(HKLM64, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\A9E8F765-1234-4567-89AB-CDEF01234567_is1', 'DisplayVersion', sVersion) then
+    RegQueryStringValue(HKLM32, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\A9E8F765-1234-4567-89AB-CDEF01234567_is1', 'DisplayVersion', sVersion);
+  Result := sVersion;
+end;
+
+procedure InitializeWizard();
+var
+  sPrevVersion: String;
+begin
+  sPrevVersion := GetInstalledVersion();
+  if sPrevVersion <> '' then
+    WizardForm.WelcomeLabel2.Caption := FmtMessage(CustomMessage('UpdateDetected'), [sPrevVersion]);
+end;
+
 // Καθαρισμός %AppData%\MotionDeskStudio στην απεγκατάσταση (ρυθμίσεις, wallpaper.json,
 // αποθηκευμένα profiles/DeskZones/DeskContainers) — ζητήθηκε ρητά, αλλά με ερώτηση επιβεβαίωσης
-// πριν διαγραφούν πιθανά δεδομένα που ο χρήστης θέλει να κρατήσει.
+// πριν διαγραφούν πιθανά δεδομένα που ο χρήστης θέλει να κρατήσει. Το prompt χρησιμοποιεί πλέον
+// CustomMessage (EL/EN) αντί για hardcoded ελληνικό κείμενο, ώστε να εμφανίζεται στη γλώσσα που
+// επέλεξε ο χρήστης κατά την εγκατάσταση.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   AppDataPath: String;
@@ -104,7 +179,7 @@ begin
     AppDataPath := ExpandConstant('{userappdata}\MotionDeskStudio');
     if DirExists(AppDataPath) then
     begin
-      if MsgBox('Να διαγραφούν επίσης οι ρυθμίσεις, τα προφίλ και τα αποθηκευμένα DeskZones/DeskContainers του MotionDesk Studio;' + #13#10 + #13#10 + AppDataPath, mbConfirmation, MB_YESNO) = IDYES then
+      if MsgBox(CustomMessage('KeepDataPromptText') + #13#10 + #13#10 + AppDataPath, mbConfirmation, MB_YESNO) = IDYES then
         DelTree(AppDataPath, True, True, True);
     end;
   end;

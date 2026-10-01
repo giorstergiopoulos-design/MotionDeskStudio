@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -53,7 +56,11 @@ namespace MotionDesk.Widgets
             Process.Start(new ProcessStartInfo(themeFilePath) { UseShellExecute = true });
         }
 
-        public static string SaveCurrentAsTheme(string themeName)
+        // wallpaperOverride: όταν δίνεται, γράφεται ΑΥΤΟ το path αντί για το τρέχον wallpaper των
+        // Windows — χρησιμοποιείται από το "Tech Grid" theme preset (βλ. GenerateTechWallpaperPng)
+        // ώστε να μην χρειάζεται να αλλάξει το πραγματικό wallpaper του χρήστη μόνο και μόνο για
+        // να αποθηκευτεί ένα νέο πακέτο θέματος.
+        public static string SaveCurrentAsTheme(string themeName, string? wallpaperOverride = null)
         {
             Directory.CreateDirectory(UserThemesFolder);
             string safeName = string.Join("_", themeName.Split(Path.GetInvalidFileNameChars()));
@@ -66,7 +73,7 @@ namespace MotionDesk.Widgets
             sb.AppendLine();
 
             sb.AppendLine("[Control Panel\\Desktop]");
-            string wallpaper = GetCurrentDesktopWallpaper();
+            string wallpaper = wallpaperOverride ?? GetCurrentDesktopWallpaper();
             if (!string.IsNullOrEmpty(wallpaper)) sb.AppendLine($"Wallpaper={wallpaper}");
             sb.AppendLine("WallpaperStyle=10");
             sb.AppendLine("TileWallpaper=0");
@@ -98,6 +105,55 @@ namespace MotionDesk.Widgets
             sb.AppendLine("Size=NormalSize");
 
             File.WriteAllText(path, sb.ToString(), Encoding.Unicode);
+            return path;
+        }
+
+        // Στατική, "τεχνολογικού" ύφους εικόνα wallpaper — ζητήθηκε ρητά ένα νέο πακέτο θέματος με
+        // tech-themed φόντο. Ένα αρχείο .theme των Windows μπορεί να αναφέρει μόνο ΣΤΑΤΙΚΗ εικόνα
+        // (όχι το ζωντανό canvas engine μας) — αυτή η εικόνα είναι το "στατικό instantiation" του
+        // ίδιου circuit-grid μοτίβου με το νέο ζωντανό στυλ "TechGrid" (βλ. wallpaper/index.html),
+        // ώστε η επιφάνεια εργασίας να ταιριάζει οπτικά ακόμη και όταν το MotionDesk δεν τρέχει.
+        public static string GenerateTechWallpaperPng()
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "assets");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "tech_grid_wallpaper.png");
+
+            int w = 2560, h = 1440;
+            using var bmp = new Bitmap(w, h, PixelFormat.Format24bppRgb);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var bgBrush = new LinearGradientBrush(new Point(0, 0), new Point(0, h), Color.FromArgb(2, 8, 5), Color.FromArgb(6, 20, 14)))
+                    g.FillRectangle(bgBrush, 0, 0, w, h);
+
+                var rng = new Random(1337);
+                int cellSize = 80;
+                using var gridPen = new Pen(Color.FromArgb(60, 57, 255, 148), 1f);
+                for (int x = 0; x <= w; x += cellSize) g.DrawLine(gridPen, x, 0, x, h);
+                for (int y = 0; y <= h; y += cellSize) g.DrawLine(gridPen, 0, y, w, y);
+
+                using var nodeBrush = new SolidBrush(Color.FromArgb(220, 57, 255, 106));
+                using var traceGlowPen = new Pen(Color.FromArgb(160, 0, 229, 255), 2.5f);
+                int nodeCount = (w / cellSize) * (h / cellSize) / 8;
+                for (int i = 0; i < nodeCount; i++)
+                {
+                    int col = rng.Next(w / cellSize), row = rng.Next(h / cellSize);
+                    int nx = col * cellSize, ny = row * cellSize;
+                    g.FillEllipse(nodeBrush, nx - 4, ny - 4, 8, 8);
+                    // Λίγες τυχαίες "διαδρομές κυκλώματος" ξεκινώντας από κάθε κόμβο.
+                    if (rng.NextDouble() < 0.5)
+                    {
+                        int len = 2 + rng.Next(4);
+                        bool horizontal = rng.NextDouble() < 0.5;
+                        int ex = nx + (horizontal ? len * cellSize : 0);
+                        int ey = ny + (!horizontal ? len * cellSize : 0);
+                        g.DrawLine(traceGlowPen, nx, ny, ex, ey);
+                    }
+                }
+            }
+
+            bmp.Save(path, ImageFormat.Png);
             return path;
         }
 

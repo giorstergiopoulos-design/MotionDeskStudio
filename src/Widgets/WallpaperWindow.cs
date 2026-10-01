@@ -65,7 +65,12 @@ namespace MotionDesk.Widgets
                 speed = settings.WaveSpeed,
                 glowIntensity = settings.GlowIntensity,
                 lineThickness = settings.LineThickness,
-                performanceMode = settings.PerformanceMode
+                performanceMode = settings.PerformanceMode,
+                audioEnabled = settings.AudioEnabled,
+                audioVolume = settings.AudioVolume,
+                audioBassGain = settings.AudioBassGain,
+                audioMidGain = settings.AudioMidGain,
+                audioTrebleGain = settings.AudioTrebleGain
             });
         }
 
@@ -134,6 +139,10 @@ namespace MotionDesk.Widgets
             new() { Name = "Deep Blue / Purple",  Background = "#07081a", WaveColor = "#1c2a6b", PeakColor = "#7c5cff", GlowColor = "#b18cff", HighlightColor = "#ffffff" },
             new() { Name = "Cyan / Magenta",      Background = "#05100f", WaveColor = "#0a4d4a", PeakColor = "#ff3ec9", GlowColor = "#00f5d4", HighlightColor = "#ffffff" },
             new() { Name = "Indigo / Orange",     Background = "#080714", WaveColor = "#241a5e", PeakColor = "#ff9f43", GlowColor = "#ffcf86", HighlightColor = "#ffffff" },
+            // Δύο νέες, "τεχνολογικές" παλέτες — ταιριάζουν ιδιαίτερα με το νέο στυλ TechGrid,
+            // αλλά διαθέσιμες και στα Ribbons/Aurora αφού η παλέτα είναι ανεξάρτητη από το στυλ.
+            new() { Name = "Matrix Green",        Background = "#020a05", WaveColor = "#0a3d1e", PeakColor = "#39ff6a", GlowColor = "#7dffb0", HighlightColor = "#ccffdd" },
+            new() { Name = "Cyber Neon",          Background = "#0a0018", WaveColor = "#2a0a4d", PeakColor = "#ff2ec4", GlowColor = "#00e5ff", HighlightColor = "#ffffff" },
         };
 
         public static IEnumerable<string> AllNames => Light.Concat(Dark).Select(p => p.Name).Distinct();
@@ -151,8 +160,24 @@ namespace MotionDesk.Widgets
         public string WaveStyle { get; set; } = "Ribbons"; // "Ribbons" | "Aurora" — παραλλαγές ΜΕΣΑ στο Waves mode
         public string VideoPath { get; set; } = string.Empty; // legacy single-video field, kept for back-compat
         public List<string> VideoPaths { get; set; } = new();
+        // Ζητήθηκε ρητά "να επιλέγει ο χρήστης 1 ή περισσότερα βίντεο για να αναπαράγονται" —
+        // ένα βίντεο μπορεί να είναι ΦΟΡΤΩΜΕΝΟ στη βιβλιοθήκη (VideoPaths) χωρίς να συμμετέχει
+        // στην ενεργή αναπαραγωγή/shuffle. Άδειο σύνολο = όλα ενεργά (προεπιλογή/παλιά συμπεριφορά).
+        public HashSet<string> DisabledVideoPaths { get; set; } = new();
         public bool Shuffle { get; set; } = false;
         public int CurrentVideoIndex { get; set; } = 0;
+
+        // Ήχος wallpaper video — ζητήθηκε ρητά, πραγματικό DSP (Web Audio API μέσα στο
+        // wallpaper/index.html) πάνω στον ΔΙΚΟ ΜΑΣ ήχο του video wallpaper (όχι system-wide, βλ.
+        // σχόλιο στο ShowAudioEnhancement για το γιατί system-wide δεν είναι εφικτό εδώ χωρίς
+        // driver-level component). Προεπιλογή ΣΙΓΗ (AudioEnabled=false) — το wallpaper video ήταν
+        // πάντα σιωπηλό μέχρι τώρα, δεν αλλάζουμε τη συμπεριφορά υπαρχόντων χρηστών χωρίς ρητή
+        // ενεργοποίηση.
+        public bool AudioEnabled { get; set; } = false;
+        public double AudioVolume { get; set; } = 0.8;   // 0 - 1
+        public double AudioBassGain { get; set; } = 0;   // dB, -12..+12
+        public double AudioMidGain { get; set; } = 0;    // dB, -12..+12
+        public double AudioTrebleGain { get; set; } = 0; // dB, -12..+12
 
         public string PerformanceMode { get; set; } = "Balanced";
         public string ThemeMode { get; set; } = "Follow"; // Follow | Light | Dark
@@ -217,18 +242,26 @@ namespace MotionDesk.Widgets
             }
         }
 
+        private List<string> PlayableVideos() => VideoPaths.Where(p => File.Exists(p) && !DisabledVideoPaths.Contains(p)).ToList();
+
         public string? CurrentPlaylistFile()
         {
-            var playable = VideoPaths.Where(File.Exists).ToList();
+            var playable = PlayableVideos();
             if (playable.Count == 0) return null;
 
             if (CurrentVideoIndex < 0 || CurrentVideoIndex >= playable.Count) CurrentVideoIndex = 0;
             return playable[CurrentVideoIndex];
         }
 
+        public void SetVideoEnabled(string path, bool enabled)
+        {
+            if (enabled) DisabledVideoPaths.Remove(path);
+            else DisabledVideoPaths.Add(path);
+        }
+
         public void AdvancePlaylist()
         {
-            var playable = VideoPaths.Where(File.Exists).ToList();
+            var playable = PlayableVideos();
             if (playable.Count == 0) { CurrentVideoIndex = 0; return; }
 
             if (Shuffle && playable.Count > 1)
@@ -274,6 +307,8 @@ namespace MotionDesk.Widgets
         private WallpaperBridge? _bridge;
         private bool _initializing;
         private System.Windows.Forms.Timer? _reattachTimer;
+        private System.Windows.Forms.Timer? _settleTimer;
+        private int _settleAttemptsLeft;
 
         public Screen TargetScreen { get; }
         // True μόλις το SetParent προς το WorkerW πετύχει έστω μία φορά — από εκεί και πέρα ένα
@@ -294,7 +329,21 @@ namespace MotionDesk.Widgets
 
         protected override CreateParams CreateParams
         {
-            get { var cp = base.CreateParams; cp.ExStyle |= WS_EX_TOOLWINDOW; return cp; }
+            get
+            {
+                var cp = base.CreateParams;
+                // WS_EX_LAYERED εδώ (στο CreateParams, όχι αργότερα μέσω SetWindowLongPtr) —
+                // επιβεβαιωμένο σε δύο ανεξάρτητα, ενεργά open-source projects που κάνουν
+                // ακριβώς την ίδια δουλειά με τον ίδιο μηχανισμό μας (WebView2 + WorkerW):
+                // rocksdanister/lively ("Note: Godot fails to apply WS_EX_LAYERED if attached
+                // after SetParent") και bbabcock1990/tool-animated-wallpapers ("WS_EX_LAYERED
+                // is required so DWM composites the window correctly when hosted under the
+                // desktop icons on the raised desktop, otherwise it renders solid black").
+                // Ισχύει σε ΚΑΘΕ διάταξη desktop (όχι μόνο raised) — ακίνδυνο no-op όταν δεν
+                // χρειάζεται, μαζί με SetLayeredWindowAttributes(alpha=255) πριν το SetParent.
+                cp.ExStyle |= WS_EX_TOOLWINDOW | WS_EX_LAYERED;
+                return cp;
+            }
         }
 
         // ΚΡΙΣΙΜΟ: η προηγούμενη εκδοχή έκανε Show() πρώτα και ξεκινούσε το attach ΜΕΣΑ στο
@@ -340,6 +389,7 @@ namespace MotionDesk.Widgets
                 SendToBack();
                 _reattachTimer?.Stop();
                 if (!Visible) Show(); else BringToFront();
+                BeginSettleRecheck();
                 return;
             }
 
@@ -347,6 +397,34 @@ namespace MotionDesk.Widgets
             _reattachTimer.Tick -= ReattachTick;
             _reattachTimer.Tick += ReattachTick;
             _reattachTimer.Start();
+        }
+
+        // Αυτο-επούλωση για το γνωστό race σε ψυχρή εκκίνηση (ζητήθηκε ρητά: "μερικές φορές δεν
+        // φαίνονται τα εικονίδια, μόνο η taskbar, όχι πάντα"): το AttachToDesktop έχει μικρό
+        // αρχικό retry παράθυρο (8 προσπάθειες × 60ms ≈ μισό δευτερόλεπτο). Αν η Explorer δεν έχει
+        // προλάβει ΑΚΟΜΑ να φτιάξει το SHELLDLL_DefView (αργή εκκίνηση, πολλά προγράμματα
+        // εκκίνησης), το attach "πετυχαίνει" μέσω του εφεδρικού μονοπατιού (απευθείας στο
+        // Progman, HWND_BOTTOM) — αλλά αν το DefView εμφανιστεί ΑΡΓΟΤΕΡΑ, αυτό ΔΕΝ διορθώνεται
+        // ποτέ μόνο του, αφού IsAttached ήδη=true και τίποτα δεν ξαναπροσπαθεί. Ξαναδοκιμάζει το
+        // ΠΛΗΡΕΣ attach (idempotent — SetParent στον ίδιο/καλύτερο στόχο, ασφαλές να ξανατρέξει)
+        // κάθε 1.5s για ~20 δευτερόλεπτα μετά την πρώτη επιτυχία, ώστε να "αναβαθμιστεί" αυτόματα
+        // σε σωστό z-order μόλις η Explorer προλάβει να ολοκληρώσει την αρχικοποίησή της.
+        private void BeginSettleRecheck()
+        {
+            _settleTimer?.Stop();
+            _settleTimer?.Dispose();
+            _settleAttemptsLeft = 14;
+            _settleTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+            _settleTimer.Tick += async (_, _) =>
+            {
+                if (IsDisposed || _settleAttemptsLeft-- <= 0) { _settleTimer?.Stop(); return; }
+                IntPtr handle = Handle;
+                Rectangle bounds = TargetScreen.Bounds;
+                bool ok = await Task.Run(() => WallpaperInterop.AttachToDesktop(handle, bounds));
+                if (IsDisposed) return;
+                if (ok) SendToBack();
+            };
+            _settleTimer.Start();
         }
 
         private async void ReattachTick(object? sender, EventArgs e)
@@ -363,6 +441,7 @@ namespace MotionDesk.Widgets
                 IsAttached = true;
                 SendToBack();
                 if (!Visible) Show(); else BringToFront();
+                BeginSettleRecheck();
             }
             else
             {
@@ -418,6 +497,9 @@ namespace MotionDesk.Widgets
                 _reattachTimer?.Stop();
                 _reattachTimer?.Dispose();
                 _reattachTimer = null;
+                _settleTimer?.Stop();
+                _settleTimer?.Dispose();
+                _settleTimer = null;
                 _bridge?.Dispose();
                 _bridge = null;
                 _webView?.Dispose();
@@ -427,6 +509,7 @@ namespace MotionDesk.Widgets
         }
 
         private const int WS_EX_TOOLWINDOW = 0x00000080;
+        private const int WS_EX_LAYERED = 0x00080000;
     }
 
     // Ένα WallpaperWindow ανά οθόνη, ώστε το video/waves να καλύπτει σωστά (cover) κάθε
@@ -524,6 +607,14 @@ namespace MotionDesk.Widgets
 
         public void Enable()
         {
+            // Αν υπάρχει ενεργό κινούμενο wallpaper, η εφαρμογή πρέπει να ξαναγυρίζει αυτόματα
+            // στην επόμενη εκκίνηση των Windows — ίδια λογική με τα widgets/DeskContainers
+            // (ζητήθηκε ρητά "όταν υπάρχει κινούμενο wallpaper όπως και με τα widgets"). Το
+            // --background flag (StartupManager.SetStartup) φροντίζει ήδη ώστε αυτή η αυτόματη
+            // εκκίνηση να μην αναδύει το κύριο παράθυρο — μόνο να επαναφέρει wallpaper/widgets/
+            // DeskContainers στο παρασκήνιο.
+            if (!StartupManager.IsStartupEnabled()) StartupManager.SetStartup(true);
+
             var app = AppSettings.Load();
             if (app.AutoPerformanceMode)
             {
@@ -582,7 +673,13 @@ namespace MotionDesk.Widgets
             }
         }
 
-        private Task RefreshAllAsync() => Task.WhenAll(_windows.Select(w => w.RefreshAsync()));
+        // Public: ζητήθηκε ρητά έξω από αυτή την κλάση (AddWallpaperVideosAsync/AddVideosAsync
+        // στο MainWindow/TrayApplicationContext) — αφού προσθέτουν αρχεία απευθείας στο
+        // WallpaperSettings (όχι μέσω SetVideo/AddVideoFolder), χρειάζονται να ζητήσουν ρητά
+        // motionDeskRefresh() στο ήδη-τρέχον WebView2, αλλιώς ένα ήδη ανοιχτό wallpaper window
+        // (π.χ. σε λειτουργία Waves) δεν μαθαίνει ΠΟΤΕ ότι το Mode/playlist άλλαξε σε Video —
+        // ακριβώς το bug "το .wmv μετατράπηκε επιτυχώς αλλά δεν παίζει το βίντεο".
+        public Task RefreshAllAsync() => Task.WhenAll(_windows.Select(w => w.RefreshAsync()));
 
         public void SetMode(string mode)
         {
@@ -623,6 +720,29 @@ namespace MotionDesk.Widgets
             var settings = WallpaperSettings.Load();
             settings.Shuffle = shuffle;
             settings.Save();
+        }
+
+        public void SetVideoEnabled(string path, bool enabled)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.SetVideoEnabled(path, enabled);
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        // Ρυθμίσεις ήχου wallpaper video (πραγματικό DSP, βλ. σχόλιο στο WallpaperSettings) —
+        // ζητήθηκε ρητά. RefreshAllAsync ώστε ένα ήδη ανοιχτό wallpaper window να ενημερώσει
+        // αμέσως τον Web Audio γράφο του χωρίς επανεκκίνηση.
+        public void SetAudioSettings(bool enabled, double volume, double bass, double mid, double treble)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.AudioEnabled = enabled;
+            settings.AudioVolume = Math.Clamp(volume, 0, 1);
+            settings.AudioBassGain = Math.Clamp(bass, -12, 12);
+            settings.AudioMidGain = Math.Clamp(mid, -12, 12);
+            settings.AudioTrebleGain = Math.Clamp(treble, -12, 12);
+            settings.Save();
+            _ = RefreshAllAsync();
         }
 
         public void RemoveVideo(string path)

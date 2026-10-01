@@ -1,6 +1,8 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using MotionDesk.Services;
 using MotionDesk.UI;
@@ -20,31 +22,34 @@ namespace MotionDesk.Widgets
             // Δημιουργία Context Menu για το Tray Icon — ομαδοποιημένο σε: παράθυρο, DeskZones,
             // wallpaper, γρήγορα προφίλ, γρήγορες ρυθμίσεις, έξοδος.
             ContextMenuStrip contextMenu = new ContextMenuStrip();
-            contextMenu.Items.Add("Άνοιγμα MotionDesk Studio", null, (s, e) => ShowMainWindow());
-            contextMenu.Items.Add("Command Palette...", null, (s, e) => { ShowMainWindow(); _mainWindow?.OpenCommandPalette(); });
-            contextMenu.Items.Add("Ρυθμίσεις...", null, (s, e) => ShowMainWindow("Settings"));
+            contextMenu.Items.Add(LocalizationManager.T("Tray.Open"), null, (s, e) => ShowMainWindow());
+            contextMenu.Items.Add(LocalizationManager.T("Tray.CommandPalette"), null, (s, e) => { ShowMainWindow(); _mainWindow?.OpenCommandPalette(); });
+            contextMenu.Items.Add(LocalizationManager.T("Tray.Settings"), null, (s, e) => ShowMainWindow("Settings"));
             contextMenu.Items.Add(new ToolStripSeparator());
 
-            var profilesMenu = new ToolStripMenuItem("Γρήγορο Προφίλ");
+            // Τα "Work"/"Gaming"/"Focus" παραμένουν ως έχουν σε κάθε γλώσσα — είναι τα ίδια τα
+            // ονόματα των προεπιλεγμένων προφίλ (ταυτίζονται με το string ID που περνάει στο
+            // ApplyProfile/WorkspaceProfileService), όχι γενικό κείμενο UI προς μετάφραση.
+            var profilesMenu = new ToolStripMenuItem(LocalizationManager.T("Tray.QuickProfile"));
             profilesMenu.DropDownItems.Add("Work", null, (s, e) => ApplyProfile("Work"));
             profilesMenu.DropDownItems.Add("Gaming", null, (s, e) => ApplyProfile("Gaming"));
             profilesMenu.DropDownItems.Add("Focus", null, (s, e) => ApplyProfile("Focus"));
             contextMenu.Items.Add(profilesMenu);
             contextMenu.Items.Add(new ToolStripSeparator());
 
-            contextMenu.Items.Add("DeskZones — Επεξεργασία διάταξης…", null, (s, e) => AddDeskZone());
+            contextMenu.Items.Add(LocalizationManager.T("Tray.DeskZonesEdit"), null, (s, e) => AddDeskZone());
             contextMenu.Items.Add(new ToolStripSeparator());
 
-            _wallpaperToggleItem = new ToolStripMenuItem("Ζωντανή Επιφάνεια Εργασίας (Wallpaper)");
+            _wallpaperToggleItem = new ToolStripMenuItem(LocalizationManager.T("Tray.WallpaperToggle"));
             _wallpaperToggleItem.Click += (s, e) => ToggleWallpaper();
             contextMenu.Items.Add(_wallpaperToggleItem);
-            contextMenu.Items.Add("Προσθήκη βίντεο στο Wallpaper...", null, (s, e) => ChooseWallpaperVideo());
-            contextMenu.Items.Add("Προσθήκη φακέλου στο Wallpaper...", null, (s, e) => ChooseWallpaperFolder());
+            contextMenu.Items.Add(LocalizationManager.T("Tray.WallpaperAddVideo"), null, (s, e) => ChooseWallpaperVideo());
+            contextMenu.Items.Add(LocalizationManager.T("Tray.WallpaperAddFolder"), null, (s, e) => ChooseWallpaperFolder());
             contextMenu.Items.Add(new ToolStripSeparator());
 
-            contextMenu.Items.Add("Flip 3D  (Ctrl+Alt+F)", null, (s, e) => Flip3DEngine.Show());
+            contextMenu.Items.Add("DeskFlip  (Ctrl+Alt+F)", null, (s, e) => DeskFlipEngine.Show());
 
-            ToolStripMenuItem gridSnapItem = new ToolStripMenuItem("Ενεργοποίηση Grid Snap");
+            ToolStripMenuItem gridSnapItem = new ToolStripMenuItem(LocalizationManager.T("Tray.GridSnap"));
             gridSnapItem.Checked = WidgetSnapEngine.EnableGridSnap;
             gridSnapItem.Click += (s, e) => {
                 WidgetSnapEngine.EnableGridSnap = !gridSnapItem.Checked;
@@ -52,7 +57,7 @@ namespace MotionDesk.Widgets
             };
             contextMenu.Items.Add(gridSnapItem);
 
-            ToolStripMenuItem startupItem = new ToolStripMenuItem("Αυτόματη Εκκίνηση (Startup)");
+            ToolStripMenuItem startupItem = new ToolStripMenuItem(LocalizationManager.T("Tray.Startup"));
             startupItem.Checked = StartupManager.IsStartupEnabled();
             startupItem.Click += (s, e) => {
                 bool newState = !startupItem.Checked;
@@ -62,8 +67,9 @@ namespace MotionDesk.Widgets
             contextMenu.Items.Add(startupItem);
 
             contextMenu.Items.Add(new ToolStripSeparator());
-            contextMenu.Items.Add("Έξοδος", null, (s, e) => {
+            contextMenu.Items.Add(LocalizationManager.T("Common.Exit"), null, (s, e) => {
                 _hotkeys.Dispose();
+                DesktopIconVisibilityEngine.Instance.Stop();
                 _trayIcon.Visible = false;
                 Application.Exit();
             });
@@ -80,7 +86,12 @@ namespace MotionDesk.Widgets
 
             _trayIcon.DoubleClick += (s, e) => ShowMainWindow();
 
-            _hotkeys.RegisterCtrlAlt('F', () => Flip3DEngine.Show());
+            _hotkeys.RegisterCtrlAlt('F', () => DeskFlipEngine.Show());
+
+            // Fences-style: διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας κρύβει/επαναφέρει
+            // όλα τα εικονίδια εκτός του Ο Υπολογιστής μου/φάκελος χρήστη/Πίνακας Ελέγχου/Κάδος
+            // Ανακύκλωσης — ζητήθηκε ρητά. Τρέχει σε όλη τη διάρκεια ζωής της εφαρμογής.
+            DesktopIconVisibilityEngine.Instance.Start();
 
             // Restore lightweight persistent preferences before showing the manager.
             var appSettings = AppSettings.Load();
@@ -95,7 +106,22 @@ namespace MotionDesk.Widgets
                 _wallpaperEnabled = true;
             }
 
-            ShowMainWindow();
+            // "--background": η αυτόματη εκκίνηση με τα Windows (StartupManager.SetStartup) περνάει
+            // αυτό το flag — ζητήθηκε ρητά ότι όταν υπάρχουν αποθηκευμένα widgets/DeskContainers, η
+            // εφαρμογή πρέπει να ανοίγει στο παρασκήνιο (μόνο tray icon), όχι με το κύριο παράθυρο
+            // διαχείρισης να αναδύεται κάθε φορά. Το MainWindow ΔΗΜΙΟΥΡΓΕΙΤΑΙ κανονικά (ώστε να
+            // τρέξει η επαναφορά του "Last Session" — widgets/DeskContainers/wallpaper μέσα στον
+            // constructor του), απλά δεν καλείται Show() πάνω του.
+            bool launchedInBackground = Environment.GetCommandLineArgs().Any(a => a.Equals("--background", StringComparison.OrdinalIgnoreCase));
+            if (launchedInBackground)
+            {
+                _mainWindow = new MainWindow();
+                _mainWindow.FormClosed += (s, e) => _mainWindow = null;
+            }
+            else
+            {
+                ShowMainWindow();
+            }
         }
 
         private void ShowMainWindow(string? page = null)
@@ -122,7 +148,7 @@ namespace MotionDesk.Widgets
         private void ApplyProfile(string name)
         {
             WorkspaceProfileService.Load(name);
-            _trayIcon.ShowBalloonTip(1500, "MotionDesk Studio", $"Εφαρμόστηκε το προφίλ: {name}", ToolTipIcon.Info);
+            _trayIcon.ShowBalloonTip(1500, "MotionDesk Studio", string.Format(LocalizationManager.T("Tray.ProfileAppliedFormat"), name), ToolTipIcon.Info);
         }
 
         private void ToggleWallpaper()
@@ -146,14 +172,46 @@ namespace MotionDesk.Widgets
             };
 
             if (dialog.ShowDialog() == DialogResult.OK)
+                _ = AddVideosAsync(dialog.FileNames);
+        }
+
+        // Τα .wmv μετατρέπονται αυτόματα σε .mp4 μέσω FFmpeg (WmvConversionService) πριν
+        // προστεθούν — ο ενσωματωμένος player (WebView2/Chromium) δεν έχει decoder για τον παλιό
+        // codec WMV3/VC-1. Βλ. αναλυτικό σχόλιο στο WmvConversionService.
+        private async Task AddVideosAsync(string[] fileNames)
+        {
+            var wmvFiles = fileNames.Where(f => string.Equals(Path.GetExtension(f), ".wmv", StringComparison.OrdinalIgnoreCase)).ToArray();
+            var finalPaths = fileNames.Except(wmvFiles).ToList();
+
+            if (wmvFiles.Length > 0)
             {
-                var settings = WallpaperSettings.Load();
-                settings.AddVideoFiles(dialog.FileNames);
-                settings.Mode = "Video";
-                settings.Save();
-                if (!_wallpaperEnabled) ToggleWallpaper();
-                WallpaperHostEngine.Instance.Enable();
+                if (!WmvConversionService.IsFfmpegAvailable)
+                {
+                    var choice = MessageBox.Show(
+                        $"Βρέθηκαν {wmvFiles.Length} αρχείο(α) .wmv. Χρειάζεται αυτόματη μετατροπή σε .mp4 μέσω του δωρεάν εργαλείου FFmpeg, το οποίο δεν εντοπίστηκε.\n\nΆνοιγμα της σελίδας λήψης τώρα;",
+                        "Απαιτείται FFmpeg για μετατροπή .wmv", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (choice == DialogResult.Yes) WmvConversionService.OpenFfmpegDownloadPage();
+                }
+                else
+                {
+                    foreach (var wmv in wmvFiles)
+                    {
+                        string? mp4 = await WmvConversionService.ConvertToMp4Async(wmv);
+                        if (mp4 != null) finalPaths.Add(mp4);
+                    }
+                }
             }
+
+            if (finalPaths.Count == 0) return;
+            var settings = WallpaperSettings.Load();
+            settings.AddVideoFiles(finalPaths.ToArray());
+            settings.Mode = "Video";
+            settings.Save();
+            if (!_wallpaperEnabled) ToggleWallpaper();
+            WallpaperHostEngine.Instance.Enable();
+            // Βλ. αναλυτικό σχόλιο στο MainWindow.AddWallpaperVideosAsync — χωρίς αυτό, ένα ήδη
+            // ανοιχτό wallpaper window δεν μαθαίνει ποτέ ότι το Mode/playlist άλλαξε.
+            _ = WallpaperHostEngine.Instance.RefreshAllAsync();
         }
 
         private void ChooseWallpaperFolder()

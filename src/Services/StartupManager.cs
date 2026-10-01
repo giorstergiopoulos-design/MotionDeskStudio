@@ -19,7 +19,11 @@ namespace MotionDesk.Services
                         string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
                         if (key != null && exePath != null)
                         {
-                            key.SetValue(AppName, $"\"{exePath}\"");
+                            // "--background": ζητήθηκε ρητά ότι όταν η εφαρμογή έχει αποθηκευμένα
+                            // widgets/DeskContainers, η αυτόματη εκκίνηση με τα Windows πρέπει να
+                            // γίνεται στο παρασκήνιο (μόνο tray icon) αντί να αναδύεται πάντα το
+                            // κύριο παράθυρο διαχείρισης — βλ. TrayApplicationContext.
+                            key.SetValue(AppName, $"\"{exePath}\" --background");
                         }
                     }
                     else

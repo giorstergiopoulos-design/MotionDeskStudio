@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -13,14 +14,27 @@ namespace MotionDesk.Widgets
     {
         private const string ThisPcClsid = "{20D04FE0-3AEA-1069-A2D8-08002B30309D}";
         private const string RecycleBinClsid = "{645FF040-5081-101B-9F08-00AA002F954E}";
+        // Επέκταση κάλυψης depot (ζητήθηκε ρητά v1.5.0): τα υπόλοιπα τυπικά εικονίδια που τα ίδια
+        // τα Windows επιτρέπουν να αλλάξουν μέσω Personalization/registry — δεν υπάρχει δημόσιο
+        // API για "όλα τα εικονίδια των Windows" (άπειρο, απροσδιόριστο σύνολο), μόνο αυτό το
+        // συγκεκριμένο, γνωστό σύνολο CLSID-based εικονιδίων επιφάνειας εργασίας.
+        private const string NetworkClsid = "{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}";
+        private const string ControlPanelClsid = "{21EC2020-3AEA-1069-A2DD-08002B30309D}";
+        private const string UsersFilesClsid = "{59031A47-3F72-44A7-89C5-5595FE6B30EE}";
 
         public static string? GetThisPcIcon() => GetClsidIcon(ThisPcClsid, null);
         public static string? GetRecycleBinEmptyIcon() => GetClsidIcon(RecycleBinClsid, "empty");
         public static string? GetRecycleBinFullIcon() => GetClsidIcon(RecycleBinClsid, "full");
+        public static string? GetNetworkIcon() => GetClsidIcon(NetworkClsid, null);
+        public static string? GetControlPanelIcon() => GetClsidIcon(ControlPanelClsid, null);
+        public static string? GetUsersFilesIcon() => GetClsidIcon(UsersFilesClsid, null);
 
         public static void SetThisPcIcon(string? icoPath) => SetClsidIcon(ThisPcClsid, null, icoPath);
         public static void SetRecycleBinEmptyIcon(string? icoPath) => SetClsidIcon(RecycleBinClsid, "empty", icoPath);
         public static void SetRecycleBinFullIcon(string? icoPath) => SetClsidIcon(RecycleBinClsid, "full", icoPath);
+        public static void SetNetworkIcon(string? icoPath) => SetClsidIcon(NetworkClsid, null, icoPath);
+        public static void SetControlPanelIcon(string? icoPath) => SetClsidIcon(ControlPanelClsid, null, icoPath);
+        public static void SetUsersFilesIcon(string? icoPath) => SetClsidIcon(UsersFilesClsid, null, icoPath);
 
         private static string? GetClsidIcon(string clsid, string? namedValue)
         {
@@ -65,6 +79,45 @@ namespace MotionDesk.Widgets
                 try { File.SetAttributes(folderPath, File.GetAttributes(folderPath) | FileAttributes.ReadOnly); } catch (IOException) { }
             }
             RefreshShellIcons();
+        }
+
+        // "Depot" icon packs: στο web υπάρχουν έτοιμα σετ εικονιδίων Κάδου Ανακύκλωσης που
+        // καλύπτουν και τις δύο καταστάσεις (π.χ. sdushantha/recycle-bin-themes στο GitHub),
+        // ακολουθώντας τη σύμβαση ονοματοδοσίας "όνομα-empty.ico" / "όνομα-full.ico" (με "-", "_"
+        // ή κενό ως διαχωριστικό) — ζητήθηκε ρητά να λαμβάνεται αυτό υπόψη στις ρυθμίσεις του
+        // IconAtlas. Σαρώνει έναν φάκελο που επιλέγει ο χρήστης και ταιριάζει αυτόματα το ζευγάρι.
+        public sealed class DepotImportResult
+        {
+            public string? EmptyIconPath { get; set; }
+            public string? FullIconPath { get; set; }
+            public string? SingleIconPath { get; set; }
+        }
+
+        public static DepotImportResult ScanDepotFolder(string folderPath)
+        {
+            var result = new DepotImportResult();
+            if (!Directory.Exists(folderPath)) return result;
+
+            var icoFiles = Directory.GetFiles(folderPath, "*.ico", SearchOption.TopDirectoryOnly);
+            string? FindByKeyword(string keyword) => icoFiles.FirstOrDefault(f =>
+            {
+                string name = Path.GetFileNameWithoutExtension(f);
+                return name.EndsWith("-" + keyword, StringComparison.OrdinalIgnoreCase)
+                    || name.EndsWith("_" + keyword, StringComparison.OrdinalIgnoreCase)
+                    || name.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+            });
+
+            result.EmptyIconPath = FindByKeyword("empty");
+            result.FullIconPath = FindByKeyword("full");
+            if (result.EmptyIconPath == null && result.FullIconPath == null && icoFiles.Length == 1)
+                result.SingleIconPath = icoFiles[0];
+            return result;
+        }
+
+        public static void ApplyDepotToRecycleBin(DepotImportResult depot)
+        {
+            if (depot.EmptyIconPath != null) SetRecycleBinEmptyIcon(depot.EmptyIconPath);
+            if (depot.FullIconPath != null) SetRecycleBinFullIcon(depot.FullIconPath);
         }
 
         [DllImport("shell32.dll")]

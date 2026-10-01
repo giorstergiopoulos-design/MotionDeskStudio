@@ -23,6 +23,25 @@ namespace MotionDesk.Services
         public bool UiSoundsEnabled { get; set; }
         public bool SidebarCollapsed { get; set; }
 
+        // Φάκελος όπου αποθηκεύονται τα μετατρεπόμενα .wmv->.mp4 (κενό = προεπιλογή στο AppData).
+        public string? WmvConversionOutputDir { get; set; }
+
+        // Ανεξάρτητο θέμα για widgets/DeskContainers από αυτό της ίδιας της εφαρμογής — ζητήθηκε
+        // ρητά "αν η εφαρμογή είναι σε φωτεινό θέμα, τα widgets/containers να μπορούν είτε να
+        // ακολουθούν τα windows είτε να έχουν διαφορετικά χρώματα και από το σύστημα και από την
+        // εφαρμογή". "App" = ακολουθεί το θέμα της εφαρμογής (προηγούμενη, μοναδική συμπεριφορά),
+        // "Windows" = ακολουθεί ανεξάρτητα το θέμα των Windows, "Dark"/"Light" = πάντα σταθερό.
+        public string WidgetsThemeMode { get; set; } = "App";
+
+        // Ενιαίο προεπιλεγμένο μέγεθος για όλα τα νέα widgets — ζητήθηκε ρητά "όλα τα widgets να
+        // έχουν το ίδιο μέγεθος και να μπορεί ο χρήστης να το αλλάζει".
+        public int WidgetDefaultWidth { get; set; } = 300;
+        public int WidgetDefaultHeight { get; set; } = 220;
+
+        // "Audio Enhancement" preset (βλ. AudioSpectrumService.Presets) — κοινό ανάμεσα στο
+        // πλωτό widget και στη σελίδα "Audio Enhancement" της εφαρμογής, ώστε να δείχνουν το ίδιο.
+        public string AudioEnhancementPreset { get; set; } = "Flat";
+
         private static string ConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "settings.json");
         public static AppSettings Load()
         {

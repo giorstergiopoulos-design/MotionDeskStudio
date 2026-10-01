@@ -1,0 +1,29 @@
+MotionDesk Studio
+
+A free, open-source desktop customization and workspace shell for Windows 10/11 - live animated
+wallpapers, floating desktop widgets, snap-to-zone window layouts, and safe system-icon
+personalization, all in one lightweight app.
+
+Main features:
+
+* Wallpaper Studio - animated video/GIF wallpapers rendered behind your desktop icons (WorkerW
+  injection), automatic pause when a game or another app goes fullscreen, and battery-aware
+  performance modes (High / Balanced / Low Power / Battery).
+
+* Widget Gallery - native, themed desktop widgets: Clock (digital/analog, 12h/24h), System Monitor
+  (CPU/RAM/network/GPU), Network throughput, an Audio Visualizer (WMP Legacy / Winamp styles) driven
+  by real system audio, Weather (temperature, wind/Beaufort, humidity, animated condition icon), and
+  disk usage. Each widget can be locked in place and remembers its position between sessions.
+
+* DeskZones & DeskContainers - FancyZones-style window snapping into custom zone layouts, plus
+  Stardock Fences-style containers for grouping files/folders/shortcuts on the desktop, with
+  drag-and-drop support.
+
+* Personalization (IconAtlas) - change the "This PC" and Recycle Bin (empty/full) icons and
+  per-folder icons through official Windows registry mechanisms only - no system file patching.
+
+* Workspace Profiles, Automation rules, a Command Palette, tray integration, and global hotkeys
+  round out the shell.
+
+The app runs entirely locally; the only network access is to fetch weather data from the free
+Open-Meteo/wttr.in APIs when a Weather widget is active.

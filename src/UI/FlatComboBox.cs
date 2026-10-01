@@ -16,6 +16,7 @@ namespace MotionDesk.UI
     public sealed class FlatComboBox : Panel
     {
         private readonly List<string> _items = new();
+        private IReadOnlyList<Image?>? _icons;
         private int _selectedIndex = -1;
         private bool _hover;
         private bool _open;
@@ -56,6 +57,19 @@ namespace MotionDesk.UI
         {
             _items.Clear();
             _items.AddRange(items);
+            _icons = null;
+            _selectedIndex = selected != null ? _items.IndexOf(selected) : (_items.Count > 0 ? 0 : -1);
+            Invalidate();
+        }
+
+        // Υπερφόρτωση με προαιρετικό μικρό εικονίδιο ανά αντικείμενο (π.χ. σημαίες γλώσσας) — ΟΧΙ
+        // μέσω emoji-στο-κείμενο (βλ. FlagIcons.cs για το γιατί), αλλά μέσω πραγματικού Image,
+        // ζωγραφισμένο εδώ ΚΑΙ στο ToolStripMenuItem.Image του dropdown.
+        public void SetItems(IEnumerable<string> items, IReadOnlyList<Image?> icons, string? selected = null)
+        {
+            _items.Clear();
+            _items.AddRange(items);
+            _icons = icons;
             _selectedIndex = selected != null ? _items.IndexOf(selected) : (_items.Count > 0 ? 0 : -1);
             Invalidate();
         }
@@ -71,7 +85,7 @@ namespace MotionDesk.UI
             // της μεθόδου, δηλαδή αμέσως μετά το Show(), οπότε το μενού εμφανίζεται για ένα
             // frame και χάνεται πριν προλάβει ο χρήστης να κάνει κλικ σε κάποιο item. Το
             // απελευθερώνουμε σωστά μέσω Closed, αφού πραγματικά κλείσει.
-            var menu = new ContextMenuStrip { Renderer = new FlatMenuRenderer(), BackColor = UiTheme.Surface, ShowImageMargin = false };
+            var menu = new ContextMenuStrip { Renderer = new FlatMenuRenderer(), BackColor = UiTheme.Surface, ShowImageMargin = _icons != null };
             menu.Font = ItemFont;
             // Ένα ToolStripMenuItem.Width δεν "πιάνει" όσο το ContextMenuStrip έχει AutoSize=true
             // (το layout ξαναϋπολογίζει το πλάτος από το κείμενο, αγνοώντας ρητή τιμή) — γι' αυτό
@@ -83,6 +97,7 @@ namespace MotionDesk.UI
             {
                 int idx = i;
                 var item = new ToolStripMenuItem(_items[i]) { Checked = idx == _selectedIndex, CheckOnClick = false, ForeColor = UiTheme.TextPrimary, AutoSize = false, Size = new Size(Width, itemHeight) };
+                if (_icons != null && i < _icons.Count && _icons[i] != null) { item.Image = _icons[i]; item.ImageScaling = ToolStripItemImageScaling.None; }
                 item.Click += (_, _) => SelectedIndex = idx;
                 menu.Items.Add(item);
             }
@@ -112,7 +127,13 @@ namespace MotionDesk.UI
             string text = SelectedItem ?? string.Empty;
             using var textBrush = new SolidBrush(UiTheme.TextPrimary);
             var textSize = g.MeasureString(text, ItemFont);
-            g.DrawString(text, ItemFont, textBrush, 12, (Height - textSize.Height) / 2f);
+            float textX = 12;
+            if (_icons != null && _selectedIndex >= 0 && _selectedIndex < _icons.Count && _icons[_selectedIndex] is { } icon)
+            {
+                g.DrawImage(icon, 12, (Height - icon.Height) / 2f, icon.Width, icon.Height);
+                textX = 12 + icon.Width + 8;
+            }
+            g.DrawString(text, ItemFont, textBrush, textX, (Height - textSize.Height) / 2f);
 
             using var chevronPen = new Pen(UiTheme.TextSecondary, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
             float cx = Width - 18, cy = Height / 2f - 1.5f;

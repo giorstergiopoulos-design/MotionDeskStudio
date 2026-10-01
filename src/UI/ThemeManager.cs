@@ -155,6 +155,11 @@ namespace MotionDesk.UI
             }
         }
 
+        // Δημόσιο "χειροκίνητο" trigger του Changed — χρειάζεται όταν αλλάζει κάτι που ΔΕΝ αγγίζει
+        // το ίδιο το ThemeManager.Current (π.χ. AppSettings.WidgetsThemeMode, το ανεξάρτητο θέμα
+        // widgets/DeskContainers) αλλά πρέπει να ξαναζωγραφιστούν όλα τα ήδη ανοιχτά widgets.
+        public static void NotifyChanged() => Changed?.Invoke();
+
         public static void RefreshFromWindows()
         {
             if (AppSettings.Load().ThemeMode == "Follow")

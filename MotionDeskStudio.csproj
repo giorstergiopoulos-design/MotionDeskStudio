@@ -13,10 +13,22 @@
     <ApplicationIcon>assets\MotionDesk.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.2.9</Version>
-    <AssemblyVersion>1.2.9.0</AssemblyVersion>
-    <FileVersion>1.2.9.0</FileVersion>
+    <Version>1.6.2</Version>
+    <AssemblyVersion>1.6.2.0</AssemblyVersion>
+    <FileVersion>1.6.2.0</FileVersion>
     <Product>MotionDesk Studio</Product>
+    <!-- Ζητήθηκε ρητά "η εφαρμογή να μην περνά ως false positive". Πραγματική, εγγυημένη λύση
+         είναι μόνο ένα πληρωμένο code-signing certificate (βλ. PROJECT_STATE.md — παραλείφθηκε
+         αυτόν τον γύρο, δεν υπάρχει certificate διαθέσιμο). Χωρίς αυτό, τα παρακάτω είναι η
+         καλύτερη δυνατή "υγιεινή" έκδοσης: πλήρη, ρεαλιστικά PE version metadata (οι
+         false-positive heuristics πολλών AV βαθμολογούν αρνητικά exe χωρίς Company/Copyright/
+         Description) — το project ήδη ΔΕΝ κάνει trimming/single-file/ReadyToRun/obfuscation
+         (άλλος συνηθισμένος λόγος false positive), οπότε δεν χρειάζεται αλλαγή εκεί.
+    -->
+    <Company>MotionDesk Team</Company>
+    <Authors>MotionDesk Team</Authors>
+    <Copyright>Copyright © 2026 MotionDesk Team</Copyright>
+    <Description>MotionDesk Studio — animated desktop wallpaper and workspace customization for Windows.</Description>
   </PropertyGroup>
 
   <!-- Single native UI stack: WinForms. WPF was removed to reduce framework overhead and complexity. -->
@@ -25,6 +37,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" ExcludeAssets="build;buildTransitive" GeneratePathProperty="true" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
   </ItemGroup>
@@ -61,6 +74,10 @@
     <None Include="assets\tray\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>assets\tray\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+    <None Include="LICENSE">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>LICENSE</Link>
     </None>
   </ItemGroup>
 

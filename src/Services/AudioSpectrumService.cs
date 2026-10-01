@@ -27,10 +27,31 @@ namespace MotionDesk.Services
         private readonly int[] _bandBinEdges;
         public bool IsAvailable => _capture != null;
 
+        // "Audio Enhancement" — ζητήθηκε ρητά, εμπνευσμένο από τη ΛΟΓΙΚΗ του FXSound (github.com/
+        // fxsound2/fxsound-app), όχι αντιγραφή: το FXSound τρέχει σαν system-wide Audio Processing
+        // Object (APO) καταχωρημένο στον driver graph των Windows — πραγματική αλλαγή του ήχου
+        // ΟΛΩΝ των εφαρμογών απαιτεί ακριβώς αυτόν τον μηχανισμό (ή εικονική κάρτα ήχου), κανένα
+        // από τα δύο δεν είναι εφικτό μέσα σε μια συνεδρία .NET/WinForms χωρίς signed driver
+        // component — ΔΕΝ προσποιούμαστε ότι το κάνουμε. Αυτό που είναι πραγματικό και δουλεύει:
+        // configurable per-band κέρδος (ίδια ιδέα με τα presets ενός equalizer) εφαρμοσμένο στην
+        // ΗΔΗ ζωντανή ανάλυση φάσματος (WASAPI loopback) — αλλάζει πραγματικά το πώς αποδίδεται/
+        // απεικονίζεται ο ήχος στον visualizer, με πραγματικά δεδομένα, όχι fake.
+        public float[] BandGains { get; }
+        public static readonly (string Name, string Description)[] Presets =
+        {
+            ("Flat", "Χωρίς ενίσχυση — ουδέτερη απεικόνιση."),
+            ("Bass Boost", "Έμφαση στις χαμηλές συχνότητες (μπάσα)."),
+            ("Treble Boost", "Έμφαση στις υψηλές συχνότητες (πρίμα)."),
+            ("Vocal Boost", "Έμφαση στις μεσαίες συχνότητες (φωνή)."),
+            ("Loudness", "Ενίσχυση μπάσων ΚΑΙ πρίμων μαζί (καμπύλη Fletcher-Munson, στυλ FXSound \"Loudness\")."),
+        };
+
         public AudioSpectrumService(int bandCount = 20)
         {
             BandCount = bandCount;
             _bands = new float[bandCount];
+            BandGains = new float[bandCount];
+            Array.Fill(BandGains, 1f);
             _bandBinEdges = BuildLogBandEdges(bandCount, FftLength / 2);
 
             try
@@ -123,11 +144,30 @@ namespace MotionDesk.Services
 
                 // dB-scale mapping: -60dB..0dB -> 0..1, τυπική αναλογία για audio visualizers.
                 double db = 20 * Math.Log10(mag + 1e-6);
-                double level = (db + 60) / 60.0;
+                double level = (db + 60) / 60.0 * BandGains[b];
                 _bands[b] = (float)Math.Clamp(level, 0.0, 1.0);
             }
 
             return _bands;
+        }
+
+        // Υπολογίζει την καμπύλη κέρδους ανά ζώνη για ένα preset — οι χαμηλές ζώνες (index 0) =
+        // μπάσα, οι υψηλές (index BandCount-1) = πρίμα, λογαριθμικά κατανεμημένες (ίδια σύμβαση
+        // με το BuildLogBandEdges παραπάνω).
+        public void ApplyPreset(string presetName)
+        {
+            for (int b = 0; b < BandCount; b++)
+            {
+                double t = b / (double)Math.Max(1, BandCount - 1); // 0 = πιο μπάσο, 1 = πιο πρίμο
+                BandGains[b] = presetName switch
+                {
+                    "Bass Boost" => (float)(1.0 + 0.9 * Math.Max(0, 1 - t * 2.2)),
+                    "Treble Boost" => (float)(1.0 + 0.9 * Math.Max(0, (t - 0.45) * 1.8)),
+                    "Vocal Boost" => (float)(1.0 + 0.7 * Math.Exp(-Math.Pow((t - 0.5) * 3.2, 2))),
+                    "Loudness" => (float)(1.0 + 0.55 * Math.Max(0, 1 - t * 2.0) + 0.45 * Math.Max(0, (t - 0.55) * 2.2)),
+                    _ => 1f, // "Flat"
+                };
+            }
         }
 
         public void Dispose()

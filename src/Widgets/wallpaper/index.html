@@ -5,26 +5,90 @@
 <style>
 html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background:#05070d}
 #waves{position:fixed;inset:0;width:100vw;height:100vh;display:block}
-#video{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;display:none;background:#000}
+.videoLayer{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;background:#000;opacity:0;transition:opacity 650ms ease-in-out}
+.videoLayer.active{opacity:1}
+.videoHidden{display:none!important}
 #pulse{position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.14),transparent 65%);opacity:0;transition:opacity 120ms linear}
 </style>
 </head>
 <body>
 <canvas id="waves"></canvas>
-<video id="video" autoplay muted playsinline></video>
+<video id="videoA" class="videoLayer" muted playsinline></video>
+<video id="videoB" class="videoLayer" muted playsinline></video>
 <div id="pulse"></div>
 <script>
 const canvas = document.getElementById('waves');
 const ctx = canvas.getContext('2d');
-const video = document.getElementById('video');
+// Δύο εναλλασσόμενα <video> layers (αντί για ένα) — ζητήθηκε ρητά "smooth transition χωρίς
+// κενή μαύρη/λευκή εικόνα" ανάμεσα σε βίντεο μιας playlist. Ένα μόνο <video> element αλλάζει
+// .src ακαριαία (ένα frame μαύρο/κενό μέχρι να φορτώσει το επόμενο). Με δύο layers, το επόμενο
+// βίντεο φορτώνει ΚΡΥΦΑ (opacity 0) στο ανενεργό layer, και μόλις είναι έτοιμο να παίξει,
+// γίνεται CSS crossfade (opacity transition, βλ. .videoLayer στο <style>) ανάμεσα στα δύο.
+const videoLayers = [document.getElementById('videoA'), document.getElementById('videoB')];
+let activeLayerIdx = 0;
+const activeVideo = () => videoLayers[activeLayerIdx];
+const nextVideo = () => videoLayers[1 - activeLayerIdx];
 const pulse = document.getElementById('pulse');
 
-let cfg = { mode: 'Waves', waveStyle: 'Ribbons', background: '#05070d', wave: '#0b3d91', peak: '#00d2ff', glow: '#00e5ff', highlight: '#ffffff', speed: 1, glowIntensity: 1, lineThickness: 1, performanceMode: 'Balanced' };
+let cfg = { mode: 'Waves', waveStyle: 'Ribbons', background: '#05070d', wave: '#0b3d91', peak: '#00d2ff', glow: '#00e5ff', highlight: '#ffffff', speed: 1, glowIntensity: 1, lineThickness: 1, performanceMode: 'Balanced', audioEnabled: false, audioVolume: 0.8, audioBassGain: 0, audioMidGain: 0, audioTrebleGain: 0 };
+
+// Πραγματικό DSP (όχι μόνο ανάλυση/visualizer) πάνω στον ΔΙΚΟ ΜΑΣ ήχο του wallpaper video, μέσω
+// Web Audio API — ζητήθηκε ρητά ως εναλλακτική στο system-wide Equalizer APO (εκείνο αλλάζει τον
+// ήχο ΟΛΩΝ των εφαρμογών, αυτό εδώ ΜΟΝΟ το βίντεο wallpaper, αλλά χωρίς κανένα εξωτερικό
+// εργαλείο/signing — δουλεύει ήδη μέσα στο Chromium/WebView2 engine που ούτως ή άλλως τρέχει).
+// Τα βίντεο ξεκινούν ΠΑΝΤΑ muted (εγγυημένο autoplay χωρίς user gesture, ίδιο κόλπο με πριν) και
+// ξε-σιγαίνονται ΜΟΝΟ αν cfg.audioEnabled, ΑΦΟΥ πετύχει το play() — ώστε ένα ενδεχόμενο autoplay
+// block να μην προκαλέσει ποτέ λάθος "video error" -> άσκοπο advanceVideo().
+let audioCtx = null;
+let audioChain = null; // { bass, mid, treble, gain, input }
+const routedVideoAudio = new WeakSet();
+
+function ensureAudioGraph() {
+    if (audioChain) return;
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const bass = audioCtx.createBiquadFilter(); bass.type = 'lowshelf'; bass.frequency.value = 150;
+        const mid = audioCtx.createBiquadFilter(); mid.type = 'peaking'; mid.frequency.value = 1000; mid.Q.value = 1;
+        const treble = audioCtx.createBiquadFilter(); treble.type = 'highshelf'; treble.frequency.value = 6000;
+        const gain = audioCtx.createGain();
+        bass.connect(mid); mid.connect(treble); treble.connect(gain); gain.connect(audioCtx.destination);
+        audioChain = { bass, mid, treble, gain, input: bass };
+    } catch (e) { audioChain = null; }
+}
+
+function routeVideoAudio(videoEl) {
+    ensureAudioGraph();
+    if (!audioChain || routedVideoAudio.has(videoEl)) return;
+    try {
+        const src = audioCtx.createMediaElementSource(videoEl);
+        src.connect(audioChain.input);
+        routedVideoAudio.add(videoEl);
+    } catch (e) { /* ήδη routed αλλού, ή περιορισμός browser — το wallpaper συνεχίζει κανονικά, απλά χωρίς ήχο */ }
+}
+
+function applyAudioConfig() {
+    videoLayers.forEach(routeVideoAudio);
+    if (audioChain) {
+        audioChain.bass.gain.value = cfg.audioBassGain || 0;
+        audioChain.mid.gain.value = cfg.audioMidGain || 0;
+        audioChain.treble.gain.value = cfg.audioTrebleGain || 0;
+        audioChain.gain.gain.value = cfg.audioVolume ?? 0.8;
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    }
+    // Ξε-σίγαση ΜΟΝΟ σε βίντεο που παίζουν ήδη επιτυχώς (readyState>=2 -> έχει ξεπεράσει το
+    // αρχικό muted-autoplay) — αποφεύγει το γνωστό Chromium autoplay-block σε μη-muted play().
+    videoLayers.forEach(v => { if (!v.paused && v.readyState >= 2) v.muted = !cfg.audioEnabled; });
+}
 let audioTimer = null;
 let waveLoopHandle = null;
 let lastFrameTime = 0;
 let waveOffset = 0;
 let particles = [];
+// Πραγματικά audio-reactive κύματα (όχι μόνο ένα radial glow overlay) — ζητήθηκε ρητά κατά το
+// πρότυπο του Lively Wallpaper/Wallpaper Engine. Ενημερώνεται στο refreshAudioPulse() και
+// διαβάζεται ζωντανά μέσα στο drawWaves/drawAurora/drawParticles για να διογκώνει το πλάτος
+// και να επιταχύνει προσωρινά την κίνηση στα μπάσα/δυνατά σημεία του ήχου.
+let audioBoost = 1;
 
 function bridge() { return window.chrome?.webview?.hostObjects?.wallpaper ?? null; }
 
@@ -83,7 +147,7 @@ function drawWaves(dtSeconds) {
     for (let layer = 0; layer < profile.layers; layer++) {
         const depth = layer / Math.max(1, profile.layers - 1 || 1);
         const baseline = h * (0.50 + layer * 0.115);
-        const amplitude = h * (0.055 + layer * 0.02);
+        const amplitude = h * (0.055 + layer * 0.02) * audioBoost;
         const phaseSpeed = (0.5 + layer * 0.32) * cfg.speed;
         const freq1 = 0.0020 + layer * 0.0005;
         const freq2 = 0.0037 - layer * 0.0003;
@@ -145,12 +209,12 @@ function drawWaves(dtSeconds) {
             grad.addColorStop(pos, colors[i % colors.length]);
         }
 
-        ctx.lineWidth = Math.max(1, (2.4 - layer * 0.35) * cfg.lineThickness);
+        ctx.lineWidth = Math.max(1, (2.4 - layer * 0.35) * cfg.lineThickness * audioBoost);
         ctx.strokeStyle = grad;
         ctx.lineJoin = 'round';
         if (profile.glow) {
             ctx.shadowColor = cfg.glow;
-            ctx.shadowBlur = profile.glowBlur * cfg.glowIntensity;
+            ctx.shadowBlur = profile.glowBlur * cfg.glowIntensity * audioBoost;
         } else {
             ctx.shadowBlur = 0;
         }
@@ -188,10 +252,10 @@ function drawAurora(dtSeconds) {
         const color = hexToRgb(bandColors[b % bandColors.length]);
         const grad = ctx.createLinearGradient(baseX - w * 0.12, 0, baseX + w * 0.12, 0);
         grad.addColorStop(0, rgbToStr(color, 0));
-        grad.addColorStop(0.5, rgbToStr(color, 0.32 * cfg.glowIntensity));
+        grad.addColorStop(0.5, rgbToStr(color, 0.32 * cfg.glowIntensity * audioBoost));
         grad.addColorStop(1, rgbToStr(color, 0));
         ctx.fillStyle = grad;
-        if (profile.glow) { ctx.shadowColor = cfg.glow; ctx.shadowBlur = 20 * cfg.glowIntensity; } else ctx.shadowBlur = 0;
+        if (profile.glow) { ctx.shadowColor = cfg.glow; ctx.shadowBlur = 20 * cfg.glowIntensity * audioBoost; } else ctx.shadowBlur = 0;
 
         ctx.beginPath();
         const segments = 8;
@@ -210,6 +274,108 @@ function drawAurora(dtSeconds) {
         }
         ctx.closePath();
         ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+}
+
+// Νέο, "τεχνολογικό" στυλ (τρίτη παραλλαγή στο Waves mode, δίπλα στο Ribbons/Aurora) — ζητήθηκε
+// ρητά ένα νέο, tech-themed κινούμενο φόντο. Πλέγμα κυκλώματος (circuit-board) που κυλάει αργά
+// προς τα κάτω, με "παλμούς δεδομένων" που ταξιδεύουν κατά μήκος τυχαίων γραμμών του πλέγματος
+// και λαμπερούς κόμβους σε τυχαία σημεία τομής — ίδιο σύστημα χρωμάτων/παλετών με τα άλλα στυλ,
+// άρα κληρονομεί αυτόματα όλες τις υπάρχουσες αποχρώσεις (Light/Dark παλέτες).
+let techPulses = [];
+let techNodes = [];
+let techGridOffset = 0;
+function ensureTechGrid(w, h, cellSize) {
+    const cols = Math.ceil(w / cellSize) + 1;
+    const rows = Math.ceil(h / cellSize) + 2;
+    if (techNodes.length === cols * rows) return;
+    techNodes = [];
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (Math.random() < 0.12) techNodes.push({ col: c, row: r, phase: Math.random() * Math.PI * 2 });
+        }
+    }
+    techPulses = Array.from({ length: Math.max(4, Math.floor(cols / 3)) }, () => spawnTechPulse(cols, rows));
+}
+function spawnTechPulse(cols, rows) {
+    const horizontal = Math.random() < 0.5;
+    return {
+        horizontal,
+        line: Math.floor(Math.random() * (horizontal ? rows : cols)),
+        t: Math.random(),
+        speed: 0.15 + Math.random() * 0.25
+    };
+}
+function drawTechGrid(dtSeconds) {
+    const profile = perfProfile();
+    const w = window.innerWidth, h = window.innerHeight;
+    const cellSize = Math.max(48, Math.min(96, w / 22));
+    techGridOffset = (techGridOffset + dtSeconds * 14 * cfg.speed) % cellSize;
+    ensureTechGrid(w, h, cellSize);
+
+    const bg = hexToRgb(cfg.background);
+    ctx.clearRect(0, 0, w, h);
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+    bgGrad.addColorStop(0, rgbToStr(bg, 1));
+    bgGrad.addColorStop(1, rgbToStr(mix(bg, hexToRgb(cfg.wave), 0.18), 1));
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    const cols = Math.ceil(w / cellSize) + 1;
+    const rows = Math.ceil(h / cellSize) + 2;
+    const lineColor = hexToRgba(cfg.wave, 0.35);
+    ctx.strokeStyle = lineColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let c = 0; c <= cols; c++) {
+        const x = c * cellSize;
+        ctx.moveTo(x, 0); ctx.lineTo(x, h);
+    }
+    for (let r = 0; r <= rows; r++) {
+        const y = r * cellSize - techGridOffset;
+        ctx.moveTo(0, y); ctx.lineTo(w, y);
+    }
+    ctx.stroke();
+
+    // Λαμπεροί κόμβοι σε τυχαία σημεία τομής — απαλό παλλόμενο φως, ίδιο πνεύμα με τα LED
+    // ενός πραγματικού κυκλώματος.
+    for (const node of techNodes) {
+        const x = node.col * cellSize;
+        const y = node.row * cellSize - techGridOffset;
+        if (y < -cellSize || y > h + cellSize) continue;
+        const pulse = 0.4 + 0.6 * Math.abs(Math.sin(node.phase + waveOffset * 1.5));
+        ctx.beginPath();
+        ctx.arc(x, y, 2.2 * audioBoost, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(cfg.peak, 0.5 + pulse * 0.5);
+        if (profile.glow) { ctx.shadowColor = cfg.glow; ctx.shadowBlur = 10 * cfg.glowIntensity * pulse; } else ctx.shadowBlur = 0;
+        ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // "Παλμοί δεδομένων" που ταξιδεύουν κατά μήκος γραμμών του πλέγματος — φωτεινή κουκκίδα με
+    // κοντή, ξεθωριασμένη ουρά, ίδια αίσθηση με animated κυκλώματα (π.χ. motherboard traces).
+    waveOffset += dtSeconds * 0.3 * cfg.speed;
+    for (const p of techPulses) {
+        p.t += dtSeconds * p.speed * cfg.speed * audioBoost;
+        if (p.t > 1) { p.t = 0; Object.assign(p, spawnTechPulse(cols, rows)); }
+
+        const x = p.horizontal ? p.t * w : p.line * cellSize;
+        const y = p.horizontal ? p.line * cellSize - techGridOffset : p.t * h;
+        if (y < -cellSize || y > h + cellSize) continue;
+
+        const tailLen = 26;
+        const dx = p.horizontal ? 1 : 0, dy = p.horizontal ? 0 : 1;
+        const grad = ctx.createLinearGradient(x - dx * tailLen, y - dy * tailLen, x, y);
+        grad.addColorStop(0, hexToRgba(cfg.glow, 0));
+        grad.addColorStop(1, hexToRgba(cfg.highlight, 0.9));
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 2 * cfg.lineThickness;
+        ctx.beginPath();
+        ctx.moveTo(x - dx * tailLen, y - dy * tailLen);
+        ctx.lineTo(x, y);
+        if (profile.glow) { ctx.shadowColor = cfg.glow; ctx.shadowBlur = 12 * cfg.glowIntensity; } else ctx.shadowBlur = 0;
+        ctx.stroke();
     }
     ctx.shadowBlur = 0;
 }
@@ -246,7 +412,7 @@ function drawParticles(dtSeconds) {
 
     const palette = [cfg.peak, cfg.glow, cfg.highlight];
     for (const p of particles) {
-        p.y -= p.speed * dtSeconds * cfg.speed;
+        p.y -= p.speed * dtSeconds * cfg.speed * audioBoost;
         p.x += Math.sin(p.phase + p.y * 0.01) * p.drift * dtSeconds;
         p.phase += dtSeconds;
         if (p.y < -10) { p.y = h + 10; p.x = Math.random() * w; }
@@ -255,9 +421,9 @@ function drawParticles(dtSeconds) {
 
         const twinkle = 0.5 + 0.5 * Math.sin(p.phase * 2);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.r * audioBoost, 0, Math.PI * 2);
         ctx.fillStyle = rgbToStr(hexToRgb(palette[p.colorIdx]), 0.35 + twinkle * 0.45);
-        if (profile.glow) { ctx.shadowColor = cfg.glow; ctx.shadowBlur = 8 * cfg.glowIntensity; } else ctx.shadowBlur = 0;
+        if (profile.glow) { ctx.shadowColor = cfg.glow; ctx.shadowBlur = 8 * cfg.glowIntensity * audioBoost; } else ctx.shadowBlur = 0;
         ctx.fill();
     }
     ctx.shadowBlur = 0;
@@ -271,6 +437,7 @@ function waveLoop(now) {
         const dt = Math.min(0.1, (now - lastFrameTime) / 1000 || 0.016);
         if (cfg.mode === 'Particles') drawParticles(dt);
         else if (cfg.waveStyle === 'Aurora') drawAurora(dt);
+        else if (cfg.waveStyle === 'TechGrid') drawTechGrid(dt);
         else drawWaves(dt);
         lastFrameTime = now;
     }
@@ -278,8 +445,7 @@ function waveLoop(now) {
 }
 
 function startWaves() {
-    video.style.display = 'none';
-    video.pause();
+    videoLayers.forEach(v => { v.classList.add('videoHidden'); v.classList.remove('active'); v.pause(); });
     canvas.style.display = 'block';
     if (!waveLoopHandle) waveLoopHandle = requestAnimationFrame(waveLoop);
 }
@@ -296,9 +462,48 @@ async function playCurrentVideo() {
     if (!uri) { startWaves(); return; }
 
     stopWaves();
-    video.style.display = 'block';
-    video.src = uri;
-    video.play().catch(() => advanceVideo());
+    videoLayers.forEach(v => v.classList.remove('videoHidden'));
+    const layer = activeVideo();
+    layer.src = uri;
+    layer.classList.add('active');
+    try { await layer.play(); } catch (e) { advanceVideo(); }
+}
+
+// Φορτώνει το επόμενο βίντεο στο ΚΡΥΦΟ layer και κάνει crossfade μόλις είναι έτοιμο να παίξει
+// — αντί να κόβει απότομα το προηγούμενο (παλιά συμπεριφορά: ένα .src swap σε ΕΝΑ video, με
+// αναπόφευκτο ένα κενό/μαύρο frame ανάμεσα).
+function crossfadeTo(uri) {
+    const incoming = nextVideo();
+    const outgoing = activeVideo();
+    incoming.classList.remove('videoHidden');
+
+    let started = false;
+    let safetyTimer = null;
+    const startPlayback = () => {
+        if (started) return;
+        started = true;
+        if (safetyTimer) clearTimeout(safetyTimer);
+        incoming.play().catch(() => advanceVideo());
+        incoming.classList.add('active');
+        outgoing.classList.remove('active');
+        activeLayerIdx = 1 - activeLayerIdx;
+        // Το παλιό βίντεο σταματάει μόνο ΑΦΟΥ ολοκληρωθεί το CSS fade (650ms), ώστε να μην κοπεί
+        // απότομα ενώ είναι ακόμα ημι-ορατό στη μετάβαση.
+        setTimeout(() => { outgoing.pause(); }, 700);
+    };
+
+    // ΔΙΟΡΘΩΣΗ πραγματικού bug ("δεν αναπαράγονται το ένα μετά το άλλο" — η playlist κολλούσε
+    // μετά την πρώτη μετάβαση): το readyState ΑΜΕΣΩΣ μετά την ανάθεση .src μπορεί ΑΚΟΜΑ να
+    // αντανακλά το ΠΡΟΗΓΟΥΜΕΝΟ βίντεο αυτού του (επαναχρησιμοποιούμενου) layer — η αλλαγή .src
+    // δεν μηδενίζει συγχρονισμένα το readyState, οπότε ο παλιός έλεγχος `readyState >= 2`
+    // μπορούσε να περάσει λανθασμένα ΠΡΙΝ φορτωθεί πραγματικά το νέο βίντεο, αφήνοντας τη
+    // μετάβαση σε ημιτελή κατάσταση. Τώρα περιμένουμε ΠΑΝΤΑ ένα φρέσκο 'canplay' μετά από ρητό
+    // .load(), ΚΑΙ προσθέσαμε ένα safety-timeout (5s) — αν ένα βίντεο αποτύχει να φορτώσει για
+    // οποιονδήποτε λόγο, η playlist προχωράει στο επόμενο αντί να κολλήσει για πάντα.
+    incoming.addEventListener('canplay', startPlayback, { once: true });
+    safetyTimer = setTimeout(startPlayback, 5000);
+    incoming.src = uri;
+    incoming.load();
 }
 
 async function advanceVideo() {
@@ -306,12 +511,13 @@ async function advanceVideo() {
     if (!b) return;
     const uri = await b.AdvanceVideo();
     if (!uri) { startWaves(); return; }
-    video.src = uri;
-    video.play().catch(() => advanceVideo());
+    crossfadeTo(uri);
 }
 
-video.addEventListener('ended', advanceVideo);
-video.addEventListener('error', advanceVideo);
+videoLayers.forEach(v => {
+    v.addEventListener('ended', () => { if (v === activeVideo()) advanceVideo(); });
+    v.addEventListener('error', () => { if (v === activeVideo()) advanceVideo(); });
+});
 
 async function refreshAudioPulse() {
     const b = bridge();
@@ -320,6 +526,11 @@ async function refreshAudioPulse() {
         const peak = await b.GetAudioPeak();
         const scale = cfg.performanceMode === 'High' ? 1.6 : (cfg.performanceMode === 'Balanced' ? 1.0 : 0.5);
         pulse.style.opacity = Math.min(0.6, peak * scale).toFixed(2);
+        // Ομαλή (attack γρήγορο, release αργό) διόγκωση του ίδιου του κύματος/particles/aurora —
+        // όχι μόνο το ξεχωριστό radial glow overlay από πάνω. target 1.0 = ησυχία, έως ~1.6 στα
+        // δυνατά σημεία του ήχου.
+        const target = 1 + Math.min(0.6, peak * scale);
+        audioBoost = target > audioBoost ? target : audioBoost * 0.90 + target * 0.10;
     } catch (e) { /* ignore */ }
 }
 
@@ -344,11 +555,11 @@ window.motionDeskRefresh = async () => {
 window.motionDeskSetPaused = (paused) => {
     if (paused) {
         if (waveLoopHandle) { cancelAnimationFrame(waveLoopHandle); waveLoopHandle = null; }
-        video.pause();
+        activeVideo().pause();
         clearInterval(audioTimer);
         audioTimer = null;
     } else {
-        if (cfg.mode === 'Video') { video.play().catch(() => {}); }
+        if (cfg.mode === 'Video') { activeVideo().play().catch(() => {}); }
         else if (!waveLoopHandle) { waveLoopHandle = requestAnimationFrame(waveLoop); }
         if (!audioTimer && cfg.performanceMode !== 'Battery') audioTimer = setInterval(refreshAudioPulse, cfg.performanceMode === 'High' ? 250 : 600);
     }

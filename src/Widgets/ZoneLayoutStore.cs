@@ -90,10 +90,32 @@ namespace MotionDesk.Widgets
 
         // Δημιουργεί ένα layout από ένα από τα 6 templates του πραγματικού FancyZones Editor.
         // n1/n2 σημαίνουν διαφορετικά πράγματα ανά template (στήλες/σειρές, ή cols×rows στο Grid).
+        // ΔΙΟΡΘΩΣΗ πραγματικού bug (v1.5.0 request — "δεν γίνονται stretch τα παράθυρα στα
+        // περιθώρια της οθόνης"): το gap/2 εφαρμοζόταν ΣΥΜΜΕΤΡΙΚΑ σε ΟΛΕΣ τις πλευρές κάθε ζώνης,
+        // ΑΚΟΜΑ και στις πλευρές που ακουμπάνε την ίδια την άκρη της οθόνης (όπου δεν υπάρχει
+        // διπλανή ζώνη να δικαιολογεί κενό). Έτσι ακόμα και με τέλεια αντιστάθμιση του αόρατου
+        // περιθωρίου του DWM (βλ. ZoneSnapEngine.AdjustForInvisibleFrame), το ΠΑΡΑΘΥΡΟ κουμπώνει
+        // σωστά στη ζώνη, αλλά η ίδια η ζώνη ποτέ δεν έφτανε μέχρι την άκρη — γι' αυτό ο χρήστης
+        // έβλεπε ένα σταθερό κενό (~0.6% της οθόνης) ακόμα και μετά τη διόρθωση του DWM margin.
+        // Λύση: το gap μπαίνει ΜΟΝΟ ανάμεσα σε δύο ζώνες (εσωτερικές γραμμές πλέγματος) — οι
+        // πλευρές που ακουμπάνε X=0/Y=0/X+W=1/Y+H=1 (πραγματική άκρη οθόνης) δεν παίρνουν ΠΟΤΕ
+        // padding. Το "Priority Grid" παρακάτω ήταν ήδη γραμμένο έτσι χειροκίνητα (0/1 anchors) —
+        // δεν είχε ποτέ αυτό το bug, μόνο τα loop-based templates (Columns/Rows/Grid/Custom).
         public static ZoneLayoutData BuildTemplate(string template, int n1 = 3, int n2 = 2)
         {
             var zones = new List<ZoneRect>();
             const double gap = 0.012; // μικρό, ορατό κενό ανάμεσα σε ζώνες, όπως το πραγματικό FancyZones
+
+            // Άκρα ενός κελιού [index, index+1) πάνω σε "count" ίσα κομμάτια του 0..1, με gap/2
+            // ΜΟΝΟ στις εσωτερικές πλευρές (index>0 για την αρχή, index<count-1 για το τέλος).
+            static (double start, double length) CellRange(int index, int count, double gap)
+            {
+                double rawStart = index * (1.0 / count);
+                double rawEnd = (index + 1) * (1.0 / count);
+                double start = index == 0 ? 0.0 : rawStart + gap / 2;
+                double end = index == count - 1 ? 1.0 : rawEnd - gap / 2;
+                return (start, end - start);
+            }
 
             switch (template)
             {
@@ -103,13 +125,17 @@ namespace MotionDesk.Widgets
                 case "Focus":
                     // Απλοποιημένο για v1: μία μεγάλη, κεντραρισμένη ζώνη (το πραγματικό Focus
                     // είναι μια στοίβα από ζώνες που κάνεις κύκλο με Ctrl+Alt+βελάκια — πολύ
-                    // μεγαλύτερο scope για ένα πρώτο πέρασμα).
+                    // μεγαλύτερο scope για ένα πρώτο πέρασμα). Το 10% περιθώριο εδώ είναι σκόπιμο
+                    // (κεντραρισμένη ζώνη, ΟΧΙ ακουμπισμένη στην άκρη) — δεν αφορά αυτό το fix.
                     zones.Add(new ZoneRect { X = 0.1, Y = 0.1, Width = 0.8, Height = 0.8 });
                     break;
 
                 case "Columns":
                     for (int i = 0; i < n1; i++)
-                        zones.Add(new ZoneRect { X = i * (1.0 / n1) + gap / 2, Y = 0, Width = 1.0 / n1 - gap, Height = 1.0 });
+                    {
+                        var (x, w) = CellRange(i, n1, gap);
+                        zones.Add(new ZoneRect { X = x, Y = 0, Width = w, Height = 1.0 });
+                    }
                     break;
 
                 case "Rows":
@@ -117,20 +143,21 @@ namespace MotionDesk.Widgets
                     // σειρές (ίδια με το Grid παρακάτω), ώστε το ίδιο ζευγάρι steppers στο editor
                     // να οδηγεί σωστά όποιο template κι αν είναι επιλεγμένο.
                     for (int i = 0; i < n2; i++)
-                        zones.Add(new ZoneRect { X = 0, Y = i * (1.0 / n2) + gap / 2, Width = 1.0, Height = 1.0 / n2 - gap });
+                    {
+                        var (y, h) = CellRange(i, n2, gap);
+                        zones.Add(new ZoneRect { X = 0, Y = y, Width = 1.0, Height = h });
+                    }
                     break;
 
                 case "Grid":
                 case "Custom":
                     for (int r = 0; r < n2; r++)
                         for (int c = 0; c < n1; c++)
-                            zones.Add(new ZoneRect
-                            {
-                                X = c * (1.0 / n1) + gap / 2,
-                                Y = r * (1.0 / n2) + gap / 2,
-                                Width = 1.0 / n1 - gap,
-                                Height = 1.0 / n2 - gap
-                            });
+                        {
+                            var (x, w) = CellRange(c, n1, gap);
+                            var (y, h) = CellRange(r, n2, gap);
+                            zones.Add(new ZoneRect { X = x, Y = y, Width = w, Height = h });
+                        }
                     break;
 
                 case "Priority Grid":
