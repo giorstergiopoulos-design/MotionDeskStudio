@@ -177,6 +177,9 @@ namespace MotionDesk.Widgets
         public HashSet<string> DisabledVideoPaths { get; set; } = new();
         public bool Shuffle { get; set; } = false;
         public int CurrentVideoIndex { get; set; } = 0;
+        // Shuffle "σακούλα": τα βίντεο που έχουν ήδη παιχτεί στον τρέχοντα κύκλο. Αποθηκεύεται στο JSON
+        // (το WallpaperSettings φορτώνεται από την αρχή σε κάθε κλήση, άρα μνήμη μόνο σε πεδίο δεν αρκεί).
+        public List<string> ShuffleHistory { get; set; } = new();
 
         // Ήχος wallpaper video — ζητήθηκε ρητά, πραγματικό DSP (Web Audio API μέσα στο
         // wallpaper/index.html) πάνω στον ΔΙΚΟ ΜΑΣ ήχο του video wallpaper (όχι system-wide, βλ.
@@ -266,23 +269,54 @@ namespace MotionDesk.Widgets
 
         public void SetVideoEnabled(string path, bool enabled)
         {
+            var current = CurrentPlaylistFile();
             if (enabled) DisabledVideoPaths.Remove(path);
             else DisabledVideoPaths.Add(path);
+            KeepCurrentVideo(current);
+        }
+
+        // Ενεργοποίηση/απενεργοποίηση ΟΛΩΝ των βίντεο της βιβλιοθήκης με μία κίνηση.
+        public void SetAllVideosEnabled(bool enabled)
+        {
+            var current = CurrentPlaylistFile();
+            if (enabled) DisabledVideoPaths.Clear();
+            else foreach (var p in VideoPaths) DisabledVideoPaths.Add(p);
+            KeepCurrentVideo(current);
+        }
+
+        // Ο δείκτης CurrentVideoIndex αναφέρεται στη λίστα των ΕΝΕΡΓΩΝ βίντεο: όταν αυτή αλλάζει (checkbox/αφαίρεση)
+        // οι θέσεις μετακινούνται και το τρέχον βίντεο άλλαζε "μόνο του". Ξαναδείχνουμε το ίδιο αρχείο αν παραμένει ενεργό.
+        public void KeepCurrentVideo(string? current)
+        {
+            var playable = PlayableVideos();
+            var idx = current == null ? -1 : playable.FindIndex(p => string.Equals(p, current, StringComparison.OrdinalIgnoreCase));
+            CurrentVideoIndex = idx >= 0 ? idx : 0;
         }
 
         public void AdvancePlaylist()
         {
             var playable = PlayableVideos();
-            if (playable.Count == 0) { CurrentVideoIndex = 0; return; }
+            if (playable.Count == 0) { CurrentVideoIndex = 0; ShuffleHistory.Clear(); return; }
 
             if (Shuffle && playable.Count > 1)
             {
-                int next;
-                do { next = Random.Shared.Next(playable.Count); } while (next == CurrentVideoIndex);
-                CurrentVideoIndex = next;
+                // Τυχαία σειρά ΧΩΡΙΣ επανάληψη μέσα στον κύκλο: παίζουν όλα τα ενεργά βίντεο μία φορά πριν ξαναπαίξει κάποιο
+                // (πριν: καθαρά τυχαία επιλογή με επανάληψη, κάποια βίντεο μπορούσαν να παίζουν συνέχεια και άλλα σχεδόν ποτέ).
+                var current = CurrentPlaylistFile();
+                if (current != null && !ShuffleHistory.Contains(current, StringComparer.OrdinalIgnoreCase)) ShuffleHistory.Add(current);
+                var candidates = playable.Where(p => !ShuffleHistory.Contains(p, StringComparer.OrdinalIgnoreCase)).ToList();
+                if (candidates.Count == 0)
+                {
+                    ShuffleHistory.Clear();
+                    if (current != null) ShuffleHistory.Add(current);
+                    candidates = playable.Where(p => !string.Equals(p, current, StringComparison.OrdinalIgnoreCase)).ToList();
+                }
+                var pick = candidates[Random.Shared.Next(candidates.Count)];
+                CurrentVideoIndex = playable.IndexOf(pick);
             }
             else
             {
+                ShuffleHistory.Clear();
                 CurrentVideoIndex = (CurrentVideoIndex + 1) % playable.Count;
             }
         }
@@ -783,6 +817,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
         {
             var settings = WallpaperSettings.Load();
             settings.Shuffle = shuffle;
+            settings.ShuffleHistory.Clear();
             settings.Save();
         }
 
@@ -812,11 +847,23 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
         public void RemoveVideo(string path)
         {
             var settings = WallpaperSettings.Load();
+            var current = settings.CurrentPlaylistFile();
             settings.VideoPaths.Remove(path);
             // Το legacy VideoPath ξαναπροσθέτει το αρχείο στο playlist σε κάθε Load() (MigrateLegacyVideoPath) —
             // χωρίς αυτό, ένα βίντεο που αφαιρούσες "επέστρεφε" μόνο του.
             if (string.Equals(settings.VideoPath, path, StringComparison.OrdinalIgnoreCase)) settings.VideoPath = string.Empty;
             settings.DisabledVideoPaths.Remove(path);
+            settings.ShuffleHistory.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+            settings.KeepCurrentVideo(current);
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetAllVideosEnabled(bool enabled)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.SetAllVideosEnabled(enabled);
+            settings.ShuffleHistory.Clear();
             settings.Save();
             _ = RefreshAllAsync();
         }
@@ -825,6 +872,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
         {
             var settings = WallpaperSettings.Load();
             settings.VideoPaths.Clear();
+            settings.ShuffleHistory.Clear();
             settings.VideoPath = string.Empty;
             settings.Mode = "Waves";
             settings.Save();

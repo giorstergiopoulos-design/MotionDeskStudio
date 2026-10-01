@@ -1046,6 +1046,12 @@ namespace MotionDesk.UI
                 ("Add", LocalizationManager.T("Wallpaper.AddFolderButton"), (_, _) => { ChooseWallpaperFolder(); ShowWallpaper(); }),
                 ("Delete", LocalizationManager.T("Wallpaper.ClearPlaylist"), (_, _) => { WallpaperHostEngine.Instance.ClearVideo(); ShowWallpaper(); }));
 
+            // Επιλογή ποια από τα φορτωμένα βίντεο (αρχεία ή περιεχόμενο φακέλου) θα αναπαράγονται: όλα / κανένα με ένα κλικ,
+            // και μετά τικάρισμα μεμονωμένων γραμμών παρακάτω (κλικ και πάνω στο όνομα).
+            AddIconButtonGrid(panel,
+                ("Restore", LocalizationManager.T("Wallpaper.SelectAll"), (_, _) => { WallpaperHostEngine.Instance.SetAllVideosEnabled(true); ShowWallpaper(); }),
+                ("Close", LocalizationManager.T("Wallpaper.SelectNone"), (_, _) => { WallpaperHostEngine.Instance.SetAllVideosEnabled(false); ShowWallpaper(); }));
+
             // Πραγματική λίστα με ΟΛΑ τα φορτωμένα βίντεο (όχι μόνο ένα στατιστικό "N αρχεία") —
             // κάθε γραμμή έχει το όνομα αρχείου και ένα ✕ για αφαίρεση, ζητήθηκε ρητά "να μπορεί
             // να προσθαφαιρεί αρχεία βίντεο" απευθείας από τη βιβλιοθήκη.
@@ -1074,6 +1080,7 @@ namespace MotionDesk.UI
                 removeBtn.MouseEnter += (_, _) => removeBtn.ForeColor = Color.FromArgb(231, 76, 60);
                 removeBtn.MouseLeave += (_, _) => removeBtn.ForeColor = UiTheme.TextSecondary;
                 removeBtn.Click += (_, _) => { WallpaperHostEngine.Instance.RemoveVideo(videoPath); ShowWallpaper(); };
+                nameLabel.Click += (_, _) => enabledCheck.Checked = !enabledCheck.Checked;
                 row.Controls.Add(enabledCheck);
                 row.Controls.Add(nameLabel);
                 row.Controls.Add(removeBtn);

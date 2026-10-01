@@ -259,3 +259,8 @@ Tests: no automated test project exists in this repo — verification this sessi
 
 ## Last Updated
 2026-09-29
+
+## Wallpaper playlist update (2026-10-01, post-1.6.8, compile-checked only, NOT click-tested)
+- Shuffle now plays every active video once per cycle (persisted `ShuffleHistory` in wallpaper.json) instead of pure random with repeats.
+- Toggling/removing a video keeps the currently playing file (index no longer shifts).
+- New "Select all"/"Select none" buttons + clicking a video name toggles its checkbox (Wallpaper.SelectAll/SelectNone, 443 keys el/en).
