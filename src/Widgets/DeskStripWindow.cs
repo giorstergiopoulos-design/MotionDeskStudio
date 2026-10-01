@@ -222,8 +222,8 @@ namespace MotionDesk.Widgets
                 if (e.Button == MouseButtons.Right)
                 {
                     var menu = new ContextMenuStrip();
-                    menu.Items.Add("Open", null, (_, _) => Launch());
-                    menu.Items.Add("Unpin from DeskStrip", null, (_, _) => _onRemove(_path));
+                    menu.Items.Add(LocalizationManager.T("DCMenu.Open"), null, (_, _) => Launch());
+                    menu.Items.Add(LocalizationManager.T("DCMenu.Unpin"), null, (_, _) => _onRemove(_path));
                     menu.Show(this, e.Location);
                 }
             };

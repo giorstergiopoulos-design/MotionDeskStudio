@@ -206,17 +206,17 @@ namespace MotionDesk.Widgets
             // ΟΧΙ "using": το Show() δεν μπλοκάρει — immediate Dispose μετά έκανε το μενού να
             // κλείνει πριν προλάβει ο χρήστης να διαλέξει κάτι (flash-and-vanish).
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Rename container…", null, (_, _) => RenameContainer());
+            menu.Items.Add(LocalizationManager.T("DCMenu.Rename"), null, (_, _) => RenameContainer());
 
-            var viewMenu = new ToolStripMenuItem("View");
-            var rollUpItem = new ToolStripMenuItem("Roll-up container") { Checked = IsRolledUp };
+            var viewMenu = new ToolStripMenuItem(LocalizationManager.T("DCMenu.View"));
+            var rollUpItem = new ToolStripMenuItem(LocalizationManager.T("DCMenu.RollUp")) { Checked = IsRolledUp };
             rollUpItem.Click += (_, _) => ToggleRollUp(save: true);
             viewMenu.DropDownItems.Add(rollUpItem);
-            var excludeItem = new ToolStripMenuItem("Exclude from quick-hide") { Checked = ExcludeFromQuickHide };
+            var excludeItem = new ToolStripMenuItem(LocalizationManager.T("DCMenu.ExcludeQuickHide")) { Checked = ExcludeFromQuickHide };
             excludeItem.Click += (_, _) => { ExcludeFromQuickHide = !ExcludeFromQuickHide; QueueSave(); };
             viewMenu.DropDownItems.Add(excludeItem);
 
-            var opacityMenu = new ToolStripMenuItem("Opacity");
+            var opacityMenu = new ToolStripMenuItem(LocalizationManager.T("DCMenu.Opacity"));
             foreach (int pct in new[] { 100, 85, 70, 55, 40, 25 })
             {
                 var opacityItem = new ToolStripMenuItem($"{pct}%") { Checked = Math.Abs(Opacity * 100 - pct) < 1 };
@@ -225,46 +225,46 @@ namespace MotionDesk.Widgets
             }
             viewMenu.DropDownItems.Add(opacityMenu);
             viewMenu.DropDownItems.Add(new ToolStripSeparator());
-            viewMenu.DropDownItems.Add("Copy color", null, (_, _) => { try { Clipboard.SetText(ColorTranslator.ToHtml(AccentColor)); } catch { } });
-            viewMenu.DropDownItems.Add("Edit color…", null, (_, _) => EditColor());
+            viewMenu.DropDownItems.Add(LocalizationManager.T("DCMenu.CopyColor"), null, (_, _) => { try { Clipboard.SetText(ColorTranslator.ToHtml(AccentColor)); } catch { } });
+            viewMenu.DropDownItems.Add(LocalizationManager.T("DCMenu.EditColor"), null, (_, _) => EditColor());
             menu.Items.Add(viewMenu);
 
-            var sortMenu = new ToolStripMenuItem("Sort by");
+            var sortMenu = new ToolStripMenuItem(LocalizationManager.T("DCMenu.SortBy"));
             void AddSortOption(string label, ContainerSortMode mode)
             {
                 var item = new ToolStripMenuItem(label) { Checked = _sortMode == mode };
                 item.Click += (_, _) => { _sortMode = mode; ApplySort(); QueueSave(); };
                 sortMenu.DropDownItems.Add(item);
             }
-            AddSortOption("None", ContainerSortMode.None);
-            AddSortOption("Name", ContainerSortMode.Name);
-            AddSortOption("Size", ContainerSortMode.Size);
-            AddSortOption("Item type", ContainerSortMode.ItemType);
-            AddSortOption("Date modified", ContainerSortMode.DateModified);
-            AddSortOption("Date created", ContainerSortMode.DateCreated);
-            AddSortOption("Date added to container", ContainerSortMode.DateAdded);
-            AddSortOption("Number of times opened", ContainerSortMode.TimesOpened);
+            AddSortOption(LocalizationManager.T("DCMenu.SortNone"), ContainerSortMode.None);
+            AddSortOption(LocalizationManager.T("DCMenu.SortName"), ContainerSortMode.Name);
+            AddSortOption(LocalizationManager.T("DCMenu.SortSize"), ContainerSortMode.Size);
+            AddSortOption(LocalizationManager.T("DCMenu.SortType"), ContainerSortMode.ItemType);
+            AddSortOption(LocalizationManager.T("DCMenu.SortModified"), ContainerSortMode.DateModified);
+            AddSortOption(LocalizationManager.T("DCMenu.SortCreated"), ContainerSortMode.DateCreated);
+            AddSortOption(LocalizationManager.T("DCMenu.SortAdded"), ContainerSortMode.DateAdded);
+            AddSortOption(LocalizationManager.T("DCMenu.SortOpened"), ContainerSortMode.TimesOpened);
             sortMenu.DropDownItems.Add(new ToolStripSeparator());
-            var organizeMenu = new ToolStripMenuItem("Organize");
-            var defaultItem = new ToolStripMenuItem("Place all new icons in this container by default") { Checked = DeskContainerHostEngine.Instance.DefaultContainerId == _containerId };
+            var organizeMenu = new ToolStripMenuItem(LocalizationManager.T("DCMenu.Organize"));
+            var defaultItem = new ToolStripMenuItem(LocalizationManager.T("DCMenu.DefaultContainer")) { Checked = DeskContainerHostEngine.Instance.DefaultContainerId == _containerId };
             defaultItem.Click += (_, _) =>
             {
                 DeskContainerHostEngine.Instance.DefaultContainerId = defaultItem.Checked ? null : _containerId;
                 QueueSave();
             };
             organizeMenu.DropDownItems.Add(defaultItem);
-            organizeMenu.DropDownItems.Add("Manage sorting rules…", null, (_, _) => ShowSortingRulesInfo());
+            organizeMenu.DropDownItems.Add(LocalizationManager.T("DCMenu.ManageRules"), null, (_, _) => ShowSortingRulesInfo());
             sortMenu.DropDownItems.Add(organizeMenu);
             menu.Items.Add(sortMenu);
 
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Add files/folder…", null, (_, _) => AddViaDialog());
-            var lockItem = new ToolStripMenuItem(IsLocked ? "Unlock position" : "Lock position (save layout)");
+            menu.Items.Add(LocalizationManager.T("DCMenu.AddFiles"), null, (_, _) => AddViaDialog());
+            var lockItem = new ToolStripMenuItem(IsLocked ? LocalizationManager.T("DCMenu.Unlock") : LocalizationManager.T("DCMenu.Lock"));
             lockItem.Click += (_, _) => { IsLocked = !IsLocked; if (_lockLabelRef != null) _lockLabelRef.Text = IsLocked ? "🔒" : "🔓"; QueueSave(); };
             menu.Items.Add(lockItem);
-            menu.Items.Add("Configure container…", null, (_, _) => ShowContainerSettings());
+            menu.Items.Add(LocalizationManager.T("DCMenu.Configure"), null, (_, _) => ShowContainerSettings());
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Close container", null, (_, _) => Close());
+            menu.Items.Add(LocalizationManager.T("DCMenu.Close"), null, (_, _) => Close());
             menu.Show(owner, new Point(0, owner.Height));
         }
 
@@ -435,9 +435,9 @@ namespace MotionDesk.Widgets
 
         private void RenameContainer()
         {
-            using var dialog = new Form { Text = "Rename DeskContainer", StartPosition = FormStartPosition.CenterParent, Size = new Size(420, 150), FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
+            using var dialog = new Form { Text = LocalizationManager.T("DCMenu.RenameTitle"), StartPosition = FormStartPosition.CenterParent, Size = new Size(420, 150), FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
             var box = new TextBox { Text = _title, Dock = DockStyle.Top, Margin = new Padding(12) };
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 34 };
+            var ok = new Button { Text = LocalizationManager.T("Common.OK"), DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 34 };
             dialog.Controls.Add(box);
             dialog.Controls.Add(ok);
             dialog.AcceptButton = ok;
@@ -622,9 +622,9 @@ namespace MotionDesk.Widgets
                 {
                     Focus();
                     var menu = new ContextMenuStrip();
-                    menu.Items.Add("Open", null, (_, _) => LaunchSelf());
-                    menu.Items.Add("Quick Look (Space)", null, (_, _) => QuickLookPreview.Show(_path));
-                    menu.Items.Add("Remove from container", null, (_, _) => _onRemove(_path));
+                    menu.Items.Add(LocalizationManager.T("DCMenu.Open"), null, (_, _) => LaunchSelf());
+                    menu.Items.Add(LocalizationManager.T("DCMenu.QuickLook"), null, (_, _) => QuickLookPreview.Show(_path));
+                    menu.Items.Add(LocalizationManager.T("DCMenu.Remove"), null, (_, _) => _onRemove(_path));
                     menu.Show(this, e.Location);
                 }
             };

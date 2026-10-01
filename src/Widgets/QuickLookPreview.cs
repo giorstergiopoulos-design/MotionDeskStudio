@@ -149,9 +149,9 @@ namespace MotionDesk.Widgets
             {
                 foreach (var dir in Directory.EnumerateDirectories(path).Take(200)) list.Items.Add("📁 " + Path.GetFileName(dir));
                 foreach (var file in Directory.EnumerateFiles(path).Take(200)) list.Items.Add("📄 " + Path.GetFileName(file));
-                if (list.Items.Count == 0) list.Items.Add("(κενός φάκελος)");
+                if (list.Items.Count == 0) list.Items.Add(MotionDesk.Services.LocalizationManager.T("QuickLook.EmptyFolder"));
             }
-            catch (Exception ex) { list.Items.Add("(αδύνατη η ανάγνωση: " + ex.Message + ")"); }
+            catch (Exception ex) { list.Items.Add(string.Format(MotionDesk.Services.LocalizationManager.T("QuickLook.ReadErrorFormat"), ex.Message)); }
             form.Controls.Add(list);
             form.Show();
         }
