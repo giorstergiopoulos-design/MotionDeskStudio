@@ -283,3 +283,4 @@ Tests: no automated test project exists in this repo — verification this sessi
 - Already existed (no change): Equalizer APO detection + install button on the Sound Management page.
 - Not done / ideas: per-app wallpaper schedule (Automation profiles already switch by process); weather HUD text.
 - Build tooling: `tools/build-all.ps1` (pull + build + installer for MotionDesk, GearWin, Waveframe).
+- (1.7.5 follow-up) Weather wallpaper: water redone (soft 1/3-res mirrored sky in thin bands, erased mirrored disc, shimmering sun/moon glitter path, drifting glints) — screenshot-verified; clock/date/temperature overlay (`#wxInfo` in index.html, settings `WeatherShowInfo/InfoX/InfoY/InfoScale/Fahrenheit`, default centred at 50%/34%, UI sliders + reset).

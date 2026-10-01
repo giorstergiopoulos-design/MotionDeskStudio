@@ -1338,6 +1338,31 @@ namespace MotionDesk.UI
             panel.Controls.Add(ComboRow("Wallpaper.WeatherSimLabel", WeatherSimIds, "Wallpaper.Sim.", settings.WeatherSimulation, id => WallpaperHostEngine.Instance.SetWeatherSimulation(id)));
             panel.Controls.Add(ComboRow("Wallpaper.TimeSimLabel", TimeSimIds, "Wallpaper.Time.", settings.TimeSimulation, id => WallpaperHostEngine.Instance.SetTimeSimulation(id)));
 
+            // ---- clock / date / temperature overlay + its position (centre of the block, % of the screen)
+            TrackBar? infoX = null, infoY = null, infoScale = null;
+            CheckBox? infoShow = null, infoF = null;
+            void CommitInfo()
+            {
+                if (infoX == null || infoY == null || infoScale == null || infoShow == null || infoF == null) return;
+                WallpaperHostEngine.Instance.SetWeatherInfo(infoShow.Checked, infoX.Value, infoY.Value, infoScale.Value, infoF.Checked);
+            }
+            infoShow = new CheckBox { Text = LocalizationManager.T("Wallpaper.WeatherInfo"), AutoSize = true, Checked = settings.WeatherShowInfo, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 8, 0, 4) };
+            infoF = new CheckBox { Text = LocalizationManager.T("Wallpaper.Fahrenheit"), AutoSize = true, Checked = settings.WeatherFahrenheit, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 0, 0, 6) };
+            infoShow.CheckedChanged += (_, _) => CommitInfo();
+            infoF.CheckedChanged += (_, _) => CommitInfo();
+            panel.Controls.Add(infoShow);
+            panel.Controls.Add(infoF);
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoX"), settings.WeatherInfoX, 0, 100, v => $"{v}%", CommitInfo, t => infoX = t));
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoY"), settings.WeatherInfoY, 0, 100, v => $"{v}%", CommitInfo, t => infoY = t));
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoScale"), settings.WeatherInfoScale, 40, 250, v => $"{v}%", CommitInfo, t => infoScale = t));
+            panel.Controls.Add(NewHoverButton(LocalizationManager.T("Wallpaper.InfoReset"), () =>
+            {
+                // the default position: centred horizontally, upper third of the screen, normal size
+                if (infoX != null) infoX.Value = 50;
+                if (infoY != null) infoY.Value = 34;
+                if (infoScale != null) infoScale.Value = 100;
+            }));
+
             var glass = new CheckBox { Text = LocalizationManager.T("Wallpaper.WeatherGlass"), AutoSize = true, Checked = settings.WeatherGlass, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 6, 0, 10) };
             glass.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetWeatherGlass(glass.Checked);
             panel.Controls.Add(glass);

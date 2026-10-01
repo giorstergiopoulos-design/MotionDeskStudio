@@ -8,6 +8,12 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 .videoLayer{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;background:#000;opacity:0;transition:opacity 650ms ease-in-out}
 .videoLayer.active{opacity:1}
 .videoHidden{display:none!important}
+#wxInfo{position:fixed;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;color:#fff;pointer-events:none;display:none;
+  font-family:"Segoe UI Light","Segoe UI",system-ui,sans-serif;text-shadow:0 2px 22px rgba(0,0,0,.42),0 0 2px rgba(0,0,0,.25);white-space:nowrap;--s:1}
+#wxTime{font-size:calc(var(--s)*13vh);font-weight:200;line-height:1;letter-spacing:.01em}
+#wxDate{font-size:calc(var(--s)*3.2vh);font-weight:300;letter-spacing:.05em;margin-top:calc(var(--s)*1.2vh);opacity:.95;text-transform:capitalize}
+#wxTemp{font-size:calc(var(--s)*4.4vh);font-weight:300;margin-top:calc(var(--s)*1.8vh)}
+#wxCity{font-size:calc(var(--s)*2.4vh);font-weight:300;letter-spacing:.12em;margin-top:calc(var(--s)*.6vh);opacity:.75;text-transform:uppercase}
 #pulse{position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.14),transparent 65%);opacity:0;transition:opacity 120ms linear}
 </style>
 </head>
@@ -15,6 +21,7 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 <canvas id="waves"></canvas>
 <video id="videoA" class="videoLayer" muted playsinline></video>
 <video id="videoB" class="videoLayer" muted playsinline></video>
+<div id="wxInfo"><div id="wxTime"></div><div id="wxDate"></div><div id="wxTemp"></div><div id="wxCity"></div></div>
 <div id="pulse"></div>
 <script src="weather.js"></script>
 <script>
@@ -442,12 +449,41 @@ function drawWeather(dt) {
 }
 
 // Ο καιρός έρχεται από τη C# πλευρά (cache 10 λεπτών, fallback σε 2ο πάροχο) — το JS δεν κάνει δικτυακές κλήσεις.
+let infoTimer = null;
+// Ώρα / ημερομηνία / θερμοκρασία στην οθόνη (μόνο στο Weather mode). Η ώρα είναι αυτή του σκηνικού (τοποθεσία ή προσομοίωση).
+function updateWeatherInfo() {
+    const box = document.getElementById('wxInfo');
+    if (!box) return;
+    if (cfg.mode !== 'Weather' || !cfg.weatherInfo || !window.WeatherWallpaper) { box.style.display = 'none'; return; }
+    const i = WeatherWallpaper.info();
+    const lang = cfg.lang === 'el' ? 'el-GR' : 'en-US';
+    document.documentElement.lang = cfg.lang === 'el' ? 'el' : 'en';   // σωστά κεφαλαία στα ελληνικά (χωρίς τόνους) στο text-transform
+    const t = new Date(2000, 0, 1, i.h, i.m);
+    document.getElementById('wxTime').textContent = t.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit', hour12: cfg.lang !== 'el' });
+    document.getElementById('wxDate').textContent = i.date.toLocaleDateString(lang, { weekday: 'long', day: 'numeric', month: 'long' });
+    const condId = ({ 0: 'Clear', 1: 'PartlyCloudy', 2: 'PartlyCloudy', 3: 'Cloudy', 45: 'Fog', 48: 'Fog', 51: 'Drizzle', 53: 'Drizzle', 55: 'Drizzle', 56: 'Drizzle', 57: 'Drizzle',
+        61: 'Rain', 63: 'Rain', 66: 'Rain', 67: 'Rain', 80: 'Rain', 81: 'Rain', 65: 'HeavyRain', 82: 'HeavyRain', 71: 'Snow', 73: 'Snow', 75: 'Snow', 77: 'Snow', 85: 'Snow', 86: 'Snow',
+        95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm' })[i.code];
+    const cond = (cfg.condLabels && condId && cfg.condLabels[condId]) || '';
+    let tempText = '';
+    if (typeof i.temp === 'number') {
+        const v = cfg.fahrenheit ? i.temp * 9 / 5 + 32 : i.temp;
+        tempText = Math.round(v) + (cfg.fahrenheit ? '°F' : '°C');
+    }
+    document.getElementById('wxTemp').textContent = [tempText, cond].filter(Boolean).join('  ·  ');
+    document.getElementById('wxCity').textContent = cfg.weatherCity || '';
+    box.style.left = (cfg.infoX ?? 50) + '%';
+    box.style.top = (cfg.infoY ?? 34) + '%';
+    box.style.setProperty('--s', ((cfg.infoScale ?? 100) / 100).toFixed(2));
+    box.style.display = 'block';
+}
+
 let weatherTimer = null;
 let rotationTimer = null; // εναλλαγή βίντεο ανά N λεπτά (Video mode)
 async function refreshWeather() {
     const b = bridge();
     if (!b || !window.WeatherWallpaper) return;
-    try { WeatherWallpaper.setWeather(JSON.parse(await b.GetWeatherJson())); } catch (e) { /* κρατάει τα προηγούμενα δεδομένα */ }
+    try { WeatherWallpaper.setWeather(JSON.parse(await b.GetWeatherJson())); updateWeatherInfo(); } catch (e) { /* κρατάει τα προηγούμενα δεδομένα */ }
 }
 
 function waveLoop(now) {
@@ -585,6 +621,11 @@ window.motionDeskRefresh = async () => {
     clearInterval(rotationTimer);
     rotationTimer = null;
     if (cfg.mode === 'Video' && cfg.rotateMinutes > 0) rotationTimer = setInterval(() => { if (!isPaused) advanceVideo(); }, cfg.rotateMinutes * 60 * 1000);
+
+    clearInterval(infoTimer);
+    infoTimer = null;
+    updateWeatherInfo();
+    if (cfg.mode === 'Weather' && cfg.weatherInfo) infoTimer = setInterval(updateWeatherInfo, 1000);
 
     clearInterval(weatherTimer);
     weatherTimer = null;

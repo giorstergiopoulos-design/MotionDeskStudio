@@ -76,7 +76,26 @@ namespace MotionDesk.Widgets
                 weatherGlass = settings.WeatherGlass,
                 weatherLat = settings.WeatherLat,
                 weatherLon = settings.WeatherLon,
-                rotateMinutes = settings.RotateEveryMinutes
+                rotateMinutes = settings.RotateEveryMinutes,
+                weatherInfo = settings.WeatherShowInfo,
+                infoX = Math.Clamp(settings.WeatherInfoX, 0, 100),
+                infoY = Math.Clamp(settings.WeatherInfoY, 0, 100),
+                infoScale = Math.Clamp(settings.WeatherInfoScale, 40, 250),
+                fahrenheit = settings.WeatherFahrenheit,
+                lang = MotionDesk.Services.LocalizationManager.CurrentLanguage,
+                weatherCity = string.IsNullOrWhiteSpace(settings.WeatherCity) ? MotionDesk.Services.LocalizationManager.T("Wallpaper.WeatherLocationDefaultName") : settings.WeatherCity,
+                condLabels = new Dictionary<string, string>
+                {
+                    ["Clear"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.Clear"),
+                    ["PartlyCloudy"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.PartlyCloudy"),
+                    ["Cloudy"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.Cloudy"),
+                    ["Drizzle"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.Drizzle"),
+                    ["Rain"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.Rain"),
+                    ["HeavyRain"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.HeavyRain"),
+                    ["Thunderstorm"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.Thunderstorm"),
+                    ["Snow"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.Snow"),
+                    ["Fog"] = MotionDesk.Services.LocalizationManager.T("Wallpaper.Sim.Fog")
+                }
             });
         }
 
@@ -214,6 +233,14 @@ namespace MotionDesk.Widgets
         // "Auto" = live. Otherwise Dawn|Day|Dusk|Night
         public string TimeSimulation { get; set; } = "Auto";
         public bool WeatherGlass { get; set; } = true;   // raindrops on a window pane while it rains
+
+        // Clock / date / temperature overlay of the Weather mode. Position is the CENTRE of the block, in % of the screen
+        // (default: horizontally centred, in the upper third so it sits in the sky and not on the horizon/desktop icons).
+        public bool WeatherShowInfo { get; set; } = true;
+        public int WeatherInfoX { get; set; } = 50;
+        public int WeatherInfoY { get; set; } = 34;
+        public int WeatherInfoScale { get; set; } = 100;  // % of the default size
+        public bool WeatherFahrenheit { get; set; } = false;
 
         // Playlist behaviour
         public bool IncludeSubfolders { get; set; } = false;   // "Add folder" also scans sub-folders
@@ -974,6 +1001,18 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
         {
             var settings = WallpaperSettings.Load();
             settings.TimeSimulation = sim;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetWeatherInfo(bool show, int x, int y, int scale, bool fahrenheit)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.WeatherShowInfo = show;
+            settings.WeatherInfoX = Math.Clamp(x, 0, 100);
+            settings.WeatherInfoY = Math.Clamp(y, 0, 100);
+            settings.WeatherInfoScale = Math.Clamp(scale, 40, 250);
+            settings.WeatherFahrenheit = fahrenheit;
             settings.Save();
             _ = RefreshAllAsync();
         }

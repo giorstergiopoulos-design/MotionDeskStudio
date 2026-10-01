@@ -267,6 +267,7 @@ function buildStars() {
 function buildHills() {
     hills = [];
     const specs = [
+        { depth: -0.35, amp: 0.2, base: -0.005, freq: [0.8, 2.1, 4.7], seed: 3 },
         { depth: 0.0, amp: 0.18, base: 0.0,  freq: [1.1, 2.7, 6.1], seed: 5 },
         { depth: 0.5, amp: 0.125, base: 0.01, freq: [1.7, 3.9, 8.3], seed: 11 },
         { depth: 1.0, amp: 0.07, base: 0.018, freq: [2.3, 5.3, 11.7], seed: 23 },
@@ -335,7 +336,8 @@ function resize(w, h, dpr) {
     cloudCv = makeCanvas(W / 2, HORIZON / 2); cloudCtx = cloudCv.getContext('2d');
     sceneCv = null; sceneCtx = null;
     lastDensity = -1;
-    if (!cloudSprites.length) { buildCloudSprites(); buildFlake(); buildFogSprites(); buildStars(); buildClouds(); }
+    if (!cloudSprites.length) { buildCloudSprites(); buildFlake(); buildFogSprites(); buildStars(); buildClouds(); buildWaterAssets(); }
+    reflCv = null;
     buildHills();
 }
 
@@ -572,31 +574,65 @@ function drawBolt(ctx2) {
     ctx2.restore();
 }
 
+// Position/strength of the sun or moon (set by draw()), used for the shimmering light path on the water
+let celest = null;
+let reflCv = null, reflCtx = null;
+let glitter = [], glints = [];
+function buildWaterAssets() {
+    const rnd = mulberry32(2024);
+    glitter = Array.from({ length: 150 }, () => ({ u: rnd(), side: rnd() - 0.5, len: 0.4 + rnd() * 0.9, sp: 1.2 + rnd() * 3.2, ph: rnd() * TAU, hh: 0.7 + rnd() * 0.8 }));
+    glints = Array.from({ length: 70 }, () => ({ u: rnd(), x: rnd(), len: 0.04 + rnd() * 0.12, sp: 0.4 + rnd() * 1.4, a: 0.35 + rnd() * 0.65 }));
+}
+
 function drawWater(ctx2, sky, graded) {
     const hz = HORIZON, wh = H - hz;
     const amb = clamp(sky.amb, 0, 1);
     // deep water colour
-    const deep = mix(scaleCol(graded.top, 0.55), [4, 8, 16], 0.35);
-    const shore = mix(graded.hor, deep, 0.55);
+    const deep = mix(scaleCol(graded.top, 0.5), [3, 7, 15], 0.4);
+    const shore = mix(graded.hor, deep, 0.5);
     const wg = ctx2.createLinearGradient(0, hz, 0, H);
-    wg.addColorStop(0, rgba(shore, 1)); wg.addColorStop(1, rgba(deep, 1));
+    wg.addColorStop(0, rgba(shore, 1)); wg.addColorStop(0.45, rgba(mix(shore, deep, 0.6), 1)); wg.addColorStop(1, rgba(deep, 1));
     ctx2.fillStyle = wg; ctx2.fillRect(0, hz, W, wh);
-    // mirrored sky, drawn in strips with a gentle horizontal wobble (stronger with rain/wind)
-    const refl = (0.62 - 0.2 * S.cloud) * (1 - S.snowCover);
+
+    const calm = 1 - clamp(S.rain * 0.8 + Math.abs(S.windX) / 160, 0, 0.9);
+    const refl = (0.7 - 0.22 * S.cloud) * (1 - S.snowCover);
     if (refl > 0.03) {
+        // 1) the sky is mirrored into a SMALL canvas (1/3 size): the down-scaling gives a naturally soft reflection
+        const rw = Math.max(2, Math.round(W / 3)), rh = Math.max(2, Math.round(wh / 3));
+        if (!reflCv || reflCv.width !== rw || reflCv.height !== rh) { reflCv = makeCanvas(rw, rh); reflCtx = reflCv.getContext('2d'); }
+        const srcH = Math.min(hz, wh * 1.25);
+        reflCtx.globalCompositeOperation = 'source-over';
+        reflCtx.clearRect(0, 0, rw, rh);
+        reflCtx.save(); reflCtx.translate(0, rh); reflCtx.scale(1, -1);
+        reflCtx.drawImage(skyCv, 0, hz - srcH, W, srcH, 0, 0, rw, rh);
+        reflCtx.restore();
+        // 2) erase the mirrored sun/moon DISC (a perfect mirrored disc is what made the old reflection look cartoonish) — the
+        //    glitter path below replaces it
+        if (celest && celest.power > 0.02) {
+            const cx = celest.x / 3, cy = ((hz - celest.y) / 1.25) / 3, rr = Math.max(8, celest.r * 3.4 / 3);
+            reflCtx.globalCompositeOperation = 'destination-out';
+            const eg = reflCtx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+            eg.addColorStop(0, 'rgba(0,0,0,0.95)'); eg.addColorStop(0.6, 'rgba(0,0,0,0.6)'); eg.addColorStop(1, 'rgba(0,0,0,0)');
+            reflCtx.fillStyle = eg; reflCtx.beginPath(); reflCtx.arc(cx, cy, rr, 0, TAU); reflCtx.fill();
+            reflCtx.globalCompositeOperation = 'source-over';
+        }
+        // 3) paint it into the water in thin bands with smooth, depth-dependent wobble (ripples) and a fade with distance
         ctx2.save();
         ctx2.beginPath(); ctx2.rect(0, hz, W, wh); ctx2.clip();
-        const strip = Math.max(2, Math.round(H / 270));
-        const wob = 1.2 + S.rain * 5 + Math.abs(S.windX) * 0.03;
-        for (let y = 0; y < wh; y += strip) {
-            const sy = HORIZON - (y / wh) * HORIZON * 0.8 - strip;            // compressed mirror (perspective)
-            const k = y / wh;                                                  // 0 near horizon .. 1 near viewer
-            ctx2.globalAlpha = refl * (1 - k * 0.75);
-            const dx = Math.sin(animTime * (1.1 + k) + y * 0.09) * wob * (0.3 + k);
-            ctx2.drawImage(skyCv, 0, Math.max(0, sy), W, strip * 1.25, dx - wob * 2, hz + y, W + wob * 4, strip);
+        ctx2.imageSmoothingEnabled = true; ctx2.imageSmoothingQuality = 'high';
+        const band = Math.max(3, Math.round(H / 220));
+        const amp = (0.7 + S.rain * 3.2 + Math.abs(S.windX) * 0.02) * K;
+        for (let y = 0; y < wh; y += band) {
+            const k = y / wh;
+            const dx = (Math.sin(animTime * 0.9 + y * 0.05) * amp + Math.sin(animTime * 1.9 + y * 0.13) * amp * 0.45) * (0.35 + k);
+            ctx2.globalAlpha = refl * (1 - k * 0.78);
+            // sample slightly more than one source row (and centre it) so neighbouring bands blend: no blocky steps on hill edges
+            const sy = Math.max(0, y / 3 - 0.5), sh = Math.min(rh - sy, band / 3 + 1);
+            ctx2.drawImage(reflCv, 0, sy, rw, sh, dx - amp * 2, hz + y, W + amp * 4, band);
         }
         ctx2.restore();
     }
+
     // snow-covered ground replaces the water
     if (S.snowCover > 0.02) {
         const sg = ctx2.createLinearGradient(0, hz, 0, H);
@@ -605,10 +641,57 @@ function drawWater(ctx2, sky, graded) {
         sg.addColorStop(1, rgba(scaleCol(base, 0.85), S.snowCover));
         ctx2.fillStyle = sg; ctx2.fillRect(0, hz, W, wh);
     }
+
+    // long, faint wave glints drifting with the wind (surface texture)
+    if (S.snowCover < 0.5) {
+        ctx2.save();
+        ctx2.globalCompositeOperation = 'lighter';
+        const gcol = mix(graded.hor, [235, 240, 250], 0.55);
+        for (const g of glints) {
+            const t = Math.pow(g.u, 1.5);
+            const y = hz + 6 + t * wh * 0.96;
+            const len = (g.len * (0.35 + t * 1.6)) * W;
+            const x = (((g.x * W + animTime * g.sp * (6 + t * 22) * (0.6 + Math.abs(S.windX) * 0.01)) % (W + len)) + W + len) % (W + len) - len;
+            ctx2.fillStyle = rgba(gcol, 0.05 * g.a * (0.4 + t) * (0.4 + 0.6 * amb) * (0.5 + 0.5 * calm));
+            ctx2.fillRect(x, y, len, Math.max(1, (1 + t * 2.2) * K));
+        }
+        ctx2.restore();
+    }
+
+    // shimmering sun/moon light path (glitter): narrow near the horizon, wider and brighter-flecked toward the viewer
+    if (celest && celest.power > 0.02 && S.snowCover < 0.6) {
+        ctx2.save();
+        ctx2.beginPath(); ctx2.rect(0, hz, W, wh); ctx2.clip();
+        ctx2.globalCompositeOperation = 'lighter';
+        const p = celest.power * (0.55 + 0.45 * calm);
+        // soft column of light
+        const colH = wh * 0.95, colW = W * 0.07;
+        ctx2.save();
+        ctx2.translate(celest.x, hz + colH * 0.42); ctx2.scale(colW / colH, 1);
+        const cg = ctx2.createRadialGradient(0, 0, 0, 0, 0, colH * 0.55);
+        cg.addColorStop(0, rgba(celest.col, 0.20 * p)); cg.addColorStop(0.5, rgba(celest.col, 0.07 * p)); cg.addColorStop(1, rgba(celest.col, 0));
+        ctx2.fillStyle = cg; ctx2.beginPath(); ctx2.arc(0, 0, colH * 0.55, 0, TAU); ctx2.fill();
+        ctx2.restore();
+        // glitter flecks
+        for (const f of glitter) {
+            const t = Math.pow(f.u, 1.35);
+            const y = hz + 4 + t * wh * 0.97;
+            const spread = (0.012 + 0.11 * t) * W;
+            const x = celest.x + f.side * 2 * spread + Math.sin(animTime * 0.7 + f.ph) * spread * 0.18;
+            const len = (4 + 46 * t) * f.len * K;
+            const tw = 0.5 + 0.5 * Math.sin(animTime * f.sp + f.ph);
+            const a = p * (1 - t * 0.5) * (0.12 + 0.88 * tw * tw) * 0.75 * (1 - Math.abs(f.side) * 0.9);
+            if (a < 0.015) continue;
+            ctx2.fillStyle = rgba(celest.col, a);
+            ctx2.fillRect(x - len / 2, y, len, Math.max(1, (0.9 + 2.4 * t) * K * f.hh));
+        }
+        ctx2.restore();
+    }
+
     // soft haze right at the horizon
-    const hg = ctx2.createLinearGradient(0, hz - 6, 0, hz + wh * 0.12);
-    hg.addColorStop(0, rgba(graded.hor, 0)); hg.addColorStop(0.35, rgba(graded.hor, 0.35)); hg.addColorStop(1, rgba(graded.hor, 0));
-    ctx2.fillStyle = hg; ctx2.fillRect(0, hz - 6, W, wh * 0.12 + 6);
+    const hg = ctx2.createLinearGradient(0, hz - 6, 0, hz + wh * 0.14);
+    hg.addColorStop(0, rgba(graded.hor, 0)); hg.addColorStop(0.3, rgba(graded.hor, 0.4)); hg.addColorStop(1, rgba(graded.hor, 0));
+    ctx2.fillStyle = hg; ctx2.fillRect(0, hz - 6, W, wh * 0.14 + 6);
 }
 
 function drawRipples(ctx2, dt, amb) {
@@ -818,8 +901,12 @@ function draw(target, dt, profile) {
     // ---- sky canvas
     const graded = drawSkyLayer(sky, t, sr, ss);
     drawStarsLayer(sky, 1 - S.cloud * 0.8 - S.fog * 0.5);
-    drawMoonLayer(t, sr, ss, 1);
-    drawSunLayer(sky, t, sr, ss);
+    const moon = drawMoonLayer(t, sr, ss, 1);
+    const sun = drawSunLayer(sky, t, sr, ss);
+    // the brighter visible body drives the light path on the water
+    celest = null;
+    if (sun && sun.vis > 0.05 && sun.e > 0.0) celest = { x: sun.x, y: sun.y, r: sun.r, power: clamp(sun.vis * (0.55 + 0.45 * sky.glow), 0, 1), col: mix([255, 255, 255], [255, 170, 110], clamp(1 - sun.e * 2.2, 0, 1)) };
+    else if (moon && moon.alpha > 0.05) celest = { x: moon.x, y: moon.y, r: moon.r, power: clamp(moon.alpha * 0.9, 0, 1), col: [205, 220, 248] };
     drawCloudsLayer(sky, dt);
     if (flash > 0) { skyCtx.fillStyle = `rgba(200,215,255,${flash * 0.55})`; skyCtx.fillRect(0, 0, W, HORIZON); }
     drawHillsLayer(sky, graded);
@@ -856,6 +943,12 @@ function draw(target, dt, profile) {
 window.WeatherWallpaper = {
     setConfig, setWeather, resize,
     draw: (ctx2, dt, profile) => draw(ctx2, Math.min(dt, 0.1), profile),
+    // info overlay helpers (clock / date / temperature drawn by index.html)
+    info: () => {
+        const m = localMinutes();
+        const d = new Date(Date.now() + (offsetMinutes() + new Date().getTimezoneOffset()) * 60000);   // wall-clock date at the location
+        return { h: Math.floor(m / 60) % 24, m: Math.floor(m % 60), date: d, temp: data && data.ok ? data.temp : null, code: cfg.weatherSim && cfg.weatherSim !== 'Auto' ? ({ Clear: 0, PartlyCloudy: 2, Cloudy: 3, Drizzle: 51, Rain: 63, HeavyRain: 65, Thunderstorm: 95, Snow: 73, Fog: 45 })[cfg.weatherSim] : (data && data.ok ? data.code : null) };
+    },
     // test helpers (headless screenshots)
     _state: () => ({ S, TGT, t: localMinutes(), sun: sunTimes(offsetMinutes()) }),
     _bolt: () => { nextBoltIn = 0; },
