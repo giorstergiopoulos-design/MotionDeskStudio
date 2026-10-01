@@ -77,6 +77,7 @@ namespace MotionDesk.Widgets
                 weatherLat = settings.WeatherLat,
                 weatherLon = settings.WeatherLon,
                 rotateMinutes = settings.RotateEveryMinutes,
+                windSim = settings.WindSimulation,
                 weatherInfo = settings.WeatherShowInfo,
                 infoX = Math.Clamp(settings.WeatherInfoX, 0, 100),
                 infoY = Math.Clamp(settings.WeatherInfoY, 0, 100),
@@ -232,6 +233,8 @@ namespace MotionDesk.Widgets
         public string WeatherSimulation { get; set; } = "Auto";
         // "Auto" = live. Otherwise Dawn|Day|Dusk|Night
         public string TimeSimulation { get; set; } = "Auto";
+        // "Auto" = live wind. Otherwise Calm|LightBreeze|FreshBreeze|Strong|Gale (Beaufort 1/3/5/7/9) — drives waves and cloud speed
+        public string WindSimulation { get; set; } = "Auto";
         public bool WeatherGlass { get; set; } = true;   // raindrops on a window pane while it rains
 
         // Clock / date / temperature overlay of the Weather mode. Position is the CENTRE of the block, in % of the screen
@@ -993,6 +996,14 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
         {
             var settings = WallpaperSettings.Load();
             settings.WeatherSimulation = sim;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetWindSimulation(string sim)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.WindSimulation = sim;
             settings.Save();
             _ = RefreshAllAsync();
         }

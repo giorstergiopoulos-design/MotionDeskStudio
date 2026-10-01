@@ -616,7 +616,7 @@ window.motionDeskRefresh = async () => {
     try { cfg = JSON.parse(await b.GetWaveConfigJson()); } catch (e) { /* keep previous cfg */ }
 
     if (window.WeatherWallpaper) {
-        WeatherWallpaper.setConfig({ weatherSim: cfg.weatherSim || 'Auto', timeSim: cfg.timeSim || 'Auto', glass: cfg.weatherGlass !== false, lat: cfg.weatherLat, lon: cfg.weatherLon });
+        WeatherWallpaper.setConfig({ weatherSim: cfg.weatherSim || 'Auto', timeSim: cfg.timeSim || 'Auto', windSim: cfg.windSim || 'Auto', glass: cfg.weatherGlass !== false, lat: cfg.weatherLat, lon: cfg.weatherLon });
     }
     clearInterval(rotationTimer);
     rotationTimer = null;

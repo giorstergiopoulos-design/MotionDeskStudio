@@ -1279,6 +1279,7 @@ namespace MotionDesk.UI
         // ---- "Weather" wallpaper mode: location, live status, simulated weather/time, window-glass effect
         private static readonly string[] WeatherSimIds = { "Auto", "Clear", "PartlyCloudy", "Cloudy", "Drizzle", "Rain", "HeavyRain", "Thunderstorm", "Snow", "Fog" };
         private static readonly string[] TimeSimIds = { "Auto", "Dawn", "Day", "Dusk", "Night" };
+        private static readonly string[] WindSimIds = { "Auto", "Calm", "LightBreeze", "FreshBreeze", "Strong", "Gale" };
 
         private void BuildWeatherWallpaperSection(Panel panel, WallpaperSettings settings)
         {
@@ -1336,6 +1337,7 @@ namespace MotionDesk.UI
                 return row;
             }
             panel.Controls.Add(ComboRow("Wallpaper.WeatherSimLabel", WeatherSimIds, "Wallpaper.Sim.", settings.WeatherSimulation, id => WallpaperHostEngine.Instance.SetWeatherSimulation(id)));
+            panel.Controls.Add(ComboRow("Wallpaper.WindSimLabel", WindSimIds, "Wallpaper.Wind.", settings.WindSimulation, id => WallpaperHostEngine.Instance.SetWindSimulation(id)));
             panel.Controls.Add(ComboRow("Wallpaper.TimeSimLabel", TimeSimIds, "Wallpaper.Time.", settings.TimeSimulation, id => WallpaperHostEngine.Instance.SetTimeSimulation(id)));
 
             // ---- clock / date / temperature overlay + its position (centre of the block, % of the screen)
@@ -1379,7 +1381,7 @@ namespace MotionDesk.UI
                 {
                     int code = root.GetProperty("code").GetInt32();
                     string cond = LocalizationManager.T("Wallpaper.Sim." + CodeToSimId(code));
-                    text = string.Format(LocalizationManager.T("Wallpaper.WeatherLive"), root.GetProperty("temp").GetDouble().ToString("0.#"), root.GetProperty("wind").GetDouble().ToString("0"), cond);
+                    text = string.Format(LocalizationManager.T("Wallpaper.WeatherLive"), root.GetProperty("temp").GetDouble().ToString("0.#"), root.GetProperty("wind").GetDouble().ToString("0"), cond, WeatherService.ToBeaufort(root.GetProperty("wind").GetDouble()));
                 }
                 else text = LocalizationManager.T("Wallpaper.WeatherLiveUnavailable");
             }

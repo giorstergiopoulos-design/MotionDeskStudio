@@ -29,13 +29,25 @@ const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
 const lum = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
 const scaleCol = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
 
+// Beaufort scale (continuous 0..12) from km/h — the thresholds are the standard upper limits of Bf 0..11
+const BF_LIMITS = [1, 6, 12, 20, 29, 39, 50, 62, 75, 89, 103, 118];
+function beaufort(kmh) {
+    if (kmh < 1) return Math.max(0, kmh);
+    let i = 0;
+    while (i < BF_LIMITS.length && kmh >= BF_LIMITS[i]) i++;
+    if (i >= BF_LIMITS.length) return 12;
+    const lo = BF_LIMITS[i - 1], hi = BF_LIMITS[i];
+    return i + (kmh - lo) / (hi - lo);
+}
+let BFN = 2;           // current (eased) Beaufort number, updated every frame
+
 // ---------------------------------------------------------------- state
 let W = 0, H = 0, DPR = 1, HORIZON = 0, K = 1;
 let cfg = { weatherSim: 'Auto', timeSim: 'Auto', glass: true, lat: 37.9838, lon: 23.7275 };
 let data = null;                       // last weather payload from the host
 let animTime = 0;
-const S = { cloud: 0.15, rain: 0, snow: 0, fog: 0, storm: 0, windX: 0, snowCover: 0, wet: 0 };   // eased, current values
-const TGT = { cloud: 0.15, rain: 0, snow: 0, fog: 0, storm: 0, windX: 0 };                           // targets from the weather
+const S = { cloud: 0.15, rain: 0, snow: 0, fog: 0, storm: 0, windX: 0, wind: 8, dir: 1, snowCover: 0, wet: 0 };   // eased, current values
+const TGT = { cloud: 0.15, rain: 0, snow: 0, fog: 0, storm: 0, windX: 0, wind: 8, dir: 1 };                           // targets from the weather
 
 // offscreen canvases
 let skyCv = null, skyCtx = null;       // sky + celestial + clouds + hills  (W x HORIZON)
@@ -169,12 +181,15 @@ function sceneFromCode(code) {
 
 const SIM_CODES = { Clear: 0, PartlyCloudy: 2, Cloudy: 3, Drizzle: 51, Rain: 63, HeavyRain: 65, Thunderstorm: 95, Snow: 73, Fog: 45 };
 
+const WIND_SIM_KMH = { Calm: 3, LightBreeze: 15, FreshBreeze: 30, Strong: 52, Gale: 82 };
+const SIM_WIND_KMH = { Clear: 8, PartlyCloudy: 12, Cloudy: 14, Drizzle: 12, Rain: 22, HeavyRain: 38, Thunderstorm: 55, Snow: 16, Fog: 3 };
+
 function computeTargets() {
     let sc, wind = 8, windDir = 270, cloudPct = -1;
     const sim = cfg.weatherSim;
     if (sim && sim !== 'Auto' && SIM_CODES[sim] !== undefined) {
         sc = sceneFromCode(SIM_CODES[sim]);
-        wind = sim === 'Thunderstorm' ? 38 : sim === 'HeavyRain' ? 30 : sim === 'Snow' ? 14 : 10;
+        wind = SIM_WIND_KMH[sim] ?? 10;
     } else if (data && data.ok) {
         sc = sceneFromCode(data.code | 0);
         wind = +data.wind || 0; windDir = +data.windDir || 270;
@@ -183,10 +198,15 @@ function computeTargets() {
     } else {
         sc = sceneFromCode(0);                                  // no data: clear sky, the time of day still works
     }
+    // the user can force a wind strength (Beaufort preview) independently of the weather
+    if (cfg.windSim && cfg.windSim !== 'Auto' && WIND_SIM_KMH[cfg.windSim] !== undefined) wind = WIND_SIM_KMH[cfg.windSim];
     TGT.cloud = sc.cloud; TGT.rain = sc.rain; TGT.snow = sc.snow; TGT.fog = sc.fog; TGT.storm = sc.storm;
-    // wind in km/h -> px/s lateral drift for rain/snow/clouds (direction: the wind blows TOWARD windDir+180)
+    // wind in km/h -> px/s lateral drift for rain/snow (direction: the wind blows TOWARD windDir+180)
     const dirSign = -Math.sin(windDir * Math.PI / 180);
-    TGT.windX = clamp(wind, 0, 90) * 2.6 * (Math.abs(dirSign) < 0.15 ? (dirSign < 0 ? -0.15 : 0.15) : dirSign);
+    const dir = Math.abs(dirSign) < 0.15 ? (dirSign < 0 ? -0.15 : 0.15) : dirSign;
+    TGT.wind = clamp(wind, 0, 120);
+    TGT.dir = dir < 0 ? -1 : 1;
+    TGT.windX = clamp(wind, 0, 90) * 2.6 * dir;
 }
 
 // ---------------------------------------------------------------- generated assets
@@ -293,7 +313,7 @@ function buildHills() {
 function buildClouds() {
     clouds = [];
     const rnd = mulberry32(7);
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < 30; i++) {
         const layer = i % 3;                                    // 0 high/small/slow, 2 low/big/fast
         clouds.push({
             sprite: i % cloudSprites.length,
@@ -346,7 +366,7 @@ function setConfig(c) {
     cfg = { ...cfg, ...c };
     if (typeof cfg.lat !== 'number' || isNaN(cfg.lat)) cfg.lat = 37.9838;
     if (typeof cfg.lon !== 'number' || isNaN(cfg.lon)) cfg.lon = 23.7275;
-    if (old.weatherSim !== cfg.weatherSim) computeTargets();
+    if (old.weatherSim !== cfg.weatherSim || old.windSim !== cfg.windSim) computeTargets();
     sunCache.key = '';
 }
 
@@ -475,23 +495,28 @@ function cloudTint(sky) {
 }
 
 function drawCloudsLayer(sky, dt) {
-    const cover = S.cloud;
+    // rain/storm make the sky denser and lower: effective cover grows, clouds get bigger and sit lower
+    const cover = clamp(S.cloud + S.rain * 0.35 + S.storm * 0.2, 0, 1);
     if (cover < 0.04) return;
     const g = cloudCtx, cw = cloudCv.width, ch = cloudCv.height;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = 'source-over';
     g.clearRect(0, 0, cw, ch);
-    const count = Math.round(2 + 16 * cover);
-    const drift = S.windX * 0.12;
+    const count = Math.min(clouds.length, Math.round(2 + 16 * cover + 8 * S.rain + 4 * S.storm));
+    // clouds travel with the wind: ~3 px/s in calm air up to >100 px/s in a gale (per layer parallax: low clouds move faster)
+    const base = (3 + S.wind * 1.5) * K;
+    const dir = S.dir < 0 ? -1 : 1;
+    const lower = 0.07 * (S.rain + S.storm * 0.5);
+    const grow = 1 + 0.3 * S.rain + 0.15 * S.storm;
     for (let i = 0; i < clouds.length; i++) {
         const c = clouds[i];
-        c.x += ((c.speed + drift * (0.4 + c.layer * 0.4)) * dt) / W;
+        c.x += (dir * base * (0.45 + 0.4 * c.layer) * (0.85 + (c.speed % 3) * 0.08) * dt) / W;
         if (c.x > 1.3) c.x -= 1.6; else if (c.x < -0.3) c.x += 1.6;
         if (i >= count) continue;
         const sp = cloudSprites[c.sprite];
-        const w = sp.width * c.scale * (W / 1920) * 0.5, h = sp.height * c.scale * (W / 1920) * 0.5;
-        g.globalAlpha = clamp(c.alpha * (0.35 + cover * 0.75) * (1 - S.fog * 0.45), 0, 1);
-        g.drawImage(sp, c.x * cw - w / 2, c.y * ch - h / 2, w, h);
+        const w = sp.width * c.scale * grow * (W / 1920) * 0.5, h = sp.height * c.scale * grow * (W / 1920) * 0.5;
+        g.globalAlpha = clamp(c.alpha * (0.35 + cover * 0.75) * (1 - S.fog * 0.45) + S.rain * 0.12, 0, 1);
+        g.drawImage(sp, c.x * cw - w / 2, (c.y + lower) * ch - h / 2, w, h);
     }
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-atop';
@@ -501,6 +526,14 @@ function drawCloudsLayer(sky, dt) {
     g.globalCompositeOperation = 'source-over';
     skyCtx.globalAlpha = 1;
     skyCtx.drawImage(cloudCv, 0, 0, W, HORIZON);
+    // heavy rain: a dark, dense overcast deck across the upper sky
+    const deck = clamp(S.rain * 0.7 + S.storm * 0.35 - 0.1, 0, 0.75);
+    if (deck > 0.02) {
+        const dg = skyCtx.createLinearGradient(0, 0, 0, HORIZON * 0.62);
+        const dc = scaleCol([70, 78, 92], 0.3 + 0.7 * clamp(sky.amb * 1.2, 0, 1));
+        dg.addColorStop(0, rgba(dc, deck)); dg.addColorStop(1, rgba(dc, 0));
+        skyCtx.fillStyle = dg; skyCtx.fillRect(0, 0, W, HORIZON * 0.62);
+    }
 }
 
 function hazeColor(hor) { return mix(hor, [190, 196, 206], 0.4); }
@@ -577,10 +610,11 @@ function drawBolt(ctx2) {
 // Position/strength of the sun or moon (set by draw()), used for the shimmering light path on the water
 let celest = null;
 let reflCv = null, reflCtx = null;
-let glitter = [], glints = [];
+let glitter = [], glints = [], caps = [];
 function buildWaterAssets() {
     const rnd = mulberry32(2024);
     glitter = Array.from({ length: 150 }, () => ({ u: rnd(), side: rnd() - 0.5, len: 0.4 + rnd() * 0.9, sp: 1.2 + rnd() * 3.2, ph: rnd() * TAU, hh: 0.7 + rnd() * 0.8 }));
+    caps = Array.from({ length: 170 }, () => ({ u: rnd(), x: rnd(), len: 0.5 + rnd() * 1.2, sp: 1 + rnd() * 3, ph: rnd() * TAU }));
     glints = Array.from({ length: 70 }, () => ({ u: rnd(), x: rnd(), len: 0.04 + rnd() * 0.12, sp: 0.4 + rnd() * 1.4, a: 0.35 + rnd() * 0.65 }));
 }
 
@@ -594,8 +628,10 @@ function drawWater(ctx2, sky, graded) {
     wg.addColorStop(0, rgba(shore, 1)); wg.addColorStop(0.45, rgba(mix(shore, deep, 0.6), 1)); wg.addColorStop(1, rgba(deep, 1));
     ctx2.fillStyle = wg; ctx2.fillRect(0, hz, W, wh);
 
-    const calm = 1 - clamp(S.rain * 0.8 + Math.abs(S.windX) / 160, 0, 0.9);
-    const refl = (0.7 - 0.22 * S.cloud) * (1 - S.snowCover);
+    // sea state follows the wind (Beaufort): 0-2 mirror-like, 3-4 gentle ripples, 5-6 choppy with whitecaps, 7+ rough
+    const bfk = clamp(BFN / 10, 0, 1);
+    const calm = 1 - clamp(bfk * 0.85 + S.rain * 0.25, 0, 0.92);
+    const refl = (0.7 - 0.22 * S.cloud) * (1 - S.snowCover) * (1 - 0.6 * bfk);
     if (refl > 0.03) {
         // 1) the sky is mirrored into a SMALL canvas (1/3 size): the down-scaling gives a naturally soft reflection
         const rw = Math.max(2, Math.round(W / 3)), rh = Math.max(2, Math.round(wh / 3));
@@ -621,10 +657,11 @@ function drawWater(ctx2, sky, graded) {
         ctx2.beginPath(); ctx2.rect(0, hz, W, wh); ctx2.clip();
         ctx2.imageSmoothingEnabled = true; ctx2.imageSmoothingQuality = 'high';
         const band = Math.max(3, Math.round(H / 220));
-        const amp = (0.7 + S.rain * 3.2 + Math.abs(S.windX) * 0.02) * K;
+        const amp = (0.45 + BFN * 0.5 + S.rain * 1.4) * K;
+        const fw = 0.8 + BFN * 0.16;                      // ripple speed grows with the wind
         for (let y = 0; y < wh; y += band) {
             const k = y / wh;
-            const dx = (Math.sin(animTime * 0.9 + y * 0.05) * amp + Math.sin(animTime * 1.9 + y * 0.13) * amp * 0.45) * (0.35 + k);
+            const dx = (Math.sin(animTime * 0.9 * fw + y * (0.05 + bfk * 0.05)) * amp + Math.sin(animTime * 1.9 * fw + y * 0.13) * amp * 0.45) * (0.35 + k);
             ctx2.globalAlpha = refl * (1 - k * 0.78);
             // sample slightly more than one source row (and centre it) so neighbouring bands blend: no blocky steps on hill edges
             const sy = Math.max(0, y / 3 - 0.5), sh = Math.min(rh - sy, band / 3 + 1);
@@ -647,13 +684,35 @@ function drawWater(ctx2, sky, graded) {
         ctx2.save();
         ctx2.globalCompositeOperation = 'lighter';
         const gcol = mix(graded.hor, [235, 240, 250], 0.55);
-        for (const g of glints) {
+        const activeGlints = Math.round(glints.length * clamp(0.3 + BFN / 7, 0, 1));
+        for (let gi = 0; gi < activeGlints; gi++) {
+            const g = glints[gi];
             const t = Math.pow(g.u, 1.5);
             const y = hz + 6 + t * wh * 0.96;
             const len = (g.len * (0.35 + t * 1.6)) * W;
-            const x = (((g.x * W + animTime * g.sp * (6 + t * 22) * (0.6 + Math.abs(S.windX) * 0.01)) % (W + len)) + W + len) % (W + len) - len;
-            ctx2.fillStyle = rgba(gcol, 0.05 * g.a * (0.4 + t) * (0.4 + 0.6 * amb) * (0.5 + 0.5 * calm));
+            const x = (((g.x * W + animTime * g.sp * (6 + t * 22) * (0.5 + S.wind * 0.022) * (S.dir < 0 ? -1 : 1)) % (W + len)) + W + len) % (W + len) - len;
+            ctx2.fillStyle = rgba(gcol, 0.05 * g.a * (0.4 + t) * (0.4 + 0.6 * amb) * (0.65 + BFN * 0.12));
             ctx2.fillRect(x, y, len, Math.max(1, (1 + t * 2.2) * K));
+        }
+        ctx2.restore();
+    }
+
+    // whitecaps: short foamy dashes on a choppy sea (Beaufort 4+), drifting with the wind
+    const capK = clamp((BFN - 3.5) / 4, 0, 1);
+    if (capK > 0.02 && S.snowCover < 0.5) {
+        ctx2.save();
+        ctx2.globalCompositeOperation = 'lighter';
+        const n = Math.round(caps.length * capK);
+        const ccol = mix([200, 210, 225], [255, 255, 255], amb);
+        for (let ci = 0; ci < n; ci++) {
+            const c = caps[ci];
+            const t = Math.pow(c.u, 1.25);
+            const y = hz + 10 + t * wh * 0.94;
+            const len = (6 + 30 * t) * c.len * K;
+            const x = (((c.x * W + animTime * (14 + BFN * 6) * (0.4 + t) * (S.dir < 0 ? -1 : 1)) % (W + len)) + W + len) % (W + len) - len;
+            const tw = 0.4 + 0.6 * Math.abs(Math.sin(animTime * c.sp + c.ph));
+            ctx2.fillStyle = rgba(ccol, 0.32 * capK * tw * (0.3 + 0.7 * t) * (0.3 + 0.7 * amb));
+            ctx2.fillRect(x, y, len, Math.max(1, (0.8 + 1.8 * t) * K));
         }
         ctx2.restore();
     }
@@ -676,10 +735,10 @@ function drawWater(ctx2, sky, graded) {
         for (const f of glitter) {
             const t = Math.pow(f.u, 1.35);
             const y = hz + 4 + t * wh * 0.97;
-            const spread = (0.012 + 0.11 * t) * W;
+            const spread = (0.012 + 0.11 * t) * W * (1 + BFN * 0.12);
             const x = celest.x + f.side * 2 * spread + Math.sin(animTime * 0.7 + f.ph) * spread * 0.18;
-            const len = (4 + 46 * t) * f.len * K;
-            const tw = 0.5 + 0.5 * Math.sin(animTime * f.sp + f.ph);
+            const len = (4 + 46 * t) * f.len * K * (1 - bfk * 0.45);
+            const tw = 0.5 + 0.5 * Math.sin(animTime * f.sp * (0.8 + BFN * 0.15) + f.ph);
             const a = p * (1 - t * 0.5) * (0.12 + 0.88 * tw * tw) * 0.75 * (1 - Math.abs(f.side) * 0.9);
             if (a < 0.015) continue;
             ctx2.fillStyle = rgba(celest.col, a);
@@ -880,6 +939,8 @@ function draw(target, dt, profile) {
     S.cloud = approach(S.cloud, TGT.cloud, dt, rate); S.rain = approach(S.rain, TGT.rain, dt, rate);
     S.snow = approach(S.snow, TGT.snow, dt, rate); S.fog = approach(S.fog, TGT.fog, dt, rate * 0.7);
     S.storm = approach(S.storm, TGT.storm, dt, rate); S.windX = approach(S.windX, TGT.windX, dt, 0.4);
+    S.wind = approach(S.wind, TGT.wind, dt, 0.35); S.dir = approach(S.dir, TGT.dir, dt, 0.3);
+    BFN = beaufort(S.wind);
     S.snowCover = approach(S.snowCover, TGT.snow > 0.3 ? Math.min(1, TGT.snow) : 0, dt, 0.06);
 
     const t = localMinutes();
@@ -950,7 +1011,7 @@ window.WeatherWallpaper = {
         return { h: Math.floor(m / 60) % 24, m: Math.floor(m % 60), date: d, temp: data && data.ok ? data.temp : null, code: cfg.weatherSim && cfg.weatherSim !== 'Auto' ? ({ Clear: 0, PartlyCloudy: 2, Cloudy: 3, Drizzle: 51, Rain: 63, HeavyRain: 65, Thunderstorm: 95, Snow: 73, Fog: 45 })[cfg.weatherSim] : (data && data.ok ? data.code : null) };
     },
     // test helpers (headless screenshots)
-    _state: () => ({ S, TGT, t: localMinutes(), sun: sunTimes(offsetMinutes()) }),
+    _state: () => ({ S, TGT, bf: BFN, t: localMinutes(), sun: sunTimes(offsetMinutes()) }),
     _bolt: () => { nextBoltIn = 0; },
     _warm: (secs, ctx2, profile) => { for (let i = 0; i < secs * 30; i++) draw(ctx2, 1 / 30, profile); },
 };
