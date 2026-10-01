@@ -264,3 +264,10 @@ Tests: no automated test project exists in this repo — verification this sessi
 - Shuffle now plays every active video once per cycle (persisted `ShuffleHistory` in wallpaper.json) instead of pure random with repeats.
 - Toggling/removing a video keeps the currently playing file (index no longer shifts).
 - New "Select all"/"Select none" buttons + clicking a video name toggles its checkbox (Wallpaper.SelectAll/SelectNone, 443 keys el/en).
+
+## UI fixes batch (2026-10-01, compile-checked only, NOT click-tested)
+- Wallpaper status on app open: `WallpaperHostEngine.IsEnabled` = requested state (`_enabled`); new `IsRunning` = visible window. Fixes "inactive" flash while attach is async.
+- RAM used % shown on Dashboard card, status bar, Performance meter, sysmon widget (format keys got an extra placeholder).
+- DeskZones: MotionDesk's own main window now snaps (removed WINEVENT_SKIPOWNPROCESS; `ZoneSnapEngine.AllowOwnWindow` allows only the main form; widgets/containers still excluded).
+- DeskContainer: double-click on title bar renames (detected in MouseDown; the native HTCAPTION move loop swallowed DoubleClick), title centered, bar 28->36px with own accent-tinted background + accent separator.
+- Audio: no system-wide path via Waveframe (its Web Audio DSP only processes audio it plays itself); system-wide EQ stays Equalizer APO. Possible plugin = detect Waveframe + launch/handoff button (not implemented).

@@ -1030,7 +1030,7 @@ namespace MotionDesk.Widgets
                 var net = AdvancedSystemMonitorService.Instance.GetSnapshot();
                 double ramUsedPct = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
                 rows.SetCpu(m.CpuPercent);
-                rows.SetRam(ramUsedPct, string.Format(LocalizationManager.T("WidgetText.RamFreeFormat"), m.AvailableMemoryMb.ToString("0"), m.TotalMemoryMb.ToString("0")));
+                rows.SetRam(ramUsedPct, string.Format(LocalizationManager.T("WidgetText.RamFreeFormat"), m.AvailableMemoryMb.ToString("0"), m.TotalMemoryMb.ToString("0"), ramUsedPct.ToString("0")));
                 rows.SetNetwork(net.NetworkDownKbps, net.NetworkUpKbps);
                 if (gpuReady)
                 {

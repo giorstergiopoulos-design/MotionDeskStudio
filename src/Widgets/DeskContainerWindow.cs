@@ -33,7 +33,7 @@ namespace MotionDesk.Widgets
     // Organize > "Place new icons here by default"/"Manage sorting rules"), Configure…
     public sealed class DeskContainerWindow : Form
     {
-        private const int TitleBarHeight = 28;
+        private const int TitleBarHeight = 36;
         private readonly string _containerId;
         private string _title;
         private List<ContainerItem> _items = new();
@@ -42,6 +42,8 @@ namespace MotionDesk.Widgets
         private System.Windows.Forms.Timer? _rollUpAnimTimer;
         private System.Windows.Forms.Timer? _hoverPollTimer;
         private Label? _lockLabelRef;
+        private long _lastTitleDownTick;
+        private Point _lastTitleDownPos;
         private int _expandedHeight;
         private ContainerSortMode _sortMode = ContainerSortMode.None;
 
@@ -88,23 +90,43 @@ namespace MotionDesk.Widgets
             var titleBar = new Panel { Dock = DockStyle.Top, Height = TitleBarHeight, BackColor = Color.Transparent };
             titleBar.MouseDown += (_, e) =>
             {
-                if (e.Button == MouseButtons.Left && !IsLocked) { ReleaseCapture(); SendMessage(Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0); }
+                if (e.Button != MouseButtons.Left) return;
+                // ΔΙΟΡΘΩΣΗ: το πρώτο κλικ ξεκινά το native move loop των Windows (WM_NCLBUTTONDOWN/HTCAPTION), που "καταπίνει" το
+                // mouse-up — έτσι το WinForms DoubleClick event δεν εκπεμπόταν ποτέ και η μετονομασία με διπλό κλικ δεν δούλευε.
+                // Ανιχνεύουμε το διπλό κλικ εδώ (χρόνος + απόσταση από το προηγούμενο πάτημα) πριν ξεκινήσει το drag.
+                long now = Environment.TickCount64;
+                bool isDouble = e.Clicks >= 2 ||
+                    (now - _lastTitleDownTick <= SystemInformation.DoubleClickTime &&
+                     Math.Abs(e.X - _lastTitleDownPos.X) <= SystemInformation.DoubleClickSize.Width &&
+                     Math.Abs(e.Y - _lastTitleDownPos.Y) <= SystemInformation.DoubleClickSize.Height);
+                if (isDouble)
+                {
+                    _lastTitleDownTick = 0;
+                    RenameContainer();
+                    return;
+                }
+                _lastTitleDownTick = now;
+                _lastTitleDownPos = e.Location;
+                if (!IsLocked) { ReleaseCapture(); SendMessage(Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0); }
             };
-            // Διπλό-κλικ στη γραμμή τίτλου = μετονομασία (ζητήθηκε ρητά, στυλ Fences) — το roll-up
-            // είναι πλέον hover-driven (βλ. EnsureHoverPolling/SetHoverExpanded), οπότε το διπλό-
-            // κλικ ήταν ελεύθερο να ξαναχρησιμοποιηθεί για κάτι πιο χρήσιμο από περιττό δεύτερο
-            // τρόπο toggle roll-up.
-            titleBar.DoubleClick += (_, _) => RenameContainer();
+            // (Διπλό-κλικ στη γραμμή τίτλου = μετονομασία, στυλ Fences — βλ. MouseDown παραπάνω.)
             titleBar.Paint += (_, e) =>
             {
+                // Γραμμή τίτλου με ΔΙΚΗ ΤΗΣ απόχρωση (σκούρο με τόνο του accent, ημιδιαφανές) ώστε να ξεχωρίζει από το υπόλοιπο
+                // παράθυρο, όπως στα Fences.
+                var header = Color.FromArgb(185,
+                    (int)(AccentColor.R * 0.35 + 8), (int)(AccentColor.G * 0.35 + 10), (int)(AccentColor.B * 0.35 + 16));
+                using (var headerBrush = new SolidBrush(header)) e.Graphics.FillRectangle(headerBrush, 0, 0, titleBar.Width, TitleBarHeight);
                 using var titleBrush = new SolidBrush(Color.White);
-                using var font = new Font("Segoe UI", 9f, FontStyle.Bold);
-                var textRect = new RectangleF(TitleBarHeight + 4, 0, Math.Max(20, titleBar.Width - TitleBarHeight * 3 - 8), TitleBarHeight);
-                using var sf = new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+                using var font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Bold);
+                // Κεντραρισμένος τίτλος: συμμετρική δέσμευση χώρου 2 κουμπιών αριστερά/δεξιά ώστε το κέντρο να είναι το κέντρο του παραθύρου.
+                var textRect = new RectangleF(TitleBarHeight * 2, 0, Math.Max(20, titleBar.Width - TitleBarHeight * 4), TitleBarHeight);
+                using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
                 e.Graphics.DrawString(_title, font, titleBrush, textRect, sf);
-                using var separator = new Pen(Color.FromArgb(60, 255, 255, 255));
+                using var separator = new Pen(Color.FromArgb(160, AccentColor), 2f);
                 e.Graphics.DrawLine(separator, 0, TitleBarHeight - 1, titleBar.Width, TitleBarHeight - 1);
             };
+            titleBar.Resize += (_, _) => titleBar.Invalidate();
 
             var closeLabel = new Label { Text = "✕", AutoSize = false, Size = new Size(TitleBarHeight, TitleBarHeight), Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.FromArgb(200, 255, 255, 255), BackColor = Color.Transparent, Font = new Font("Segoe UI", 10), Cursor = Cursors.Hand };
             closeLabel.MouseEnter += (_, _) => closeLabel.ForeColor = Color.FromArgb(255, 231, 76, 60);

@@ -41,9 +41,9 @@ namespace MotionDesk.Widgets
         private const uint EVENT_SYSTEM_MOVESIZESTART = 0x000A;
         private const uint EVENT_SYSTEM_MOVESIZEEND = 0x000B;
         private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
-        // Αγνοεί αυτόματα events που προέρχονται από τη ΔΙΚΗ ΜΑΣ διεργασία (π.χ. ο χρήστης
-        // μετακινεί ένα widget/DeskContainer) — δεν χρειάζεται πια χειροκίνητος έλεγχος pid.
-        private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+        // ΠΡΙΝ χρησιμοποιούσαμε WINEVENT_SKIPOWNPROCESS και έτσι το ίδιο το παράθυρο του MotionDesk δεν κούμπωνε ποτέ σε ζώνη
+        // (ενώ τα παράθυρα όλων των άλλων εφαρμογών κούμπωναν). Τώρα τα events της δικής μας διεργασίας φτάνουν εδώ και τα
+        // φιλτράρει το IsCandidateWindow: επιτρέπεται ΜΟΝΟ το κύριο παράθυρο (AllowOwnWindow), όχι widgets/containers/overlays.
         private const uint SWP_NOZORDER = 0x0004;
         private const uint SWP_NOACTIVATE = 0x0010;
         private const int VK_SHIFT = 0x10;
@@ -74,7 +74,7 @@ namespace MotionDesk.Widgets
             // Application.Run το κάνει ήδη). Το εύρος START..END καλύπτει και τα δύο events με μία
             // εγγραφή hook, αφού είναι διαδοχικές σταθερές (0x000A, 0x000B).
             _hookId = SetWinEventHook(EVENT_SYSTEM_MOVESIZESTART, EVENT_SYSTEM_MOVESIZEEND,
-                IntPtr.Zero, _callback, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+                IntPtr.Zero, _callback, 0, 0, WINEVENT_OUTOFCONTEXT);
         }
 
         public static void Stop()
@@ -364,9 +364,15 @@ namespace MotionDesk.Widgets
         // έλεγχοι στυλ (WS_CAPTION/WS_EX_TOOLWINDOW) της παλιάς υλοποίησης — αυτοί μπορούσαν να
         // απορρίψουν σιωπηλά ένα σύγχρονο παράθυρο με custom-drawn title bar. Κρατάμε μόνο τον
         // αποκλεισμό γνωστών shell/desktop κλάσεων ως δεύτερη γραμμή άμυνας.
+        // Ορίζεται από το κύριο παράθυρο: επιστρέφει true για τα παράθυρα της δικής μας διεργασίας που ΕΠΙΤΡΕΠΕΤΑΙ να κουμπώνουν.
+        public static Func<IntPtr, bool>? AllowOwnWindow { get; set; }
+
         private static bool IsCandidateWindow(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd)) return false;
+
+            GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid == (uint)Environment.ProcessId && AllowOwnWindow?.Invoke(hwnd) != true) return false;
 
             var sb = new StringBuilder(256);
             GetClassName(hwnd, sb, sb.Capacity);
@@ -386,6 +392,7 @@ namespace MotionDesk.Widgets
 
         [DllImport("user32.dll")]
         private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventProc lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
         [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hWnd);
         [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hWinEventHook);

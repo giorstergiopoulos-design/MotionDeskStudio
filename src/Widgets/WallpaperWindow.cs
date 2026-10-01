@@ -590,7 +590,11 @@ namespace MotionDesk.Widgets
         private System.Threading.Timer? _displayDebounce;
         private readonly SynchronizationContext _ui;
 
-        public bool IsEnabled => _enabled && _windows.Any(w => !w.IsDisposed && w.Visible);
+        // IsEnabled = ο χρήστης/η εκκίνηση ΖΗΤΗΣΕ wallpaper (σταθερό από το Enable() ως το Disable()). Πριν απαιτούσε και ορατό
+        // παράθυρο — το attach πίσω από τα εικονίδια είναι ασύγχρονο, οπότε στο άνοιγμα της εφαρμογής ο πίνακας έδειχνε "ανενεργό"
+        // και διορθωνόταν αργότερα. Το IsRunning ισχύει όταν υπάρχει πράγματι ορατό wallpaper window.
+        public bool IsEnabled => _enabled;
+        public bool IsRunning => _enabled && _windows.Any(w => !w.IsDisposed && w.Visible);
 
         private WallpaperHostEngine()
         {

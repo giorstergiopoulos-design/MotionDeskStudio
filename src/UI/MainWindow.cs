@@ -133,6 +133,7 @@ namespace MotionDesk.UI
 
             // Χαμηλού-κόστους hook, τρέχει σε όλη τη διάρκεια ζωής της εφαρμογής — δεν κάνει
             // τίποτα εκτός αν ο χρήστης κρατάει Shift ενώ σέρνει ένα παράθυρο (βλ. ZoneSnapEngine).
+            ZoneSnapEngine.AllowOwnWindow = h => IsHandleCreated && h == Handle;
             ZoneSnapEngine.Start();
 
             FormClosed += (_, _) =>
@@ -825,7 +826,7 @@ namespace MotionDesk.UI
             // "System" card = ζωντανή σύνοψη + συντόμευση στο πλήρες System Monitor (εκεί μένει η λεπτομέρεια:
             // CPU/RAM/δίκτυο/processes). Η γραμμή κατάστασης κάτω-κάτω δείχνει μόνο ένα ambient CPU/RAM glance.
             var systemCard = AddCard(panel, LocalizationManager.T("Dashboard.SystemCardTitle"),
-                $"CPU {metrics.CpuPercent:0.0}%   •   RAM {metrics.AvailableMemoryMb:0} / {metrics.TotalMemoryMb:0} MB free",
+                string.Format(LocalizationManager.T("Dashboard.SystemCardFormat"), metrics.CpuPercent.ToString("0.0"), metrics.AvailableMemoryMb.ToString("0"), metrics.TotalMemoryMb.ToString("0"), RamUsedPercent(metrics.AvailableMemoryMb, metrics.TotalMemoryMb)),
                 onClick: () => NavigateTo("Performance"));
             AddCard(panel, LocalizationManager.T("Dashboard.DesktopCardTitle"), string.Format(LocalizationManager.T("Dashboard.DesktopCardBodyFormat"),
                 Screen.AllScreens.Length, WidgetHostEngine.Instance.GetActiveWidgets().Count, Screen.AllScreens.Sum(s => ZoneLayoutStore.GetLayout(s.DeviceName).Zones.Count)));
@@ -835,7 +836,7 @@ namespace MotionDesk.UI
             dashboardRefreshTimer.Tick += (_, _) =>
             {
                 var m = SystemMonitorService.Instance.GetSnapshot();
-                systemCard.Text = string.Format(LocalizationManager.T("Dashboard.SystemCardFormat"), m.CpuPercent.ToString("0.0"), m.AvailableMemoryMb.ToString("0"), m.TotalMemoryMb.ToString("0"));
+                systemCard.Text = string.Format(LocalizationManager.T("Dashboard.SystemCardFormat"), m.CpuPercent.ToString("0.0"), m.AvailableMemoryMb.ToString("0"), m.TotalMemoryMb.ToString("0"), RamUsedPercent(m.AvailableMemoryMb, m.TotalMemoryMb));
             };
             dashboardRefreshTimer.Start();
             panel.Disposed += (_, _) => dashboardRefreshTimer.Dispose();
@@ -1835,7 +1836,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 var m = AdvancedSystemMonitorService.Instance.GetSnapshot();
                 cpu.SetValue(m.CpuPercent, $"{m.CpuPercent:0.0}%");
                 double ramPercent = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
-                ram.SetValue(ramPercent, string.Format(LocalizationManager.T("Performance.MemoryValueFormat"), $"{m.AvailableMemoryMb:0}", $"{m.TotalMemoryMb:0}"));
+                ram.SetValue(ramPercent, string.Format(LocalizationManager.T("Performance.MemoryValueFormat"), $"{m.AvailableMemoryMb:0}", $"{m.TotalMemoryMb:0}", RamUsedPercent(m.AvailableMemoryMb, m.TotalMemoryMb)));
                 if (gpuReady)
                 {
                     var g = GpuMonitorService.Instance.GetSnapshot();
@@ -2703,8 +2704,12 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         private void UpdateStatus()
         {
             var m = SystemMonitorService.Instance.GetSnapshot();
-            _statusLabel.Text = string.Format(LocalizationManager.T("Status.SystemFormat"), m.CpuPercent.ToString("0.0"), m.AvailableMemoryMb.ToString("0"));
+            _statusLabel.Text = string.Format(LocalizationManager.T("Status.SystemFormat"), m.CpuPercent.ToString("0.0"), m.AvailableMemoryMb.ToString("0"), RamUsedPercent(m.AvailableMemoryMb, m.TotalMemoryMb));
         }
+
+        // Ποσοστό χρήσης RAM (χρησιμοποιούμενη/συνολική) — εμφανίζεται δίπλα στα MB στην Αρχική, στη γραμμή κατάστασης, στο Performance και στο widget.
+        private static string RamUsedPercent(double availableMb, double totalMb) =>
+            totalMb > 0 ? Math.Clamp((totalMb - availableMb) / totalMb * 100.0, 0, 100).ToString("0") : "0";
 
         private sealed class SettingsView : Panel
         {
