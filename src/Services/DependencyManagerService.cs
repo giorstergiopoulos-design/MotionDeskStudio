@@ -97,9 +97,13 @@ namespace MotionDesk.Services
             {
                 using var proc = Process.Start(psi);
                 if (proc == null) return (false, "Δεν ήταν δυνατή η εκκίνηση του winget.");
-                string stdout = await proc.StandardOutput.ReadToEndAsync();
-                string stderr = await proc.StandardError.ReadToEndAsync();
+                // Ταυτόχρονη ανάγνωση: η διαδοχική (πρώτα stdout, μετά stderr) μπλόκαρε αν γέμιζε πρώτα το stderr.
+                var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+                var stderrTask = proc.StandardError.ReadToEndAsync();
+                string stdout = await stdoutTask;
+                string stderr = await stderrTask;
                 await proc.WaitForExitAsync();
+                WmvConversionService.ResetDetection();
                 return (proc.ExitCode == 0, string.IsNullOrWhiteSpace(stderr) ? stdout : stderr);
             }
             catch (Exception ex) { return (false, ex.Message); }

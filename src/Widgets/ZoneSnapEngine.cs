@@ -224,7 +224,7 @@ namespace MotionDesk.Widgets
         private static void UpdateMagneticOverlay(Point pt)
         {
             var screen = Screen.FromPoint(pt);
-            var region = DetectMagneticRegion(pt, screen.WorkingArea);
+            var region = DetectMagneticRegion(pt, screen);
             if (region == MagneticRegion.None) { HideOverlay(); return; }
 
             if (_overlay == null || _overlay.IsDisposed) _overlay = new ZoneOverlayWindow();
@@ -239,14 +239,27 @@ namespace MotionDesk.Widgets
             }
         }
 
-        private static MagneticRegion DetectMagneticRegion(Point screenPt, Rectangle workingArea)
+        // Άκρη που συνορεύει με ΑΛΛΗ οθόνη δεν είναι πραγματική άκρη: σέρνοντας ένα παράθυρο από τη μία
+        // οθόνη στην άλλη ο δείκτης περνά από εκεί, και το μαγνητικό snap ενεργοποιούνταν (ή και
+        // κούμπωνε αν το άφηνες κοντά) ενώ ο χρήστης απλώς άλλαζε οθόνη.
+        private static bool HasNeighborScreen(Rectangle bounds, int dx, int dy, Point pt)
         {
+            var probe = new Point(
+                dx < 0 ? bounds.Left - 2 : dx > 0 ? bounds.Right + 1 : pt.X,
+                dy < 0 ? bounds.Top - 2 : dy > 0 ? bounds.Bottom + 1 : pt.Y);
+            return Screen.AllScreens.Any(sc => sc.Bounds.Contains(probe));
+        }
+
+        private static MagneticRegion DetectMagneticRegion(Point screenPt, Screen screen)
+        {
+            var workingArea = screen.WorkingArea;
             int localX = screenPt.X - workingArea.X;
             int localY = screenPt.Y - workingArea.Y;
-            bool nearLeft = localX <= MagneticThresholdPx;
-            bool nearRight = localX >= workingArea.Width - MagneticThresholdPx;
-            bool nearTop = localY <= MagneticThresholdPx;
-            bool nearBottom = localY >= workingArea.Height - MagneticThresholdPx;
+            var b = screen.Bounds;
+            bool nearLeft = localX <= MagneticThresholdPx && !HasNeighborScreen(b, -1, 0, screenPt);
+            bool nearRight = localX >= workingArea.Width - MagneticThresholdPx && !HasNeighborScreen(b, 1, 0, screenPt);
+            bool nearTop = localY <= MagneticThresholdPx && !HasNeighborScreen(b, 0, -1, screenPt);
+            bool nearBottom = localY >= workingArea.Height - MagneticThresholdPx && !HasNeighborScreen(b, 0, 1, screenPt);
 
             if (nearLeft && nearTop) return MagneticRegion.TopLeft;
             if (nearRight && nearTop) return MagneticRegion.TopRight;
@@ -335,6 +348,8 @@ namespace MotionDesk.Widgets
                 }
                 if (bestIdx < 0) return;
 
+                // Ένα maximized παράθυρο αγνοεί το SetWindowPos (μένει μεγιστοποιημένο) — πρώτα restore.
+                if (IsZoomed(hwnd)) ShowWindow(hwnd, 9 /* SW_RESTORE */);
                 var target = AdjustForInvisibleFrame(hwnd, zones[bestIdx]);
                 SetWindowPos(hwnd, IntPtr.Zero, target.X, target.Y, target.Width, target.Height, SWP_NOZORDER | SWP_NOACTIVATE);
             }
@@ -371,6 +386,8 @@ namespace MotionDesk.Widgets
 
         [DllImport("user32.dll")]
         private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventProc lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+        [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
         [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);

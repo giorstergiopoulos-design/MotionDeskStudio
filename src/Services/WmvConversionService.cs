@@ -39,6 +39,9 @@ namespace MotionDesk.Services
         public static string? FindFfmpeg()
         {
             if (_cachedFfmpegPath != null) return _cachedFfmpegPath;
+            // Αρνητικό cache 30s: όταν το FFmpeg ΔΕΝ υπάρχει, κάθε κλήση (άνοιγμα σελίδας Ρυθμίσεων, κάθε
+            // προσθήκη βίντεο) ξεκινούσε διεργασία probe + αναδρομική σάρωση του WinGet\Packages στο UI thread.
+            if (_notFoundUntil > DateTime.UtcNow) return null;
 
             // 1) Ήδη στο PATH του συστήματος (π.χ. εγκαταστάθηκε από τον χρήστη ή μέσω winget).
             if (TryProbe("ffmpeg")) { _cachedFfmpegPath = "ffmpeg"; return _cachedFfmpegPath; }
@@ -70,8 +73,14 @@ namespace MotionDesk.Services
                 catch (UnauthorizedAccessException) { }
             }
 
+            _notFoundUntil = DateTime.UtcNow.AddSeconds(30);
             return null;
         }
+
+        private static DateTime _notFoundUntil = DateTime.MinValue;
+
+        // Μετά από (ξανα)εγκατάσταση ζητάμε άμεση νέα ανίχνευση αντί να περιμένουμε τη λήξη του αρνητικού cache.
+        public static void ResetDetection() { _notFoundUntil = DateTime.MinValue; _cachedFfmpegPath = null; }
 
         private static bool TryProbe(string exe)
         {

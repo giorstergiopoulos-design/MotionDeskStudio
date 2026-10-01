@@ -1619,11 +1619,19 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             AddText(panel, LocalizationManager.T("Personalization.LockScreenIntro"));
             AddText(panel, string.Format(LocalizationManager.T("Personalization.LockScreenEditionNote"), LockScreenEngine.GetWindowsEdition()));
 
-            AddButtonGrid(panel, (LocalizationManager.T("Personalization.SetLockScreenImage"), (_, _) =>
+            AddButtonGrid(panel, (LocalizationManager.T("Personalization.SetLockScreenImage"), async (_, _) =>
             {
-                using var dlg = new OpenFileDialog { Filter = "Images (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp", Title = LocalizationManager.T("Personalization.SetLockScreenImage") };
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                bool ok = LockScreenEngine.TrySetLockScreenImageElevated(dlg.FileName, out var error);
+                string fileName;
+                using (var dlg = new OpenFileDialog { Filter = "Images (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp", Title = LocalizationManager.T("Personalization.SetLockScreenImage") })
+                {
+                    if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                    fileName = dlg.FileName;
+                }
+                // Εκτός UI thread: το helper περιμένει έως 15s (UAC prompt) — στο UI thread πάγωνε όλο το
+                // παράθυρο ΚΑΙ (λόγω του global mouse hook του quick-hide) το ποντίκι όλου του συστήματος.
+                string error = string.Empty;
+                bool ok = await Task.Run(() => LockScreenEngine.TrySetLockScreenImageElevated(fileName, out error));
+                if (IsDisposed) return;
                 if (ok) _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenSuccess");
                 else if (error == "cancelled") _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenCancelled");
                 else _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenFailed");

@@ -57,7 +57,7 @@ namespace MotionDesk.Widgets
             errorMessage = string.Empty;
             try
             {
-                string exePath = Process.GetCurrentProcess().MainModule!.FileName;
+                string exePath = Environment.ProcessPath!;
                 var psi = new ProcessStartInfo(exePath, $"--set-lockscreen \"{imagePath}\"")
                 {
                     UseShellExecute = true,
