@@ -553,6 +553,14 @@ namespace MotionDesk.Widgets
             // το UI SynchronizationContext εδώ (ο constructor τρέχει στο UI thread) και κάνουμε Post.
             _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
+            // Παύση/συνέχιση σε fullscreen εφαρμογή — τώρα από το κοινό AppActivity (ίδιο state με τα widgets).
+            AppActivity.FullscreenChanged += fullscreen =>
+            {
+                _pausedForFullscreen = fullscreen;
+                if (!_enabled) return;
+                foreach (var w in _windows) _ = w.SetPausedAsync(fullscreen);
+            };
+
             // Debounce: το DisplaySettingsChanged στέλνεται σε ριπές (πολλά events για μία αλλαγή
             // ανάλυσης/οθόνης/docking) — κάθε RebuildWindows() καταστρέφει και ξαναφτιάχνει ΟΛΑ τα
             // WebView2 (αργό, βαρύ σε RAM/GPU). Περιμένουμε να "ησυχάσει" η ριπή και ξαναχτίζουμε ΜΙΑ φορά.
@@ -603,37 +611,9 @@ namespace MotionDesk.Widgets
                     return;
                 }
 
-                bool fullscreen = IsForegroundWindowFullscreen();
-                if (fullscreen == _pausedForFullscreen) return;
-                _pausedForFullscreen = fullscreen;
-                foreach (var w in _windows) _ = w.SetPausedAsync(fullscreen);
             };
             _fullscreenCheckTimer.Start();
         }
-
-        private static bool IsForegroundWindowFullscreen()
-        {
-            IntPtr hwnd = GetForegroundWindow();
-            if (hwnd == IntPtr.Zero) return false;
-            if (!GetWindowRect(hwnd, out var rect)) return false;
-
-            var sb = new System.Text.StringBuilder(256);
-            GetClassName(hwnd, sb, sb.Capacity);
-            string cls = sb.ToString();
-            if (cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") return false;
-
-            var screen = Screen.FromRectangle(new Rectangle(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top));
-            var bounds = screen.Bounds;
-            return rect.Left <= bounds.Left && rect.Top <= bounds.Top && rect.Right >= bounds.Right && rect.Bottom >= bounds.Bottom;
-        }
-
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-        private struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
-
-        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
-        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
-        private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
         public void EnsureStarted() => Enable();
 
@@ -738,16 +718,56 @@ namespace MotionDesk.Widgets
 
         public int AddVideoFolder(string folder)
         {
+            if (!Directory.Exists(folder)) return 0;
+
+            // Τα .wmv ΔΕΝ παίζουν στο WebView2 (δεν έχει decoder WMV3/VC-1) — πριν, ένας φάκελος με
+            // .wmv τα πρόσθετε ως έχουν και δεν έπαιζαν ποτέ. Τα μετατρέπουμε πρώτα σε .mp4 (FFmpeg) στο
+            // παρασκήνιο, ακριβώς όπως η προσθήκη μεμονωμένων αρχείων.
+            var allFiles = Directory.EnumerateFiles(folder, "*.*", SearchOption.TopDirectoryOnly)
+                .Where(f => WallpaperSettings.SupportedVideoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                .ToList();
+            var wmvFiles = allFiles.Where(f => string.Equals(Path.GetExtension(f), ".wmv", StringComparison.OrdinalIgnoreCase)).ToList();
+            var playable = allFiles.Except(wmvFiles).ToList();
+
             var settings = WallpaperSettings.Load();
-            int added = settings.AddVideoFolder(folder);
-            if (added > 0)
+            settings.AddVideoFiles(playable);
+            if (playable.Count > 0)
             {
                 settings.Mode = "Video";
                 settings.Save();
                 Enable();
                 _ = RefreshAllAsync();
             }
-            return added;
+
+            if (wmvFiles.Count > 0) _ = ConvertAndAddWmvAsync(wmvFiles);
+            return allFiles.Count;
+        }
+
+        private async Task ConvertAndAddWmvAsync(List<string> wmvFiles)
+        {
+            if (!WmvConversionService.IsFfmpegAvailable)
+            {
+                var choice = MessageBox.Show(
+                    $"Βρέθηκαν {wmvFiles.Count} αρχείο(α) .wmv στον φάκελο. Απαιτείται το δωρεάν εργαλείο FFmpeg για αυτόματη μετατροπή σε .mp4, το οποίο δεν εντοπίστηκε.\n\nΝα ανοίξει η σελίδα λήψης;",
+                    "Απαιτείται FFmpeg για μετατροπή .wmv", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (choice == DialogResult.Yes) WmvConversionService.OpenFfmpegDownloadPage();
+                return;
+            }
+
+            var converted = new List<string>();
+            foreach (var wmv in wmvFiles)
+            {
+                string? mp4 = await WmvConversionService.ConvertToMp4Async(wmv);
+                if (mp4 != null) converted.Add(mp4);
+            }
+            if (converted.Count == 0) return;
+
+            var settings = WallpaperSettings.Load();
+            settings.AddVideoFiles(converted);
+            settings.Mode = "Video";
+            settings.Save();
+            Enable();
+            _ = RefreshAllAsync();
         }
 
         public void SetShuffle(bool shuffle)

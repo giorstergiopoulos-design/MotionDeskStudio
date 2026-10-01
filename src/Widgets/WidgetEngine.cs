@@ -783,7 +783,7 @@ namespace MotionDesk.Widgets
             ApplyVariant();
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
         }
 
@@ -816,7 +816,7 @@ namespace MotionDesk.Widgets
             }
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
         }
 
@@ -843,7 +843,7 @@ namespace MotionDesk.Widgets
             }
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 40 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
             FormClosed += (_, _) => spectrum.Dispose();
         }
@@ -944,7 +944,7 @@ namespace MotionDesk.Widgets
             icon.BringToFront();
 
             var animTimer = new System.Windows.Forms.Timer { Interval = 60 };
-            animTimer.Tick += (_, _) => icon.AdvancePhase();
+            animTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) icon.AdvancePhase(); };
             animTimer.Start();
             FormClosed += (_, _) => animTimer.Dispose();
 
@@ -984,7 +984,7 @@ namespace MotionDesk.Widgets
             });
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 900000 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
         }
 
@@ -1037,7 +1037,7 @@ namespace MotionDesk.Widgets
             }
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 2000 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
         }
 

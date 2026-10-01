@@ -92,6 +92,7 @@ namespace MotionDesk.Widgets
             // όλα τα εικονίδια εκτός του Ο Υπολογιστής μου/φάκελος χρήστη/Πίνακας Ελέγχου/Κάδος
             // Ανακύκλωσης — ζητήθηκε ρητά. Τρέχει σε όλη τη διάρκεια ζωής της εφαρμογής.
             DesktopIconVisibilityEngine.Instance.Start();
+            AppActivity.Start();
 
             // Restore lightweight persistent preferences before showing the manager.
             var appSettings = AppSettings.Load();
