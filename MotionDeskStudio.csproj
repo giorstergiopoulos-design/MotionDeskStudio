@@ -13,9 +13,9 @@
     <ApplicationIcon>assets\MotionDesk.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.6.2</Version>
-    <AssemblyVersion>1.6.2.0</AssemblyVersion>
-    <FileVersion>1.6.2.0</FileVersion>
+    <Version>1.6.8</Version>
+    <AssemblyVersion>1.6.8.0</AssemblyVersion>
+    <FileVersion>1.6.8.0</FileVersion>
     <Product>MotionDesk Studio</Product>
     <!-- Ζητήθηκε ρητά "η εφαρμογή να μην περνά ως false positive". Πραγματική, εγγυημένη λύση
          είναι μόνο ένα πληρωμένο code-signing certificate (βλ. PROJECT_STATE.md — παραλείφθηκε
