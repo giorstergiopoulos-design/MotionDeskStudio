@@ -16,6 +16,7 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 <video id="videoA" class="videoLayer" muted playsinline></video>
 <video id="videoB" class="videoLayer" muted playsinline></video>
 <div id="pulse"></div>
+<script src="weather.js"></script>
 <script>
 const canvas = document.getElementById('waves');
 const ctx = canvas.getContext('2d');
@@ -99,6 +100,8 @@ function resizeCanvas() {
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // το Weather σκηνικό δουλεύει σε φυσικά pixels (ταυτοτικός μετασχηματισμός) — βλ. drawWeather
+    if (window.WeatherWallpaper) WeatherWallpaper.resize(canvas.width, canvas.height, dpr);
 }
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
@@ -432,13 +435,28 @@ function drawParticles(dtSeconds) {
 let currentVideoUri = null; // το URI που παίζει αυτή τη στιγμή (βλ. playCurrentVideo)
 let isPaused = false; // ορίζεται από motionDeskSetPaused — ώστε ένα refresh να μην ξυπνά ένα σκόπιμα παυμένο wallpaper
 
+function drawWeather(dt) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    try { WeatherWallpaper.draw(ctx, dt, { id: cfg.performanceMode }); } finally { ctx.restore(); }
+}
+
+// Ο καιρός έρχεται από τη C# πλευρά (cache 10 λεπτών, fallback σε 2ο πάροχο) — το JS δεν κάνει δικτυακές κλήσεις.
+let weatherTimer = null;
+async function refreshWeather() {
+    const b = bridge();
+    if (!b || !window.WeatherWallpaper) return;
+    try { WeatherWallpaper.setWeather(JSON.parse(await b.GetWeatherJson())); } catch (e) { /* κρατάει τα προηγούμενα δεδομένα */ }
+}
+
 function waveLoop(now) {
     const profile = perfProfile();
     const minFrameMs = 1000 / profile.targetFps;
 
     if (now - lastFrameTime >= minFrameMs) {
         const dt = Math.min(0.1, (now - lastFrameTime) / 1000 || 0.016);
-        if (cfg.mode === 'Particles') drawParticles(dt);
+        if (cfg.mode === 'Weather') drawWeather(dt);
+        else if (cfg.mode === 'Particles') drawParticles(dt);
         else if (cfg.waveStyle === 'Aurora') drawAurora(dt);
         else if (cfg.waveStyle === 'TechGrid') drawTechGrid(dt);
         else drawWaves(dt);
@@ -552,6 +570,16 @@ window.motionDeskRefresh = async () => {
     if (!b) return;
 
     try { cfg = JSON.parse(await b.GetWaveConfigJson()); } catch (e) { /* keep previous cfg */ }
+
+    if (window.WeatherWallpaper) {
+        WeatherWallpaper.setConfig({ weatherSim: cfg.weatherSim || 'Auto', timeSim: cfg.timeSim || 'Auto', glass: cfg.weatherGlass !== false, lat: cfg.weatherLat, lon: cfg.weatherLon });
+    }
+    clearInterval(weatherTimer);
+    weatherTimer = null;
+    if (cfg.mode === 'Weather') {
+        refreshWeather();
+        weatherTimer = setInterval(refreshWeather, 10 * 60 * 1000);
+    }
 
     clearInterval(audioTimer);
     audioTimer = (cfg.performanceMode === 'Battery' || isPaused) ? null : setInterval(refreshAudioPulse, cfg.performanceMode === 'High' ? 250 : 600);

@@ -70,8 +70,20 @@ namespace MotionDesk.Widgets
                 audioVolume = settings.AudioVolume,
                 audioBassGain = settings.AudioBassGain,
                 audioMidGain = settings.AudioMidGain,
-                audioTrebleGain = settings.AudioTrebleGain
+                audioTrebleGain = settings.AudioTrebleGain,
+                weatherSim = settings.WeatherSimulation,
+                timeSim = settings.TimeSimulation,
+                weatherGlass = settings.WeatherGlass,
+                weatherLat = settings.WeatherLat,
+                weatherLon = settings.WeatherLon
             });
+        }
+
+        // Live weather for the "Weather" wallpaper mode (cached 10 min in WeatherService; the JS side polls every 10 min).
+        public async System.Threading.Tasks.Task<string> GetWeatherJson()
+        {
+            var settings = WallpaperSettings.Load();
+            return await MotionDesk.Services.WeatherService.GetWallpaperWeatherJsonAsync(settings.WeatherLat, settings.WeatherLon);
         }
 
         // Αν αυτή η οθόνη έχει "καρφιτσωμένο" δικό της βίντεο (ScreenVideoOverride), το
@@ -167,7 +179,7 @@ namespace MotionDesk.Widgets
 
     public sealed class WallpaperSettings
     {
-        public string Mode { get; set; } = "Waves"; // "Waves" | "Video" | "Particles"
+        public string Mode { get; set; } = "Waves"; // "Waves" | "Video" | "Particles" | "Weather"
         public string WaveStyle { get; set; } = "Ribbons"; // "Ribbons" | "Aurora" — παραλλαγές ΜΕΣΑ στο Waves mode
         public string VideoPath { get; set; } = string.Empty; // legacy single-video field, kept for back-compat
         public List<string> VideoPaths { get; set; } = new();
@@ -180,6 +192,16 @@ namespace MotionDesk.Widgets
         // Shuffle "σακούλα": τα βίντεο που έχουν ήδη παιχτεί στον τρέχοντα κύκλο. Αποθηκεύεται στο JSON
         // (το WallpaperSettings φορτώνεται από την αρχή σε κάθε κλήση, άρα μνήμη μόνο σε πεδίο δεν αρκεί).
         public List<string> ShuffleHistory { get; set; } = new();
+
+        // "Weather" mode: the scene follows the real time of day + live weather of this location (default: Athens, like the weather widget).
+        public string WeatherCity { get; set; } = string.Empty;
+        public double WeatherLat { get; set; } = 37.9838;
+        public double WeatherLon { get; set; } = 23.7275;
+        // "Auto" = live. Otherwise a fixed scene (handy for previews/offline): Clear|PartlyCloudy|Cloudy|Drizzle|Rain|HeavyRain|Thunderstorm|Snow|Fog
+        public string WeatherSimulation { get; set; } = "Auto";
+        // "Auto" = live. Otherwise Dawn|Day|Dusk|Night
+        public string TimeSimulation { get; set; } = "Auto";
+        public bool WeatherGlass { get; set; } = true;   // raindrops on a window pane while it rains
 
         // Ήχος wallpaper video — ζητήθηκε ρητά, πραγματικό DSP (Web Audio API μέσα στο
         // wallpaper/index.html) πάνω στον ΔΙΚΟ ΜΑΣ ήχο του video wallpaper (όχι system-wide, βλ.
@@ -814,6 +836,39 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
             settings.Mode = "Video";
             settings.Save();
             Enable();
+            _ = RefreshAllAsync();
+        }
+
+        // ---- "Weather" mode settings (each change refreshes the running wallpaper)
+        public void SetWeatherLocation(string city, double lat, double lon)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.WeatherCity = city; settings.WeatherLat = lat; settings.WeatherLon = lon;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetWeatherSimulation(string sim)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.WeatherSimulation = sim;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetTimeSimulation(string sim)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.TimeSimulation = sim;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetWeatherGlass(bool enabled)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.WeatherGlass = enabled;
+            settings.Save();
             _ = RefreshAllAsync();
         }
 

@@ -118,6 +118,74 @@ namespace MotionDesk.Services
             catch (Exception) { return null; }
         }
 
+        // ---- Wallpaper "Weather" mode: richer data than the widget (cloud cover, wind direction, precipitation, UTC offset).
+        // Cached for 10 minutes per location (shared by every screen's bridge); on failure the last good payload (even if stale)
+        // is returned, otherwise {"ok":false} and the wallpaper keeps a clear sky with the real time of day.
+        private static string? _wpCacheKey, _wpCacheJson;
+        private static DateTime _wpCacheAt = DateTime.MinValue;
+        private static readonly object _wpLock = new();
+
+        private static string BuildWallpaperUrl(double lat, double lon) =>
+            $"https://api.open-meteo.com/v1/forecast?latitude={lat.ToString(CultureInfo.InvariantCulture)}&longitude={lon.ToString(CultureInfo.InvariantCulture)}" +
+            "&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,is_day&timezone=auto";
+
+        private static int CodeForCondition(WeatherCondition c) => c switch
+        {
+            WeatherCondition.Clear => 0, WeatherCondition.PartlyCloudy => 2, WeatherCondition.Cloudy => 3, WeatherCondition.Fog => 45,
+            WeatherCondition.Drizzle => 51, WeatherCondition.Rain => 63, WeatherCondition.Snow => 73, WeatherCondition.Thunderstorm => 95, _ => 0
+        };
+
+        public static async Task<string> GetWallpaperWeatherJsonAsync(double lat, double lon)
+        {
+            string key = $"{lat.ToString(CultureInfo.InvariantCulture)},{lon.ToString(CultureInfo.InvariantCulture)}";
+            lock (_wpLock)
+            {
+                if (_wpCacheKey == key && _wpCacheJson != null && DateTime.UtcNow - _wpCacheAt < TimeSpan.FromMinutes(10)) return _wpCacheJson;
+            }
+
+            string? json = null;
+            try
+            {
+                string raw = await _httpClient.GetStringAsync(BuildWallpaperUrl(lat, lon));
+                using var doc = JsonDocument.Parse(raw);
+                var cur = doc.RootElement.GetProperty("current");
+                double Num(string n, double d = 0) => cur.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : d;
+                json = JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    code = (int)Num("weather_code"),
+                    temp = Num("temperature_2m"),
+                    humidity = Num("relative_humidity_2m", -1),
+                    precip = Num("precipitation"),
+                    cloud = Num("cloud_cover", -1),
+                    wind = Num("wind_speed_10m"),
+                    windDir = Num("wind_direction_10m", 270),
+                    isDay = Num("is_day", 1) > 0,
+                    utcOffsetSec = doc.RootElement.TryGetProperty("utc_offset_seconds", out var off) && off.ValueKind == JsonValueKind.Number ? off.GetInt32() : (int?)null,
+                    source = "Open-Meteo"
+                });
+            }
+            catch (Exception) { /* fall through to the second provider */ }
+
+            if (json == null)
+            {
+                var fallback = await GetNormalizedWeatherAsync(lat, lon);
+                if (fallback != null)
+                    json = JsonSerializer.Serialize(new
+                    {
+                        ok = true, code = CodeForCondition(fallback.Condition), temp = fallback.TemperatureC, humidity = fallback.HumidityPercent ?? -1,
+                        precip = 0.0, cloud = -1, wind = fallback.WindKmh, windDir = 270, isDay = true, utcOffsetSec = (int?)null, source = fallback.Source
+                    });
+            }
+
+            lock (_wpLock)
+            {
+                if (json != null) { _wpCacheKey = key; _wpCacheJson = json; _wpCacheAt = DateTime.UtcNow; return json; }
+                if (_wpCacheKey == key && _wpCacheJson != null) return _wpCacheJson;   // stale but better than nothing
+            }
+            return "{\"ok\":false}";
+        }
+
         // Open-Meteo geocoding API (ίδιος δωρεάν πάροχος με τον καιρό, χωρίς API key) — επιτρέπει
         // στο widget να έχει πραγματική επιλογή τοποθεσίας αντί για μόνιμα κλειδωμένη Αθήνα.
         public static async Task<(double Lat, double Lon, string Name)?> GeocodeAsync(string cityName)

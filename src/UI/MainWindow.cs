@@ -1026,7 +1026,7 @@ namespace MotionDesk.UI
 
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionMode"));
             var modeCombo = new FlatComboBox { Width = 200, Margin = new Padding(0, 0, 0, 10) };
-            modeCombo.SetItems(new[] { "Waves", "Video", "Particles" }, settings.Mode);
+            modeCombo.SetItems(new[] { "Waves", "Video", "Particles", "Weather" }, settings.Mode);
             // Ξαναχτίζει ΟΛΟΚΛΗΡΗ τη σελίδα κάθε φορά που αλλάζει το Mode — ζητήθηκε ρητά bug fix:
             // πριν, οι ενότητες "Video Library"/"Theme & Colors"/"Wave Tuning" ήταν ΠΑΝΤΑ ορατές
             // ανεξάρτητα από το επιλεγμένο mode, οπότε η επιλογή βίντεο έμενε στην οθόνη ακόμη κι
@@ -1177,7 +1177,9 @@ namespace MotionDesk.UI
 
             // Theme/Palette και Wave Tuning ισχύουν για Waves ΚΑΙ Particles (μοιράζονται το ίδιο
             // cfg.speed/glowIntensity/palette στο JS engine) — άσχετα μόνο σε Video mode.
-            if (settings.Mode != "Video")
+            if (settings.Mode == "Weather") BuildWeatherWallpaperSection(panel, settings);
+
+            if (settings.Mode is "Waves" or "Particles")
             {
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionThemeColors"));
             var themeCombo = new FlatComboBox { Width = 200, Margin = new Padding(0, 0, 0, 8) };
@@ -1227,6 +1229,98 @@ namespace MotionDesk.UI
 
             SetPage("Page.Wallpaper.Title", panel);
         }
+
+        // ---- "Weather" wallpaper mode: location, live status, simulated weather/time, window-glass effect
+        private static readonly string[] WeatherSimIds = { "Auto", "Clear", "PartlyCloudy", "Cloudy", "Drizzle", "Rain", "HeavyRain", "Thunderstorm", "Snow", "Fog" };
+        private static readonly string[] TimeSimIds = { "Auto", "Dawn", "Day", "Dusk", "Night" };
+
+        private void BuildWeatherWallpaperSection(Panel panel, WallpaperSettings settings)
+        {
+            AddSection(panel, LocalizationManager.T("Wallpaper.SectionWeather"));
+            AddText(panel, LocalizationManager.T("Wallpaper.WeatherIntro"));
+
+            var liveLabel = new Label { Text = LocalizationManager.T("Wallpaper.WeatherLoading"), AutoSize = true, MaximumSize = new Size(740, 0), Font = UiTheme.FontBody, ForeColor = UiTheme.AccentCyan, Margin = new Padding(0, 0, 0, 12) };
+            panel.Controls.Add(liveLabel);
+            _ = RefreshLiveWeatherLabelAsync(liveLabel, settings.WeatherLat, settings.WeatherLon);
+
+            // location
+            string cityShown = string.IsNullOrWhiteSpace(settings.WeatherCity) ? LocalizationManager.T("Wallpaper.WeatherLocationDefault") : settings.WeatherCity;
+            var locLabel = new Label { Text = string.Format(LocalizationManager.T("Wallpaper.WeatherLocationCurrent"), cityShown), AutoSize = true, Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 0, 0, 4) };
+            panel.Controls.Add(locLabel);
+            var locRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 10) };
+            var cityBox = new TextBox { Width = 240, Text = settings.WeatherCity, BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary, BorderStyle = BorderStyle.FixedSingle, Font = UiTheme.FontBody, Margin = new Padding(0, 5, 10, 0) };
+            var setBtn = new HoverButton { Text = LocalizationManager.T("Wallpaper.WeatherLocationSet"), AutoSize = true, Padding = new Padding(16, 6, 16, 6), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = UiTheme.AccentBlue, BaseColor = UiTheme.AccentBlue, HoverBackColor = ControlPaint.Light(UiTheme.AccentBlue, 0.15f), TabStop = false, Cursor = Cursors.Hand, Margin = new Padding(0, 2, 0, 0) };
+            setBtn.FlatAppearance.BorderSize = 0;
+            async void ApplyCity()
+            {
+                var name = cityBox.Text.Trim();
+                if (name.Length == 0) return;
+                setBtn.Enabled = false;
+                try
+                {
+                    var found = await WeatherService.GeocodeAsync(name);
+                    if (found.HasValue)
+                    {
+                        WallpaperHostEngine.Instance.SetWeatherLocation(found.Value.Name, found.Value.Lat, found.Value.Lon);
+                        locLabel.Text = string.Format(LocalizationManager.T("Wallpaper.WeatherLocationCurrent"), found.Value.Name);
+                        cityBox.Text = found.Value.Name;
+                        _ = RefreshLiveWeatherLabelAsync(liveLabel, found.Value.Lat, found.Value.Lon);
+                    }
+                    else locLabel.Text = LocalizationManager.T("Wallpaper.WeatherLocationNotFound");
+                }
+                catch (Exception) { locLabel.Text = LocalizationManager.T("Wallpaper.WeatherLocationNotFound"); }
+                finally { if (!setBtn.IsDisposed) setBtn.Enabled = true; }
+            }
+            setBtn.Click += (_, _) => ApplyCity();
+            cityBox.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyCity(); } };
+            locRow.Controls.Add(cityBox);
+            locRow.Controls.Add(setBtn);
+            panel.Controls.Add(locRow);
+
+            // simulated weather / time of day (Automatic = live)
+            FlowLayoutPanel ComboRow(string labelKey, string[] ids, string idPrefix, string currentId, Action<string> onChange)
+            {
+                var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+                row.Controls.Add(new Label { Text = LocalizationManager.T(labelKey), AutoSize = false, Width = 150, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody });
+                var labels = ids.Select(id => LocalizationManager.T(idPrefix + id)).ToArray();
+                var combo = new FlatComboBox { Width = 240 };
+                combo.SetItems(labels, labels[Math.Max(0, Array.IndexOf(ids, currentId))]);
+                combo.SelectedIndexChanged += (_, _) => { int i = combo.SelectedIndex; if (i >= 0 && i < ids.Length) onChange(ids[i]); };
+                row.Controls.Add(combo);
+                return row;
+            }
+            panel.Controls.Add(ComboRow("Wallpaper.WeatherSimLabel", WeatherSimIds, "Wallpaper.Sim.", settings.WeatherSimulation, id => WallpaperHostEngine.Instance.SetWeatherSimulation(id)));
+            panel.Controls.Add(ComboRow("Wallpaper.TimeSimLabel", TimeSimIds, "Wallpaper.Time.", settings.TimeSimulation, id => WallpaperHostEngine.Instance.SetTimeSimulation(id)));
+
+            var glass = new CheckBox { Text = LocalizationManager.T("Wallpaper.WeatherGlass"), AutoSize = true, Checked = settings.WeatherGlass, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 6, 0, 10) };
+            glass.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetWeatherGlass(glass.Checked);
+            panel.Controls.Add(glass);
+        }
+
+        private async System.Threading.Tasks.Task RefreshLiveWeatherLabelAsync(Label target, double lat, double lon)
+        {
+            string text;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(await WeatherService.GetWallpaperWeatherJsonAsync(lat, lon));
+                var root = doc.RootElement;
+                if (root.TryGetProperty("ok", out var ok) && ok.GetBoolean())
+                {
+                    int code = root.GetProperty("code").GetInt32();
+                    string cond = LocalizationManager.T("Wallpaper.Sim." + CodeToSimId(code));
+                    text = string.Format(LocalizationManager.T("Wallpaper.WeatherLive"), root.GetProperty("temp").GetDouble().ToString("0.#"), root.GetProperty("wind").GetDouble().ToString("0"), cond);
+                }
+                else text = LocalizationManager.T("Wallpaper.WeatherLiveUnavailable");
+            }
+            catch (Exception) { text = LocalizationManager.T("Wallpaper.WeatherLiveUnavailable"); }
+            if (!target.IsDisposed) target.Text = text;
+        }
+
+        private static string CodeToSimId(int code) => code switch
+        {
+            0 => "Clear", 1 or 2 => "PartlyCloudy", 3 => "Cloudy", 45 or 48 => "Fog", 51 or 53 or 55 or 56 or 57 => "Drizzle",
+            61 or 66 or 67 or 80 => "Rain", 63 or 81 => "Rain", 65 or 82 => "HeavyRain", 71 or 73 or 75 or 77 or 85 or 86 => "Snow", 95 or 96 or 99 => "Thunderstorm", _ => "Clear"
+        };
 
         private static string DescribeWallpaperState(WallpaperSettings s) =>
             string.Format(LocalizationManager.T("Wallpaper.StateFormat"), WallpaperHostEngine.Instance.IsEnabled ? LocalizationManager.T("Wallpaper.EnabledShort") : LocalizationManager.T("Wallpaper.DisabledShort"), s.Mode, s.PerformanceMode);
