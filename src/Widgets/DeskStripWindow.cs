@@ -93,6 +93,7 @@ namespace MotionDesk.Widgets
         private void RebuildTray()
         {
             _tray.SuspendLayout();
+            foreach (Control old in _tray.Controls.Cast<Control>().ToList()) old.Dispose(); // Clear() δεν κάνει Dispose
             _tray.Controls.Clear();
             foreach (var path in _paths.ToArray())
                 _tray.Controls.Add(new DockTile(path, RemovePath));

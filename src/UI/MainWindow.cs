@@ -378,9 +378,17 @@ namespace MotionDesk.UI
         protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); UpdateAnimationTimers(); }
         protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); UpdateAnimationTimers(); }
 
+        // Controls.Clear() ΜΟΝΟ αφαιρεί — δεν κάνει Dispose. Οι σελίδες Widgets/DeskZones/DeskStrip ξαναχτίζουν
+        // τις λίστες τους κάθε 2s, άρα πριν διέρρεαν panels/labels/buttons/Regions συνεχώς όσο ήταν ανοιχτή η σελίδα.
+        private static void DisposeChildren(Control parent)
+        {
+            foreach (Control child in parent.Controls.Cast<Control>().ToList()) child.Dispose();
+            parent.Controls.Clear();
+        }
+
         private void RebuildSidebarNav()
         {
-            _nav.Controls.Clear();
+            DisposeChildren(_nav);
             _navButtons.Clear();
             _activeButton = null;
             AddNavButton(_nav, LocalizationManager.T("Nav.Dashboard"), "Dashboard", ShowDashboard, 1);
@@ -881,7 +889,7 @@ namespace MotionDesk.UI
             void RefreshActiveList()
             {
                 activeList.SuspendLayout();
-                activeList.Controls.Clear();
+                DisposeChildren(activeList);
                 var active = WidgetHostEngine.Instance.GetActiveWidgets();
                 if (active.Count == 0)
                 {
@@ -965,7 +973,7 @@ namespace MotionDesk.UI
             void RefreshActiveContainers()
             {
                 activeContainersList.SuspendLayout();
-                activeContainersList.Controls.Clear();
+                DisposeChildren(activeContainersList);
                 var active = DeskContainerHostEngine.Instance.GetActiveContainers();
                 if (active.Count == 0)
                 {
@@ -1486,7 +1494,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 // περιμένει θετικές — WinForms ιδιαιτερότητα).
                 var savedScroll = panel.AutoScrollPosition;
                 pinnedList.SuspendLayout();
-                pinnedList.Controls.Clear();
+                DisposeChildren(pinnedList);
                 var pinned = DeskStripHostEngine.Instance.GetPinnedApps();
                 if (pinned.Count == 0)
                 {
@@ -1583,7 +1591,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             void RefreshThemeList()
             {
                 themeList.SuspendLayout();
-                themeList.Controls.Clear();
+                DisposeChildren(themeList);
                 var themes = ThemePackageEngine.ListAvailableThemes();
                 if (themes.Count == 0)
                 {

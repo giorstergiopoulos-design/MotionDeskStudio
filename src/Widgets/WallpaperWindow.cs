@@ -813,6 +813,10 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
         {
             var settings = WallpaperSettings.Load();
             settings.VideoPaths.Remove(path);
+            // Το legacy VideoPath ξαναπροσθέτει το αρχείο στο playlist σε κάθε Load() (MigrateLegacyVideoPath) —
+            // χωρίς αυτό, ένα βίντεο που αφαιρούσες "επέστρεφε" μόνο του.
+            if (string.Equals(settings.VideoPath, path, StringComparison.OrdinalIgnoreCase)) settings.VideoPath = string.Empty;
+            settings.DisabledVideoPaths.Remove(path);
             settings.Save();
             _ = RefreshAllAsync();
         }
