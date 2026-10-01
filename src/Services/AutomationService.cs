@@ -28,13 +28,18 @@ public sealed class AutomationService : IDisposable
         if (Rules.Count == 0) Rules.Add(new AutomationRule { Name = "Gaming Mode", TriggerProcess = "steamwebhelper", Profile = "Gaming", Enabled = false });
     }
     public void Save() { Directory.CreateDirectory(Path.GetDirectoryName(_path)!); MotionDesk.Services.AtomicFile.WriteAllText(_path, JsonSerializer.Serialize(Rules, new JsonSerializerOptions { WriteIndented = true })); }
+    private readonly HashSet<string> _wasRunning = new(StringComparer.OrdinalIgnoreCase);
+
+    // Εφαρμόζει το προφίλ ΜΟΝΟ τη στιγμή που ξεκινά η διεργασία (μετάβαση "δεν τρέχει" → "τρέχει"). Πριν,
+    // όσο έτρεχε π.χ. ένα παιχνίδι το προφίλ ξαναφορτωνόταν κάθε 30s — κάθε φορά έκλεινε και ξανάνοιγε ΟΛΑ
+    // τα widgets/containers (flicker) και έσβηνε τις χειροκίνητες αλλαγές του χρήστη.
     private void Evaluate()
     {
-        foreach (var r in Rules.Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.TriggerProcess) && !string.IsNullOrWhiteSpace(x.Profile)))
+        foreach (var r in Rules.Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.TriggerProcess) && !string.IsNullOrWhiteSpace(x.Profile)).ToList())
         {
             bool running = RunningProcessCache.IsRunningByName(Path.GetFileNameWithoutExtension(r.TriggerProcess));
-            if (!running) continue;
-            if (_lastApplied.TryGetValue(r.Name, out var last) && (DateTime.UtcNow - last).TotalSeconds < 30) continue;
+            if (!running) { _wasRunning.Remove(r.Name); continue; }
+            if (!_wasRunning.Add(r.Name)) continue; // ήδη τρέχει και το έχουμε εφαρμόσει
             if (WorkspaceProfileService.Load(r.Profile)) { _lastApplied[r.Name] = DateTime.UtcNow; StatusChanged?.Invoke(this, $"Automation: loaded {r.Profile}"); }
         }
     }

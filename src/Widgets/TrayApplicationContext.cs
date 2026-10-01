@@ -68,6 +68,7 @@ namespace MotionDesk.Widgets
 
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add(LocalizationManager.T("Common.Exit"), null, (s, e) => {
+                try { WorkspaceProfileService.Save("Last Session"); WorkspaceProfileService.ExitSaveDone = true; } catch { }
                 _hotkeys.Dispose();
                 DesktopIconVisibilityEngine.Instance.Stop();
                 _trayIcon.Visible = false;

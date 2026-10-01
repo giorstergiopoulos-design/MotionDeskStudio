@@ -33,6 +33,11 @@ public static class WorkspaceProfileService
             .ToArray()!;
     }
 
+    // True αφού αποθηκεύτηκε το "Last Session" στην έξοδο (tray Exit) ΠΡΙΝ κλείσουν τα παράθυρα. Το
+    // Application.Exit() κλείνει τα Forms με τυχαία σειρά — αν τα widgets έκλειναν πρώτα, το αποθηκευμένο
+    // "Last Session" του MainWindow.FormClosed ήταν ΑΔΕΙΟ και τα widgets/containers χάνονταν στην επόμενη εκκίνηση.
+    public static bool ExitSaveDone { get; set; }
+
     public static void Save(string name)
     {
         name = Sanitize(name);

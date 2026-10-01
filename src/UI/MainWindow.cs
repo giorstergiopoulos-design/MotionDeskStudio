@@ -124,6 +124,7 @@ namespace MotionDesk.UI
             _hotkeys.RegisterCtrlAltShift(Keys.Down, () => ZoneSnapEngine.MoveForegroundWindowToZone(ZoneSnapEngine.ZoneDirection.Down));
 
             ThemeManager.UiContext = System.Threading.SynchronizationContext.Current;
+            WorkspaceProfileService.ExitSaveDone = false;
             ThemeManager.Changed += OnThemeOrLanguageChanged;
             ThemeManager.Repainted += OnThemeRepainted;
             LocalizationManager.Changed += OnThemeOrLanguageChanged;
@@ -135,7 +136,7 @@ namespace MotionDesk.UI
 
             FormClosed += (_, _) =>
             {
-                try { WorkspaceProfileService.Save("Last Session"); } catch { }
+                if (!WorkspaceProfileService.ExitSaveDone) { try { WorkspaceProfileService.Save("Last Session"); } catch { } }
                 ThemeManager.Changed -= OnThemeOrLanguageChanged;
                 ThemeManager.Repainted -= OnThemeRepainted;
                 LocalizationManager.Changed -= OnThemeOrLanguageChanged;
@@ -360,6 +361,11 @@ namespace MotionDesk.UI
                 if (_currentPageKey is "AudioEnhancement" or "Performance") NavigateTo("Dashboard");
                 Hide();
                 return;
+            }
+            // Πραγματικό κλείσιμο (έξοδος/shutdown): αποθήκευση ΤΩΡΑ, όσο τα widgets ζουν ακόμα.
+            if (!WorkspaceProfileService.ExitSaveDone)
+            {
+                try { WorkspaceProfileService.Save("Last Session"); WorkspaceProfileService.ExitSaveDone = true; } catch { }
             }
             base.OnFormClosing(e);
         }
