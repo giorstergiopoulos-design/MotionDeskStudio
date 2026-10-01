@@ -124,6 +124,7 @@ namespace MotionDesk.UI
             _hotkeys.RegisterCtrlAltShift(Keys.Down, () => ZoneSnapEngine.MoveForegroundWindowToZone(ZoneSnapEngine.ZoneDirection.Down));
 
             ThemeManager.UiContext = System.Threading.SynchronizationContext.Current;
+            AnimationsSettingChanged += UpdateAnimationTimers;
             WorkspaceProfileService.ExitSaveDone = false;
             ThemeManager.Changed += OnThemeOrLanguageChanged;
             ThemeManager.Repainted += OnThemeRepainted;
@@ -137,6 +138,7 @@ namespace MotionDesk.UI
             FormClosed += (_, _) =>
             {
                 if (!WorkspaceProfileService.ExitSaveDone) { try { WorkspaceProfileService.Save("Last Session"); } catch { } }
+                AnimationsSettingChanged -= UpdateAnimationTimers;
                 ThemeManager.Changed -= OnThemeOrLanguageChanged;
                 ThemeManager.Repainted -= OnThemeRepainted;
                 LocalizationManager.Changed -= OnThemeOrLanguageChanged;
@@ -338,9 +340,12 @@ namespace MotionDesk.UI
         // Οι διακοσμητικές animations (παλμός λογότυπου, κύμα header) τρέχαν συνεχώς σε 20Hz/16Hz
         // ακόμη κι όταν το παράθυρο ήταν κρυμμένο στο tray ή ελαχιστοποιημένο — άσκοπη κατανάλωση
         // CPU/GPU για μια εφαρμογή που ζει κυρίως στο παρασκήνιο. Τρέχουν μόνο όταν φαίνονται.
+        // Καλείται και από τη ρύθμιση Animations ώστε η αλλαγή να ισχύει αμέσως.
+        internal static event Action? AnimationsSettingChanged;
+
         private void UpdateAnimationTimers()
         {
-            bool visible = Visible && WindowState != FormWindowState.Minimized;
+            bool visible = Visible && WindowState != FormWindowState.Minimized && AppSettings.Load().EnableAnimations;
             if (_brandPulseTimer != null) _brandPulseTimer.Enabled = visible;
             if (_headerWaveTimer != null) _headerWaveTimer.Enabled = visible;
         }
@@ -694,6 +699,13 @@ namespace MotionDesk.UI
 
         private void AnimateSidebarWidth(int targetWidth, Action? onComplete = null)
         {
+            // Η ρύθμιση "Animations" (Ρυθμίσεις → Εκκίνηση) δεν είχε καμία επίδραση — τώρα την τηρούμε.
+            if (!AppSettings.Load().EnableAnimations)
+            {
+                _sidebar.Width = targetWidth;
+                onComplete?.Invoke();
+                return;
+            }
             _sidebarAnimTimer?.Stop();
             _sidebarAnimTimer?.Dispose();
             int startWidth = _sidebar.Width;
@@ -1773,7 +1785,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             AddIconButtonGrid(panel,
                 ("Save", LocalizationManager.T("Profiles.SaveCurrentAsProfile"), (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) { WorkspaceProfileService.Save(name.Text.Trim()); Refresh(); } }),
                 ("Restore", LocalizationManager.T("Profiles.LoadSelected"), (_, _) => { if (list.SelectedItem is string p && WorkspaceProfileService.Load(p)) { NavigateTo("Dashboard"); } }),
-                ("Add", LocalizationManager.T("Profiles.CreateUpdateDefaults"), (_, _) => { foreach (var p in new[] { "Work", "Gaming", "Focus" }) WorkspaceProfileService.Save(p); Refresh(); }),
+                ("Add", LocalizationManager.T("Profiles.CreateUpdateDefaults"), (_, _) => { foreach (var p in new[] { "Work", "Gaming", "Focus" }) { if (!WorkspaceProfileService.ListProfiles().Contains(p, StringComparer.OrdinalIgnoreCase)) WorkspaceProfileService.Save(p); } Refresh(); }),
                 ("Delete", LocalizationManager.T("Profiles.DeleteSelected"), (_, _) => { if (list.SelectedItem is string p && !p.Equals("Last Session", StringComparison.OrdinalIgnoreCase)) { WorkspaceProfileService.Delete(p); Refresh(); } }));
             SetPage("Page.Profiles.Title", panel);
         }
@@ -2742,7 +2754,9 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.RestoreLastSession"), AppSettings.Load().RestoreLastSession,
                     v => { var a = AppSettings.Load(); a.RestoreLastSession = v; a.Save(); }));
                 stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.EnableAnimations"), AppSettings.Load().EnableAnimations,
-                    v => { var a = AppSettings.Load(); a.EnableAnimations = v; a.Save(); }));
+                    v => { var a = AppSettings.Load(); a.EnableAnimations = v; a.Save(); AnimationsSettingChanged?.Invoke(); }));
+                stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.MinimizeToTray"), AppSettings.Load().MinimizeToTray,
+                    v => { var a = AppSettings.Load(); a.MinimizeToTray = v; a.Save(); }));
 
                 // Ζητήθηκε ρητά: ανεξάρτητο θέμα widgets/DeskContainers από αυτό της εφαρμογής,
                 // ενιαίο προεπιλεγμένο μέγεθος νέων widgets, και επιλέξιμος φάκελος αποθήκευσης
@@ -2924,10 +2938,12 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 track.Scroll += (_, _) =>
                 {
                     valueLabel.Text = $"{track.Value}%";
-                    double opacity = track.Value / 100.0;
-                    var a = AppSettings.Load(); a.WindowOpacity = opacity; a.Save();
-                    if (FindForm() is { } form) form.Opacity = opacity;
+                    // Ζωντανή προεπισκόπηση μόνο — η αποθήκευση γίνεται στο άφημα (πριν: εγγραφή αρχείου σε κάθε tick).
+                    if (FindForm() is { } form) form.Opacity = track.Value / 100.0;
                 };
+                void SaveOpacity() { var a = AppSettings.Load(); a.WindowOpacity = track.Value / 100.0; a.Save(); }
+                track.MouseUp += (_, _) => SaveOpacity();
+                track.KeyUp += (_, _) => SaveOpacity();
                 row.Controls.Add(track);
                 row.Controls.Add(valueLabel);
                 return row;

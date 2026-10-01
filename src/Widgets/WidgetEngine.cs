@@ -413,6 +413,7 @@ namespace MotionDesk.Widgets
                 Controls.Add(_webView);
                 await _webView.EnsureCoreWebView2Async(await WebView2Support.CreateEnvironmentAsync());
                 if (IsDisposed || _webView.CoreWebView2 == null) return;
+                WebView2Support.Harden(_webView.CoreWebView2);
                 _webView.CoreWebView2.AddHostObjectToScript("motionDesk", new WidgetBridge(this));
                 string htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "widgets", WidgetId, "index.html");
                 if (File.Exists(htmlPath)) _webView.CoreWebView2.Navigate(htmlPath);

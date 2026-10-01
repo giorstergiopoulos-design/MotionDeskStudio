@@ -175,6 +175,9 @@ namespace MotionDesk.Widgets
         private void RebuildGrid()
         {
             _grid.SuspendLayout();
+            // Controls.Clear() ΔΕΝ κάνει Dispose — κάθε tile κρατά native Icon (HICON clone) + handle, και
+            // η RebuildGrid τρέχει σε κάθε προσθήκη/αφαίρεση/ταξινόμηση. Ρητό Dispose για να μη διαρρέουν.
+            foreach (Control old in _grid.Controls.Cast<Control>().ToList()) old.Dispose();
             _grid.Controls.Clear();
             foreach (var item in _items.ToArray())
             {
@@ -546,14 +549,21 @@ namespace MotionDesk.Widgets
                         if (state.Width > 160 && state.Height > 120)
                             Size = new Size(Math.Clamp(state.Width, 200, 1600), Math.Clamp(state.Height, 140, 1000));
                         _expandedHeight = Height;
-                        Location = new Point(state.X, state.Y);
+                        // Αποθηκευμένη θέση σε οθόνη που δεν είναι πια συνδεδεμένη (π.χ. αποσύνδεση εξωτερικής
+                        // οθόνης) = container αόρατο για πάντα. Αν δεν τέμνει καμία οθόνη, πάει στην κύρια.
+                        var wanted = new Rectangle(state.X, state.Y, Width, Height);
+                        Location = Screen.AllScreens.Any(sc => sc.WorkingArea.IntersectsWith(wanted))
+                            ? new Point(state.X, state.Y)
+                            : new Point((Screen.PrimaryScreen ?? Screen.AllScreens[0]).WorkingArea.X + 80, (Screen.PrimaryScreen ?? Screen.AllScreens[0]).WorkingArea.Y + 80);
                         _title = state.Title ?? _title;
                         IsLocked = state.IsLocked;
                         ExcludeFromQuickHide = state.ExcludeFromQuickHide;
                         AccentColor = Color.FromArgb(state.AccentColorArgb == 0 ? Color.FromArgb(0, 170, 255).ToArgb() : state.AccentColorArgb);
                         Opacity = state.WindowOpacity is > 0 and <= 1 ? state.WindowOpacity : 1.0;
                         Enum.TryParse(state.SortMode, out _sortMode);
-                        if (state.Items != null) _items = state.Items.Where(i => File.Exists(i.Path) || Directory.Exists(i.Path)).ToList();
+                        // ΔΕΝ φιλτράρουμε τα στοιχεία που λείπουν: ένας offline δίσκος/USB/δικτυακός πόρος εξαφάνιζε μόνιμα τα στοιχεία του
+                        // (το επόμενο save τα έσβηνε). Μένουν ως εικονίδιο που ο χρήστης αφαιρεί χειροκίνητα.
+                        if (state.Items != null) _items = state.Items.ToList();
                         else if (state.Paths != null) _items = state.Paths.Where(p => File.Exists(p) || Directory.Exists(p)).Select(p => new ContainerItem { Path = p }).ToList();
                         if (state.PlaceNewIconsHereByDefault) DeskContainerHostEngine.Instance.DefaultContainerId = _containerId;
                         if (state.IsRolledUp)

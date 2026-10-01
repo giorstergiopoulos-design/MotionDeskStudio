@@ -437,5 +437,6 @@
   "Wallpaper.MissingSuffix": "  (missing)",
   "DeskFlip.Hint": "←/→, Tab or mouse wheel to browse  •  Enter to activate  •  Esc to exit",
   "QuickLook.Truncated": "\n\n[…preview truncated…]",
-  "Status.AudioPresetSystemWideFormat": "Audio Enhancement: {0} (system-wide)"
+  "Status.AudioPresetSystemWideFormat": "Audio Enhancement: {0} (system-wide)",
+  "Settings.MinimizeToTray": "Close button (✕) hides the app to the tray"
 }

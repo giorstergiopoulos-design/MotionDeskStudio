@@ -90,8 +90,15 @@ namespace MotionDesk.Widgets
             if (settings.Mode != "Video") return string.Empty;
 
             string? path = PinnedVideoForThisScreen(settings) ?? settings.CurrentPlaylistFile();
+            _lastServedShared = path;
             return string.IsNullOrEmpty(path) ? string.Empty : new Uri(path).AbsoluteUri;
         }
+
+        // Το κοινό playlist έχει ΕΝΑΝ δείκτη, αλλά υπάρχει ένα WallpaperBridge ανά οθόνη. Πριν, κάθε οθόνη που
+        // τελείωνε το βίντεο της προχωρούσε τον δείκτη — με 2 οθόνες το playlist προχωρούσε διπλά και
+        // "έτρωγε" βίντεο. Τώρα προχωράμε μόνο αν ο δείκτης ΕΙΝΑΙ ΑΚΟΜΑ στο βίντεο που σερβίραμε εμείς
+        // (αλλιώς κάποια άλλη οθόνη έχει ήδη προχωρήσει και απλώς παίρνουμε το τρέχον).
+        private string? _lastServedShared;
 
         // Καλείται από το JS όταν ένα βίντεο τελειώνει (advance) ή αποτυγχάνει να παιχτεί (skip).
         public string AdvanceVideo()
@@ -104,10 +111,14 @@ namespace MotionDesk.Widgets
             var pinned = PinnedVideoForThisScreen(settings);
             if (pinned != null) return new Uri(pinned).AbsoluteUri;
 
-            settings.AdvancePlaylist();
-            settings.Save();
+            if (_lastServedShared == null || string.Equals(settings.CurrentPlaylistFile(), _lastServedShared, StringComparison.OrdinalIgnoreCase))
+            {
+                settings.AdvancePlaylist();
+                settings.Save();
+            }
 
             string? path = settings.CurrentPlaylistFile();
+            _lastServedShared = path;
             return string.IsNullOrEmpty(path) ? string.Empty : new Uri(path).AbsoluteUri;
         }
     }
@@ -484,6 +495,7 @@ namespace MotionDesk.Widgets
                 Controls.Add(_webView);
                 await _webView.EnsureCoreWebView2Async(await WebView2Support.CreateEnvironmentAsync());
                 if (IsDisposed || _webView.CoreWebView2 == null) return;
+                WebView2Support.Harden(_webView.CoreWebView2);
                 _bridge = new WallpaperBridge(TargetScreen.DeviceName);
                 _webView.CoreWebView2.AddHostObjectToScript("wallpaper", _bridge);
                 string htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "widgets", "wallpaper", "index.html");

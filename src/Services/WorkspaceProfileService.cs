@@ -70,7 +70,15 @@ public static class WorkspaceProfileService
         catch (IOException) { return false; }
         if (profile == null) return false;
 
-        profile.AppSettings.Save();
+        // Εφαρμόζουμε ΜΟΝΟ τις ρυθμίσεις που ανήκουν στον "χώρο εργασίας" (snap). Πριν γινόταν
+        // profile.AppSettings.Save() — ΟΛΟ το snapshot των ρυθμίσεων τη στιγμή που αποθηκεύτηκε το προφίλ —
+        // οπότε η φόρτωση π.χ. του "Gaming" άλλαζε σιωπηλά γλώσσα, θέμα, διαφάνεια, φάκελο μετατροπής κ.ά. στις
+        // παλιές τιμές και έσβηνε ό,τι είχε αλλάξει ο χρήστης έκτοτε.
+        var currentApp = AppSettings.Load();
+        currentApp.GridSnap = profile.AppSettings.GridSnap;
+        currentApp.SnapThreshold = profile.AppSettings.SnapThreshold;
+        currentApp.GridSize = profile.AppSettings.GridSize;
+        currentApp.Save();
         var wallpaper = WallpaperSettings.Load();
         wallpaper.VideoPath = profile.Wallpaper.VideoPath ?? string.Empty;
         wallpaper.PerformanceMode = profile.Wallpaper.PerformanceMode ?? "Balanced";

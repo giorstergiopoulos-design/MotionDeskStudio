@@ -437,5 +437,6 @@
   "Wallpaper.MissingSuffix": "  (λείπει)",
   "DeskFlip.Hint": "←/→, Tab ή ροδέλα ποντικιού για περιήγηση  •  Enter για ενεργοποίηση  •  Esc για έξοδο",
   "QuickLook.Truncated": "\n\n[…περικοπή προεπισκόπησης…]",
-  "Status.AudioPresetSystemWideFormat": "Audio Enhancement: {0} (σε όλο το σύστημα)"
+  "Status.AudioPresetSystemWideFormat": "Audio Enhancement: {0} (σε όλο το σύστημα)",
+  "Settings.MinimizeToTray": "Το κουμπί κλεισίματος (✕) κρύβει την εφαρμογή στο tray"
 }
