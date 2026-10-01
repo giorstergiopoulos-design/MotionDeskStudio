@@ -177,7 +177,7 @@ namespace MotionDesk.Widgets
             if (!File.Exists(ConfigPath)) return;
             try
             {
-                var state = JsonSerializer.Deserialize<DeskStripState>(File.ReadAllText(ConfigPath));
+                var state = JsonSerializer.Deserialize<DeskStripState>(MotionDesk.Services.AtomicFile.ReadAllText(ConfigPath));
                 if (state?.Paths != null) _paths.AddRange(state.Paths.Where(p => File.Exists(p)));
             }
             catch (JsonException) { }

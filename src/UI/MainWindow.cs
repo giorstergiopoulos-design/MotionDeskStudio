@@ -133,6 +133,8 @@ namespace MotionDesk.UI
 
             // Χαμηλού-κόστους hook, τρέχει σε όλη τη διάρκεια ζωής της εφαρμογής — δεν κάνει
             // τίποτα εκτός αν ο χρήστης κρατάει Shift ενώ σέρνει ένα παράθυρο (βλ. ZoneSnapEngine).
+            // After an update, show the Version History once (the first time the window is shown with a new version)
+            Shown += (_, _) => ShowChangelogAfterUpdate();
             ZoneSnapEngine.AllowOwnWindow = h => IsHandleCreated && h == Handle;
             ZoneSnapEngine.Start();
 
@@ -2043,15 +2045,45 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             panel.Controls.Add(procs);
             var powerCard = AddCard(panel, LocalizationManager.T("Performance.PowerLabel"), "");
 
+            // last 2 minutes (60 samples @ 2 s) of CPU/RAM (and GPU when available) as sparklines
+            var cpuRamHistory = new SparklineCard(LocalizationManager.T("Performance.HistoryCpuRam"), 2, 100, 60) { Width = 500, Height = 110, Margin = new Padding(0, 0, 0, 10) };
+            panel.Controls.Add(cpuRamHistory);
+            var gpuHistory = new SparklineCard(LocalizationManager.T("Performance.HistoryGpu"), 1, 100, 60) { Width = 500, Height = 110, Margin = new Padding(0, 0, 0, 10) };
+            panel.Controls.Add(gpuHistory);
+
+            // top 5 memory users (refreshed every ~6 s on a background thread)
+            AddSection(panel, LocalizationManager.T("Performance.TopMemory"));
+            var topLabel = new Label { Text = "…", AutoSize = true, MaximumSize = new Size(740, 0), Font = new Font("Consolas", 10f), ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 0, 0, 10) };
+            panel.Controls.Add(topLabel);
+            int topTick = 0; bool topBusy = false;
+
+            // notification when CPU/RAM stay above 90% for a minute (works while the app lives in the tray)
+            var alertsCheck = new CheckBox { Text = LocalizationManager.T("Performance.AlertsEnable"), AutoSize = true, Checked = AppSettings.Load().UsageAlertsEnabled, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 4, 0, 10) };
+            alertsCheck.CheckedChanged += (_, _) => { var a = AppSettings.Load(); a.UsageAlertsEnabled = alertsCheck.Checked; a.Save(); };
+            panel.Controls.Add(alertsCheck);
+
             var timer = new System.Windows.Forms.Timer { Interval = 2000 };
             timer.Tick += (_, _) => {
                 var m = AdvancedSystemMonitorService.Instance.GetSnapshot();
+                double ramPct = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
+                cpuRamHistory.Push(m.CpuPercent, ramPct, $"CPU {m.CpuPercent:0}%   •   RAM {ramPct:0}%");
+                if (topTick++ % 3 == 0 && !topBusy)
+                {
+                    topBusy = true;
+                    _ = System.Threading.Tasks.Task.Run(() => TopProcessesService.TopByMemory(5)).ContinueWith(t =>
+                    {
+                        topBusy = false;
+                        if (t.IsCompletedSuccessfully && !topLabel.IsDisposed)
+                            topLabel.BeginInvoke(new Action(() => topLabel.Text = string.Join("\n", t.Result.Select((x, i) => $"{i + 1}. {x.Name,-28} {(x.Mb >= 1024 ? (x.Mb / 1024).ToString("0.0") + " GB" : x.Mb.ToString("0") + " MB"),9}"))));
+                    });
+                }
                 cpu.SetValue(m.CpuPercent, $"{m.CpuPercent:0.0}%");
                 double ramPercent = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
                 ram.SetValue(ramPercent, string.Format(LocalizationManager.T("Performance.MemoryValueFormat"), $"{m.AvailableMemoryMb:0}", $"{m.TotalMemoryMb:0}", RamUsedPercent(m.AvailableMemoryMb, m.TotalMemoryMb)));
                 if (gpuReady)
                 {
                     var g = GpuMonitorService.Instance.GetSnapshot();
+                    if (g.Available) gpuHistory.Push(g.LoadPercent ?? 0, null, $"GPU {g.LoadPercent ?? 0:0}%" + (g.TemperatureC.HasValue ? $"   {g.TemperatureC:0}°C" : ""));
                     gpu.SetValue(g.Available ? g.LoadPercent ?? 0 : 0,
                         g.Available ? $"{g.LoadPercent:0.0}%" + (g.TemperatureC.HasValue ? $"   {g.TemperatureC:0}°C" : "") : LocalizationManager.T("Performance.GpuUnavailable"));
                 }
@@ -2303,6 +2335,39 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             AddText(panel, string.Format(LocalizationManager.T("About.RuntimeLine"), WidgetHostEngine.Instance.GetActiveWidgets().Count));
             AddButton(panel, LocalizationManager.T("VersionHistory.Button"), (_, _) => ShowVersionHistory());
 
+            // ---- updates (GitHub releases; nothing is downloaded automatically)
+            AddSection(panel, LocalizationManager.T("About.UpdateHeading"));
+            var updateStatus = new Label { Text = "", AutoSize = true, MaximumSize = new Size(740, 0), Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 0, 0, 6) };
+            var autoUpdate = new CheckBox { Text = LocalizationManager.T("About.UpdateAuto"), AutoSize = true, Checked = AppSettings.Load().UpdateCheckEnabled, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 2, 0, 6) };
+            autoUpdate.CheckedChanged += (_, _) => { var a = AppSettings.Load(); a.UpdateCheckEnabled = autoUpdate.Checked; a.Save(); };
+            panel.Controls.Add(autoUpdate);
+            var updateRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 14) };
+            string? updateUrl = null;
+            var openUpdate = NewHoverButton(LocalizationManager.T("About.UpdateOpen"), () =>
+            {
+                if (updateUrl != null && updateUrl.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase))
+                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(updateUrl) { UseShellExecute = true }); } catch (Exception) { }
+            });
+            openUpdate.Visible = false;
+            var checkNow = NewHoverButton(LocalizationManager.T("About.UpdateCheckNow"), async () =>
+            {
+                updateStatus.Text = LocalizationManager.T("About.UpdateChecking");
+                var result = await UpdateCheckService.CheckAsync();
+                if (updateStatus.IsDisposed) return;
+                if (!result.Succeeded) updateStatus.Text = LocalizationManager.T("About.UpdateFailed");
+                else if (result.Update != null)
+                {
+                    updateUrl = result.Update.Url;
+                    updateStatus.Text = string.Format(LocalizationManager.T("About.UpdateNewer"), result.Update.Latest.ToString(3));
+                    openUpdate.Visible = true;
+                }
+                else updateStatus.Text = string.Format(LocalizationManager.T("About.UpdateUpToDate"), UpdateCheckService.CurrentVersion.ToString(3));
+            });
+            updateRow.Controls.Add(checkNow);
+            updateRow.Controls.Add(openUpdate);
+            panel.Controls.Add(updateRow);
+            panel.Controls.Add(updateStatus);
+
             AddSection(panel, LocalizationManager.T("About.SectionInstructions"));
             AddText(panel, LocalizationManager.T("About.InstructionsList"));
 
@@ -2390,6 +2455,21 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             dialog.AcceptButton = closeBtn;
             dialog.CancelButton = closeBtn;
             dialog.ShowDialog(this);
+        }
+
+        private void ShowChangelogAfterUpdate()
+        {
+            try
+            {
+                var a = AppSettings.Load();
+                string cur = UpdateCheckService.CurrentVersion.ToString(3);
+                if (a.LastRunVersion == cur) return;
+                bool upgraded = !string.IsNullOrEmpty(a.LastRunVersion);       // first ever run: nothing to show
+                a.LastRunVersion = cur;
+                a.Save();
+                if (upgraded) BeginInvoke(new Action(ShowVersionHistory));
+            }
+            catch (Exception) { /* cosmetic */ }
         }
 
         private void ShowVersionHistory()

@@ -87,6 +87,14 @@ namespace MotionDesk.Widgets
 
             _trayIcon.DoubleClick += (s, e) => ShowMainWindow();
 
+            // ---- high-usage alerts + daily update check
+            _uiContext = System.Threading.SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+            _alertTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+            _alertTimer.Tick += (_, _) => UsageAlertTick();
+            _alertTimer.Start();
+            _trayIcon.BalloonTipClicked += (_, _) => OpenPendingUpdate();
+            _ = CheckForUpdateAsync();
+
             _hotkeys.RegisterCtrlAlt('F', () => DeskFlipEngine.Show());
 
             // Fences-style: διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας κρύβει/επαναφέρει
@@ -214,6 +222,62 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             // Βλ. αναλυτικό σχόλιο στο MainWindow.AddWallpaperVideosAsync — χωρίς αυτό, ένα ήδη
             // ανοιχτό wallpaper window δεν μαθαίνει ποτέ ότι το Mode/playlist άλλαξε.
             _ = WallpaperHostEngine.Instance.RefreshAllAsync();
+        }
+
+        private System.Threading.SynchronizationContext _uiContext = null!;
+        private System.Windows.Forms.Timer? _alertTimer;
+        private int _cpuHighTicks, _ramHighTicks;
+        private DateTime _lastAlertUtc = DateTime.MinValue;
+        private string? _pendingUpdateUrl;
+
+        // Called every 5 s: CPU or memory >= 90% for 12 consecutive ticks (one minute) -> one tray balloon, then a 10-minute pause
+        private void UsageAlertTick()
+        {
+            try
+            {
+                if (!AppSettings.Load().UsageAlertsEnabled) { _cpuHighTicks = _ramHighTicks = 0; return; }
+                var m = SystemMonitorService.Instance.GetSnapshot();
+                double ramPct = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
+                _cpuHighTicks = m.CpuPercent >= 90 ? _cpuHighTicks + 1 : 0;
+                _ramHighTicks = ramPct >= 90 ? _ramHighTicks + 1 : 0;
+                if (DateTime.UtcNow - _lastAlertUtc < TimeSpan.FromMinutes(10)) return;
+                if (_ramHighTicks >= 12)
+                {
+                    _lastAlertUtc = DateTime.UtcNow; _ramHighTicks = 0;
+                    var top = TopProcessesService.TopByMemory(1).FirstOrDefault();
+                    _trayIcon.ShowBalloonTip(8000, LocalizationManager.T("Alert.Title"), string.Format(LocalizationManager.T("Alert.RamHigh"), top.Name ?? "?"), ToolTipIcon.Warning);
+                }
+                else if (_cpuHighTicks >= 12)
+                {
+                    _lastAlertUtc = DateTime.UtcNow; _cpuHighTicks = 0;
+                    _trayIcon.ShowBalloonTip(8000, LocalizationManager.T("Alert.Title"), LocalizationManager.T("Alert.CpuHigh"), ToolTipIcon.Warning);
+                }
+            }
+            catch (Exception) { /* an alert must never break the tray */ }
+        }
+
+        private async System.Threading.Tasks.Task CheckForUpdateAsync()
+        {
+            try
+            {
+                await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(25));      // do not compete with the startup work
+                var info = await UpdateCheckService.CheckIfDueAsync();
+                if (info == null) return;
+                _uiContext.Post(_ =>
+                {
+                    _pendingUpdateUrl = info.Url;
+                    _trayIcon.ShowBalloonTip(10000, LocalizationManager.T("Update.Title"), string.Format(LocalizationManager.T("Update.Available"), info.Latest.ToString(3)), ToolTipIcon.Info);
+                }, null);
+            }
+            catch (Exception) { /* offline etc. */ }
+        }
+
+        private void OpenPendingUpdate()
+        {
+            var url = _pendingUpdateUrl;
+            if (url == null || !url.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase)) return;
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch (Exception) { }
+            _pendingUpdateUrl = null;
         }
 
         private void ChooseWallpaperFolder()

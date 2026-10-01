@@ -364,7 +364,7 @@ namespace MotionDesk.Widgets
             {
                 try
                 {
-                    var state = JsonSerializer.Deserialize<WidgetState>(File.ReadAllText(configPath));
+                    var state = JsonSerializer.Deserialize<WidgetState>(MotionDesk.Services.AtomicFile.ReadAllText(configPath));
                     if (state != null)
                     {
                         if (state.Width > 120 && state.Height > 80) Size = new Size(Math.Clamp(state.Width, 160, 1200), Math.Clamp(state.Height, 100, 900));

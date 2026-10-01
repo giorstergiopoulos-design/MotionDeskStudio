@@ -271,3 +271,15 @@ Tests: no automated test project exists in this repo — verification this sessi
 - DeskZones: MotionDesk's own main window now snaps (removed WINEVENT_SKIPOWNPROCESS; `ZoneSnapEngine.AllowOwnWindow` allows only the main form; widgets/containers still excluded).
 - DeskContainer: double-click on title bar renames (detected in MouseDown; the native HTCAPTION move loop swallowed DoubleClick), title centered, bar 28->36px with own accent-tinted background + accent separator.
 - Audio: no system-wide path via Waveframe (its Web Audio DSP only processes audio it plays itself); system-wide EQ stays Equalizer APO. Possible plugin = detect Waveframe + launch/handoff button (not implemented).
+
+## v1.7.5 (2026-10-01, cloud session — compile-checked + headless-Chromium screenshots of the wallpaper; NOT click-tested on Windows)
+- **Weather wallpaper** (`Mode="Weather"`): `src/Widgets/wallpaper/weather.js` (Canvas2D scene: time-of-day sky from sunrise/sunset computed from lat/lon, moon phase, stars; clouds, rain with ripples/splashes/glass drops, snow, fog, lightning). Data via `WallpaperBridge.GetWeatherJson` → `WeatherService.GetWallpaperWeatherJsonAsync` (Open-Meteo, 10-min cache, wttr.in fallback). Settings: city/lat/lon, weather+time simulation, glass toggle (page section built by `BuildWeatherWallpaperSection`). Screenshots verified for clear/rain/storm+bolt/snow/fog/dawn/dusk/night.
+- **Playlist**: thumbnails (Shell `IShellItemImageFactory`) + durations (ffmpeg, optional) in `VideoMetaService`; repeat-per-video / rotate-every-N-min (`AdvanceSerial` replaces the old `_lastServedShared` for multi-screen); remove-missing; include-subfolders; time-of-day mode schedule (`WallpaperScheduleRule`, `WallpaperHostEngine.ApplyScheduleNow`); `AttachLog` → `%APPDATA%\MotionDeskStudio\wallpaper-attach.log`.
+- **Version History**: locale `VersionNotes.<ver>` lines now start with `+ ` (added) / `~ ` (improved) / `= ` (note, not counted); GearWin-style cards (`BuildVersionCard`). Regenerate from the scratch generator if notes change (not in repo).
+- **Shortcuts**: `ShortcutsCard` renders `About.ShortcutsList` (`# group` + `Keys  Description`).
+- **DeskZones**: `ZoneExcludedApps` (AppSettings), zone numbers in overlay, layouts adopt orphaned layout of same resolution after display renumbering. **Containers**: item count, Find, auto-collect rule (desktop FileSystemWatcher).
+- **Performance**: CPU/RAM + GPU sparklines, top-5 memory processes, optional >=90% for 1 min tray alert (`UsageAlertsEnabled`).
+- **System**: `AtomicFile` keeps `.bak` and restores it when JSON is invalid; `UpdateCheckService` (GitHub releases, daily) + changelog shown once after an update (`LastRunVersion`).
+- Already existed (no change): Equalizer APO detection + install button on the Sound Management page.
+- Not done / ideas: per-app wallpaper schedule (Automation profiles already switch by process); weather HUD text.
+- Build tooling: `tools/build-all.ps1` (pull + build + installer for MotionDesk, GearWin, Waveframe).

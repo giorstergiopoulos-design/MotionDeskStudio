@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 
 namespace MotionDesk.Services;
 
@@ -15,12 +16,53 @@ internal static class AtomicFile
     {
         string tmp = path + ".tmp";
         File.WriteAllText(tmp, contents, new UTF8Encoding(false));
+        KeepBackup(path);
         File.Move(tmp, path, overwrite: true);
+    }
+
+    // Keeps the previous GOOD file as "<name>.bak" (refreshed at most every 10 minutes so frequent saves do not rewrite it constantly,
+    // and never overwritten with a file that is not valid JSON). ReadAllText restores it automatically if the main file is damaged.
+    private static void KeepBackup(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return;
+            string bak = path + ".bak";
+            if (File.Exists(bak) && DateTime.UtcNow - File.GetLastWriteTimeUtc(bak) < TimeSpan.FromMinutes(10)) return;
+            if (!IsValidJson(File.ReadAllText(path))) return;
+            File.Copy(path, bak, overwrite: true);
+        }
+        catch (Exception) { /* a backup is a convenience, never a reason to fail a save */ }
+    }
+
+    private static bool IsValidJson(string text)
+    {
+        try { using var _ = JsonDocument.Parse(text); return true; }
+        catch (JsonException) { return false; }
     }
 
     // Ανάγνωση με λίγες επαναλήψεις: ένα στιγμιαίο sharing violation (το rename της εγγραφής,
     // antivirus, OneDrive) δεν πρέπει να μετατρέπεται σε "χάθηκαν οι ρυθμίσεις → προεπιλογές".
     public static string ReadAllText(string path)
+    {
+        string text = ReadWithRetry(path);
+        if (IsValidJson(text)) return text;
+
+        // The main file is empty/corrupt (crash mid-write on an old version, disk problem, manual edit): restore the last good copy.
+        string bak = path + ".bak";
+        try
+        {
+            if (File.Exists(bak))
+            {
+                string good = File.ReadAllText(bak);
+                if (IsValidJson(good)) { File.Copy(bak, path, overwrite: true); return good; }
+            }
+        }
+        catch (Exception) { /* fall through with what we have */ }
+        return text;
+    }
+
+    private static string ReadWithRetry(string path)
     {
         for (int attempt = 0; ; attempt++)
         {

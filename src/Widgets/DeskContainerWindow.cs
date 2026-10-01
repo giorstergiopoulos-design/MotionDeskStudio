@@ -645,7 +645,7 @@ namespace MotionDesk.Widgets
             {
                 try
                 {
-                    var state = JsonSerializer.Deserialize<DeskContainerState>(File.ReadAllText(path));
+                    var state = JsonSerializer.Deserialize<DeskContainerState>(MotionDesk.Services.AtomicFile.ReadAllText(path));
                     if (state != null)
                     {
                         if (state.Width > 160 && state.Height > 120)

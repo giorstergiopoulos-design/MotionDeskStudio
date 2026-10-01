@@ -17,6 +17,12 @@ namespace MotionDesk.Services
         public bool MinimizeToTray { get; set; } = true;
         // DeskZones: applications (process names, without .exe) whose windows are never snapped (e.g. media players, games)
         public List<string> ZoneExcludedApps { get; set; } = new();
+        // Notify (tray balloon) when CPU or memory stays above 90% for a minute
+        public bool UsageAlertsEnabled { get; set; } = false;
+        // Check GitHub for a newer release once a day / show the changelog once after an update
+        public bool UpdateCheckEnabled { get; set; } = true;
+        public DateTime LastUpdateCheckUtc { get; set; } = DateTime.MinValue;
+        public string LastRunVersion { get; set; } = "";
         public bool StartWallpaperWithWindows { get; set; }
         public bool EnableAnimations { get; set; } = true;
         public string ThemeMode { get; set; } = "Follow"; // Follow | Light | Dark

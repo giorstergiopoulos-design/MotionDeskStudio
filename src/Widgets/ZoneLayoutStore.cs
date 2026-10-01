@@ -52,7 +52,7 @@ namespace MotionDesk.Widgets
             {
                 if (File.Exists(ConfigPath))
                 {
-                    var loaded = JsonSerializer.Deserialize<Dictionary<string, ZoneLayoutData>>(File.ReadAllText(ConfigPath));
+                    var loaded = JsonSerializer.Deserialize<Dictionary<string, ZoneLayoutData>>(MotionDesk.Services.AtomicFile.ReadAllText(ConfigPath));
                     if (loaded != null) { _cache = loaded; return _cache; }
                 }
             }

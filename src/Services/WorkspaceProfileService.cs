@@ -65,7 +65,7 @@ public static class WorkspaceProfileService
         var path = Path.Combine(Root, Sanitize(name) + ".json");
         if (!File.Exists(path)) return false;
         WorkspaceProfile? profile;
-        try { profile = JsonSerializer.Deserialize<WorkspaceProfile>(File.ReadAllText(path)); }
+        try { profile = JsonSerializer.Deserialize<WorkspaceProfile>(AtomicFile.ReadAllText(path)); }
         catch (JsonException) { return false; }
         catch (IOException) { return false; }
         if (profile == null) return false;
