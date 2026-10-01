@@ -207,7 +207,7 @@ namespace MotionDesk.Widgets
             {
                 if (File.Exists(ConfigPath))
                 {
-                    var loaded = JsonSerializer.Deserialize<WallpaperSettings>(File.ReadAllText(ConfigPath));
+                    var loaded = JsonSerializer.Deserialize<WallpaperSettings>(MotionDesk.Services.AtomicFile.ReadAllText(ConfigPath));
                     if (loaded != null)
                     {
                         loaded.MigrateLegacyVideoPath();
@@ -231,7 +231,7 @@ namespace MotionDesk.Widgets
         public void Save()
         {
             Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-            File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this));
+            MotionDesk.Services.AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(this));
         }
 
         private void MigrateLegacyVideoPath()
@@ -454,8 +454,11 @@ namespace MotionDesk.Widgets
         // Αυτόματη παύση όταν μια άλλη εφαρμογή είναι πλήρους οθόνης (ζητήθηκε ρητά στο
         // roadmap) — καθαρά εξοικονόμηση CPU/μπαταρίας, αφού το wallpaper έτσι κι αλλιώς δεν
         // είναι ορατό πίσω από ένα fullscreen παράθυρο.
+        private bool _paused;
+
         public async Task SetPausedAsync(bool paused)
         {
+            _paused = paused; // θυμόμαστε την κατάσταση ώστε να εφαρμοστεί και μετά από (re)navigation
             if (_webView?.CoreWebView2 == null) return;
             try { await _webView.CoreWebView2.ExecuteScriptAsync($"window.motionDeskSetPaused?.({(paused ? "true" : "false")});"); }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
@@ -474,6 +477,10 @@ namespace MotionDesk.Widgets
                 _bridge = new WallpaperBridge(TargetScreen.DeviceName);
                 _webView.CoreWebView2.AddHostObjectToScript("wallpaper", _bridge);
                 string htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "widgets", "wallpaper", "index.html");
+                // Μετά από κάθε φόρτωση σελίδας ξαναεφαρμόζουμε την κατάσταση παύσης — αλλιώς ένα
+                // νέο/ανανεωμένο παράθυρο (π.χ. rebuild λόγω αλλαγής οθονών ενώ τρέχει fullscreen
+                // παιχνίδι) θα έπαιζε κανονικά πίσω από το παιχνίδι.
+                _webView.CoreWebView2.NavigationCompleted += (_, _) => { if (_paused) _ = SetPausedAsync(true); };
                 if (File.Exists(htmlPath)) _webView.CoreWebView2.Navigate(htmlPath);
             }
             catch (Exception ex)
@@ -645,6 +652,7 @@ namespace MotionDesk.Widgets
                     if (!w.IsAttached) continue;
                     if (!w.Visible) w.Show();
                     else w.BringToFront();
+                    _ = w.SetPausedAsync(_pausedForFullscreen);
                 }
             }
             EnsureFullscreenWatcher();
@@ -653,7 +661,9 @@ namespace MotionDesk.Widgets
         public void Disable()
         {
             _enabled = false;
-            foreach (var w in _windows) w.Hide();
+            // Ρητή παύση ΠΡΙΝ το Hide — ένα κρυμμένο WebView2 συνεχίζει αλλιώς να αποκωδικοποιεί
+            // video/τρέχει canvas σε χαμηλότερο ρυθμό, καταναλώνοντας CPU/GPU για κάτι αόρατο.
+            foreach (var w in _windows) { _ = w.SetPausedAsync(true); w.Hide(); }
             _fullscreenCheckTimer?.Stop();
             _pausedForFullscreen = false;
         }

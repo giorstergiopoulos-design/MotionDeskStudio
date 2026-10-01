@@ -65,7 +65,7 @@ namespace MotionDesk.Widgets
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-                File.WriteAllText(ConfigPath, JsonSerializer.Serialize(_cache ?? new Dictionary<string, ZoneLayoutData>(), new JsonSerializerOptions { WriteIndented = true }));
+                MotionDesk.Services.AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(_cache ?? new Dictionary<string, ZoneLayoutData>(), new JsonSerializerOptions { WriteIndented = true }));
             }
             catch (IOException) { }
         }

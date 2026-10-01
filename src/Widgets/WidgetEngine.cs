@@ -352,7 +352,7 @@ namespace MotionDesk.Widgets
                     Opacity = Opacity, NetworkStyle = NetworkStyle,
                     AnalogTheme = AnalogTheme, DigitalFontFamily = DigitalFontFamily, DigitalColorArgb = DigitalColorArgb
                 };
-                File.WriteAllText(configPath, JsonSerializer.Serialize(state));
+                MotionDesk.Services.AtomicFile.WriteAllText(configPath, JsonSerializer.Serialize(state));
             }
             catch (IOException) { }
         }

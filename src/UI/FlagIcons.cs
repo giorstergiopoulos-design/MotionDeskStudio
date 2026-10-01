@@ -41,7 +41,7 @@ namespace MotionDesk.UI
             g.SmoothingMode = SmoothingMode.AntiAlias;
             var navy = Color.FromArgb(1, 33, 105);
             var red = Color.FromArgb(200, 16, 46);
-            g.FillRectangle(new SolidBrush(navy), 0, 0, w, h);
+            using (var navyBrush = new SolidBrush(navy)) g.FillRectangle(navyBrush, 0, 0, w, h);
             using (var whiteDiag = new Pen(Color.White, h / 3.5f))
             {
                 g.DrawLine(whiteDiag, 0, 0, w, h);

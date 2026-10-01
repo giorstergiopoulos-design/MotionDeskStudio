@@ -69,19 +69,19 @@ namespace MotionDesk.UI
         private static void DrawGrid(Graphics g, Pen pen)
         {
             foreach (var (x, y) in new[] { (3f, 3f), (11f, 3f), (3f, 11f), (11f, 11f) })
-                g.DrawPath(pen, RoundedRect(x, y, 6, 6, 1.6f));
+                DrawRounded(g, pen, x, y, 6, 6, 1.6f);
         }
 
         private static void DrawZones(Graphics g, Pen pen)
         {
-            g.DrawPath(pen, RoundedRect(2.5f, 3f, 15, 14, 2));
+            DrawRounded(g, pen, 2.5f, 3f, 15, 14, 2);
             g.DrawLine(pen, 9.5f, 3f, 9.5f, 17f);
             g.DrawLine(pen, 9.5f, 10.5f, 17.5f, 10.5f);
         }
 
         private static void DrawImage(Graphics g, Pen pen, Brush brush)
         {
-            g.DrawPath(pen, RoundedRect(2.5f, 3.5f, 15, 13, 2));
+            DrawRounded(g, pen, 2.5f, 3.5f, 15, 13, 2);
             g.FillEllipse(brush, 5.2f, 6f, 2.6f, 2.6f);
             g.DrawLines(pen, new[] { new PointF(4f, 15.5f), new PointF(9f, 10.5f), new PointF(12f, 13.5f), new PointF(14.5f, 11f), new PointF(16.5f, 14.5f) });
         }
@@ -184,7 +184,7 @@ namespace MotionDesk.UI
 
         private static void DrawSave(Graphics g, Pen pen)
         {
-            g.DrawPath(pen, RoundedRect(3f, 3f, 14, 14, 1.6f));
+            DrawRounded(g, pen, 3f, 3f, 14, 14, 1.6f);
             g.DrawRectangle(pen, 6f, 3.2f, 8, 5);
             g.DrawRectangle(pen, 6.5f, 11f, 7, 5.5f);
         }
@@ -215,28 +215,28 @@ namespace MotionDesk.UI
             g.DrawLine(pen, 7.5f, 6f, 7.5f, 3.6f);
             g.DrawLine(pen, 12.5f, 6f, 12.5f, 3.6f);
             g.DrawLine(pen, 7.5f, 3.6f, 12.5f, 3.6f);
-            g.DrawPath(pen, RoundedRect(5.2f, 6f, 9.6f, 11, 1.4f));
+            DrawRounded(g, pen, 5.2f, 6f, 9.6f, 11, 1.4f);
             g.DrawLine(pen, 8f, 8.7f, 8f, 14.3f);
             g.DrawLine(pen, 12f, 8.7f, 12f, 14.3f);
         }
 
         private static void DrawCommand(Graphics g, Pen pen)
         {
-            g.DrawPath(pen, RoundedRect(2.5f, 3.5f, 15, 13, 2));
+            DrawRounded(g, pen, 2.5f, 3.5f, 15, 13, 2);
             g.DrawLines(pen, new[] { new PointF(5.5f, 8f), new PointF(8.5f, 10.3f), new PointF(5.5f, 12.6f) });
             g.DrawLine(pen, 10.5f, 12.6f, 14.5f, 12.6f);
         }
 
         private static void DrawBriefcase(Graphics g, Pen pen)
         {
-            g.DrawPath(pen, RoundedRect(2.5f, 6.5f, 15, 10, 1.6f));
+            DrawRounded(g, pen, 2.5f, 6.5f, 15, 10, 1.6f);
             g.DrawLine(pen, 2.5f, 10.5f, 17.5f, 10.5f);
-            g.DrawPath(pen, RoundedRect(7.3f, 3.5f, 5.4f, 3.4f, 1));
+            DrawRounded(g, pen, 7.3f, 3.5f, 5.4f, 3.4f, 1);
         }
 
         private static void DrawGameController(Graphics g, Pen pen)
         {
-            g.DrawPath(pen, RoundedRect(2f, 6.5f, 16, 8, 4));
+            DrawRounded(g, pen, 2f, 6.5f, 16, 8, 4);
             g.DrawLine(pen, 5.8f, 10.5f, 8.2f, 10.5f);
             g.DrawLine(pen, 7f, 9.3f, 7f, 11.7f);
             g.DrawEllipse(pen, 12.3f, 8f, 1.8f, 1.8f);
@@ -262,17 +262,17 @@ namespace MotionDesk.UI
 
         private static void DrawContainer(Graphics g, Pen pen)
         {
-            g.DrawPath(pen, RoundedRect(2.5f, 4f, 15, 12, 2));
+            DrawRounded(g, pen, 2.5f, 4f, 15, 12, 2);
             g.DrawLine(pen, 2.5f, 7.5f, 17.5f, 7.5f);
             foreach (var (x, y) in new[] { (5.5f, 11.5f), (9.5f, 11.5f), (13.5f, 11.5f) })
-                g.DrawPath(pen, RoundedRect(x - 1.3f, y - 1.3f, 2.6f, 2.6f, 0.6f));
+                DrawRounded(g, pen, x - 1.3f, y - 1.3f, 2.6f, 2.6f, 0.6f);
         }
 
         // Παλέτα ζωγραφικής με τρύπα αντίχειρα + λίγα "χρώματα" — αντιπροσωπεύει την Εξατομίκευση
         // (IconAtlas/DeskCursors/DeskStrip/DeskSounds), όχι κάποια συγκεκριμένη υπο-λειτουργία.
         private static void DrawPalette(Graphics g, Pen pen, SolidBrush brush)
         {
-            var outline = new GraphicsPath();
+            using var outline = new GraphicsPath();
             outline.AddArc(2f, 3f, 15f, 15f, 130, 280);
             outline.AddArc(11.5f, 12.5f, 4f, 4f, 50, -140);
             outline.CloseFigure();
@@ -289,6 +289,13 @@ namespace MotionDesk.UI
             g.DrawLine(pen, 14.5f, 5.5f, 17f, 8f);
             g.DrawLine(pen, 17f, 8f, 8.5f, 16.5f);
             g.DrawLine(pen, 8.5f, 16.5f, 6f, 16.5f);
+        }
+
+        // Το GraphicsPath κρατά native μνήμη — πρέπει να γίνεται Dispose (πριν γινόταν "new" ανά σχεδίαση).
+        private static void DrawRounded(Graphics g, Pen pen, float x, float y, float w, float h, float r)
+        {
+            using var path = RoundedRect(x, y, w, h, r);
+            g.DrawPath(pen, path);
         }
 
         private static GraphicsPath RoundedRect(float x, float y, float w, float h, float r)

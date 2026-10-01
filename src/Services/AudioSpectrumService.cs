@@ -19,6 +19,7 @@ namespace MotionDesk.Services
         private WasapiLoopbackCapture? _capture;
         private readonly float[] _ring = new float[FftLength];
         private int _ringPos;
+        private long _lastDataTick;
         private readonly object _lock = new();
         private readonly Complex[] _fftBuffer = new Complex[FftLength];
 
@@ -83,9 +84,11 @@ namespace MotionDesk.Services
 
         private void OnDataAvailable(object? sender, WaveInEventArgs e)
         {
-            if (_capture == null) return;
-            int bytesPerSample = _capture.WaveFormat.BitsPerSample / 8;
-            int channels = Math.Max(1, _capture.WaveFormat.Channels);
+            var capture = _capture; // τοπικό αντίγραφο — το Dispose() μηδενίζει το πεδίο από άλλο thread
+            if (capture == null) return;
+            _lastDataTick = Environment.TickCount64;
+            int bytesPerSample = capture.WaveFormat.BitsPerSample / 8;
+            int channels = Math.Max(1, capture.WaveFormat.Channels);
             int frameSize = bytesPerSample * channels;
             if (frameSize <= 0) return;
             int frames = e.BytesRecorded / frameSize;
@@ -117,6 +120,10 @@ namespace MotionDesk.Services
 
             lock (_lock)
             {
+                // Το WASAPI loopback ΔΕΝ στέλνει δεδομένα όσο δεν παίζει ήχος — χωρίς αυτό ο ring buffer
+                // κρατούσε τα τελευταία δείγματα και οι μπάρες "πάγωναν" στο τελευταίο frame αντί να
+                // πέφτουν στο μηδέν όταν σταματάει η μουσική.
+                if (Environment.TickCount64 - _lastDataTick > 250) Array.Clear(_ring);
                 for (int i = 0; i < FftLength; i++)
                 {
                     int idx = (_ringPos + i) % FftLength;

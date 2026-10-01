@@ -242,7 +242,7 @@ namespace MotionDesk.Widgets
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(StateFilePath)!);
-                File.WriteAllText(StateFilePath, JsonSerializer.Serialize(saved));
+                MotionDesk.Services.AtomicFile.WriteAllText(StateFilePath, JsonSerializer.Serialize(saved));
             }
             catch (IOException) { }
         }

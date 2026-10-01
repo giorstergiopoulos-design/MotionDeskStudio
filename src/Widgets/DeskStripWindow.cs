@@ -1,3 +1,4 @@
+using MotionDesk.Services;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -165,7 +166,7 @@ namespace MotionDesk.Widgets
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-                File.WriteAllText(ConfigPath, JsonSerializer.Serialize(new DeskStripState { Paths = _paths }));
+                MotionDesk.Services.AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(new DeskStripState { Paths = _paths }));
             }
             catch (IOException) { }
         }
@@ -240,17 +241,7 @@ namespace MotionDesk.Widgets
         {
             try
             {
-                string target = Path.GetFullPath(path);
-                foreach (var proc in Process.GetProcesses())
-                {
-                    try
-                    {
-                        if (proc.MainModule != null &&
-                            string.Equals(proc.MainModule.FileName, target, StringComparison.OrdinalIgnoreCase))
-                            return true;
-                    }
-                    catch (Exception) { /* access denied σε process άλλου χρήστη/elevated — αγνοείται */ }
-                }
+                return RunningProcessCache.IsRunningByPath(Path.GetFullPath(path));
             }
             catch (Exception) { }
             return false;

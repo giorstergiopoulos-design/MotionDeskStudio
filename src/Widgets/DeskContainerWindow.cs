@@ -528,7 +528,7 @@ namespace MotionDesk.Widgets
                     WindowOpacity = Opacity,
                     SortMode = _sortMode.ToString()
                 };
-                File.WriteAllText(path, JsonSerializer.Serialize(state));
+                MotionDesk.Services.AtomicFile.WriteAllText(path, JsonSerializer.Serialize(state));
             }
             catch (IOException) { }
         }

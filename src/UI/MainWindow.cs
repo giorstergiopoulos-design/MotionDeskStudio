@@ -332,6 +332,19 @@ namespace MotionDesk.UI
             Controls.Add(_status);
         }
 
+        // Οι διακοσμητικές animations (παλμός λογότυπου, κύμα header) τρέχαν συνεχώς σε 20Hz/16Hz
+        // ακόμη κι όταν το παράθυρο ήταν κρυμμένο στο tray ή ελαχιστοποιημένο — άσκοπη κατανάλωση
+        // CPU/GPU για μια εφαρμογή που ζει κυρίως στο παρασκήνιο. Τρέχουν μόνο όταν φαίνονται.
+        private void UpdateAnimationTimers()
+        {
+            bool visible = Visible && WindowState != FormWindowState.Minimized;
+            if (_brandPulseTimer != null) _brandPulseTimer.Enabled = visible;
+            if (_headerWaveTimer != null) _headerWaveTimer.Enabled = visible;
+        }
+
+        protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); UpdateAnimationTimers(); }
+        protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); UpdateAnimationTimers(); }
+
         private void RebuildSidebarNav()
         {
             _nav.Controls.Clear();
@@ -1217,7 +1230,7 @@ namespace MotionDesk.UI
                     anySevenZipMissing = true;
                     continue;
                 }
-                plainFiles.AddRange(ArchivePlaylistService.ExtractVideos(archive));
+                plainFiles.AddRange(await Task.Run(() => ArchivePlaylistService.ExtractVideos(archive))); // εκτός UI thread — η εξαγωγή μεγάλου αρχείου πάγωνε το παράθυρο
             }
 
             if (anySevenZipMissing)

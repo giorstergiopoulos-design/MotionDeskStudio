@@ -101,6 +101,10 @@ namespace MotionDesk.Services
                 { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
                 using var proc = Process.Start(psi);
                 if (proc == null) return false;
+                // Το 7z γράφει συνεχώς λίστα αρχείων στο stdout — αν το pipe δεν διαβάζεται γεμίζει και
+                // το 7z μπλοκάρει για πάντα (το UI thread περιμένει εδώ). Αδειάζουμε και τα δύο ασύγχρονα.
+                _ = proc.StandardOutput.ReadToEndAsync();
+                _ = proc.StandardError.ReadToEndAsync();
                 proc.WaitForExit();
                 return proc.ExitCode == 0;
             }

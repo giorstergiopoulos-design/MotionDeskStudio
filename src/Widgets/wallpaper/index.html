@@ -429,6 +429,8 @@ function drawParticles(dtSeconds) {
     ctx.shadowBlur = 0;
 }
 
+let isPaused = false; // ορίζεται από motionDeskSetPaused — ώστε ένα refresh να μην ξυπνά ένα σκόπιμα παυμένο wallpaper
+
 function waveLoop(now) {
     const profile = perfProfile();
     const minFrameMs = 1000 / profile.targetFps;
@@ -447,7 +449,7 @@ function waveLoop(now) {
 function startWaves() {
     videoLayers.forEach(v => { v.classList.add('videoHidden'); v.classList.remove('active'); v.pause(); });
     canvas.style.display = 'block';
-    if (!waveLoopHandle) waveLoopHandle = requestAnimationFrame(waveLoop);
+    if (!waveLoopHandle && !isPaused) waveLoopHandle = requestAnimationFrame(waveLoop);
 }
 
 function stopWaves() {
@@ -466,6 +468,7 @@ async function playCurrentVideo() {
     const layer = activeVideo();
     layer.src = uri;
     layer.classList.add('active');
+    if (isPaused) return;
     try { await layer.play(); } catch (e) { advanceVideo(); }
 }
 
@@ -483,7 +486,7 @@ function crossfadeTo(uri) {
         if (started) return;
         started = true;
         if (safetyTimer) clearTimeout(safetyTimer);
-        incoming.play().catch(() => advanceVideo());
+        if (!isPaused) incoming.play().catch(() => advanceVideo());
         incoming.classList.add('active');
         outgoing.classList.remove('active');
         activeLayerIdx = 1 - activeLayerIdx;
@@ -541,7 +544,7 @@ window.motionDeskRefresh = async () => {
     try { cfg = JSON.parse(await b.GetWaveConfigJson()); } catch (e) { /* keep previous cfg */ }
 
     clearInterval(audioTimer);
-    audioTimer = (cfg.performanceMode === 'Battery') ? null : setInterval(refreshAudioPulse, cfg.performanceMode === 'High' ? 250 : 600);
+    audioTimer = (cfg.performanceMode === 'Battery' || isPaused) ? null : setInterval(refreshAudioPulse, cfg.performanceMode === 'High' ? 250 : 600);
 
     if (cfg.mode === 'Video') {
         await playCurrentVideo();
@@ -553,6 +556,7 @@ window.motionDeskRefresh = async () => {
 // Αυτόματη παύση σε fullscreen εφαρμογές/παιχνίδια (καλείται από τη C# πλευρά) — καθαρή
 // εξοικονόμηση CPU/GPU αφού το wallpaper δεν είναι ορατό πίσω από ένα fullscreen παράθυρο.
 window.motionDeskSetPaused = (paused) => {
+    isPaused = !!paused;
     if (paused) {
         if (waveLoopHandle) { cancelAnimationFrame(waveLoopHandle); waveLoopHandle = null; }
         activeVideo().pause();

@@ -52,7 +52,7 @@ public static class WorkspaceProfileService
             DeskContainers = DeskContainerHostEngine.Instance.GetSnapshots().ToList()
         };
 
-        File.WriteAllText(Path.Combine(Root, name + ".json"), JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
+        MotionDesk.Services.AtomicFile.WriteAllText(Path.Combine(Root, name + ".json"), JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     public static bool Load(string name)

@@ -45,14 +45,14 @@ namespace MotionDesk.Services
         private static string ConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "settings.json");
         public static AppSettings Load()
         {
-            try { if (File.Exists(ConfigPath)) return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(ConfigPath)) ?? new AppSettings(); }
+            try { if (File.Exists(ConfigPath)) return JsonSerializer.Deserialize<AppSettings>(MotionDesk.Services.AtomicFile.ReadAllText(ConfigPath)) ?? new AppSettings(); }
             catch (JsonException) { }
             catch (IOException) { }
             return new AppSettings();
         }
         public void Save()
         {
-            try { Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!); File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); }
+            try { Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!); MotionDesk.Services.AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); }
             catch (IOException) { }
         }
     }
