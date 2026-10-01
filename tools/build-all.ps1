@@ -38,6 +38,9 @@ function Update-Repo($p) {
 function Build-MotionDesk($p) {
     Push-Location $p.Path
     try {
+        # A running MotionDesk.exe locks bin\Release\...\MotionDesk.exe and fails the build
+        $running = Get-Process -Name 'MotionDesk' -ErrorAction SilentlyContinue
+        if ($running) { Write-Host 'Closing running MotionDesk.exe before build...' -ForegroundColor Yellow; $running | Stop-Process -Force; Start-Sleep -Seconds 2 }
         Run dotnet @('build','MotionDeskStudio.csproj','-c','Release')
         # NO -o: installer.iss reads bin\Release\net8.0-windows10.0.19041.0\win-x64\publish
         Run dotnet @('publish','MotionDeskStudio.csproj','-c','Release','-r','win-x64','--self-contained','false')
