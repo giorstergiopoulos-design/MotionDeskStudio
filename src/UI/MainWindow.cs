@@ -1951,7 +1951,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         // ακολουθούν την επιλεγμένη γλώσσα — πριν ήταν hardcoded και μισές ελληνικά / μισές αγγλικά.
         private static readonly (string Version, string Date)[] VersionHistory =
         {
-            ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
+            ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
         };
 
 
@@ -2095,7 +2095,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             AddText(panel, LocalizationManager.T("About.InstructionsList"));
 
             AddSection(panel, LocalizationManager.T("About.SectionShortcuts"));
-            AddText(panel, LocalizationManager.T("About.ShortcutsList"));
+            panel.Controls.Add(new ShortcutsCard(LocalizationManager.T("About.ShortcutsList")) { Margin = new Padding(0, 0, 0, 14) });
 
             AddSection(panel, LocalizationManager.T("About.SectionLicense"));
             AddText(panel, LocalizationManager.T("About.LicenseSummary"));
@@ -2186,51 +2186,133 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             {
                 Text = LocalizationManager.T("VersionHistory.Title"),
                 StartPosition = FormStartPosition.CenterParent,
-                Size = new Size(560, 460),
+                Size = new Size(720, 680),
                 BackColor = UiTheme.Background,
                 ForeColor = UiTheme.TextPrimary,
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 MaximizeBox = false,
                 MinimizeBox = false
             };
-            dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch (DllNotFoundException) { } };
+            dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch { } };
 
-            var list = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(16), BackColor = UiTheme.Background };
+            const int contentWidth = 630;
+            var list = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(22, 18, 22, 18), BackColor = UiTheme.Background };
+            list.Controls.Add(new Label { Text = LocalizationManager.T("VersionHistory.Title"), Font = new Font("Segoe UI", 16f, FontStyle.Bold), ForeColor = UiTheme.TextPrimary, AutoSize = true, Margin = new Padding(0, 0, 0, 2) });
+            list.Controls.Add(new Label { Text = LocalizationManager.T("VersionHistory.Subtitle"), Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, MaximumSize = new Size(contentWidth, 0), AutoSize = true, Margin = new Padding(0, 0, 0, 14) });
+
+            // Στυλ GearWin: η τρέχουσα έκδοση σε κάρτα γεμάτη με το accent (λευκό κείμενο), οι παλιότερες σε απλές κάρτες που ανοίγουν με κλικ.
             bool isLatest = true;
             foreach (var entry in VersionHistory)
             {
-                // Bug fix: το card είχε ΣΤΑΘΕΡΟ Height=110 ανεξάρτητα από το πόσο κείμενο είχε το
-                // κάθε entry — καθώς οι σημειώσεις έκδοσης μεγάλωναν, το κείμενο έκοβε στο κάτω
-                // άκρο. Τώρα μετριέται το πραγματικό ύψος που χρειάζεται το κείμενο (στο ίδιο
-                // πλάτος 470px που ήδη όριζε το MaximumSize του label) και το card παίρνει ακριβώς
-                // όσο ύψος χρειάζεται, όχι ένα άκαμπτο νούμερο.
-                var notesFont = UiTheme.FontBody;
-                string notes = LocalizationManager.T("VersionNotes." + entry.Version);
-                var notesSize = TextRenderer.MeasureText(notes, notesFont, new Size(470, int.MaxValue), TextFormatFlags.WordBreak);
-                int cardHeight = Math.Max(80, 34 + notesSize.Height + 18);
-
-                var card = new Panel { Width = 500, Height = cardHeight, BackColor = UiTheme.Surface, Padding = new Padding(14), Margin = new Padding(0, 0, 0, 10) };
-                UiTheme.ApplyRoundedRegion(card, 8);
-
-                // Ζητήθηκε ρητά: η πιο πρόσφατη έκδοση (πάντα το πρώτο entry — νέα προστίθενται
-                // στην κορυφή) να ξεχωρίζει οπτικά από τις προηγούμενες με χρωματιστό πλαίσιο.
-                if (isLatest)
-                {
-                    card.Paint += (_, e) =>
-                    {
-                        using var pen = new Pen(UiTheme.AccentCyan, 2f);
-                        e.Graphics.DrawRectangle(pen, 1, 1, card.Width - 3, card.Height - 3);
-                    };
-                }
-
-                string header = $"v{entry.Version}   •   {entry.Date}" + (isLatest ? "   •   " + LocalizationManager.T("VersionHistory.Current") : "");
-                card.Controls.Add(new Label { Text = header, Font = new Font("Segoe UI", 11f, FontStyle.Bold), ForeColor = UiTheme.AccentCyan, AutoSize = true, Location = new Point(14, 10) });
-                card.Controls.Add(new Label { Text = notes, Font = notesFont, ForeColor = UiTheme.TextSecondary, MaximumSize = new Size(470, 0), AutoSize = true, Location = new Point(14, 34) });
-                list.Controls.Add(card);
+                list.Controls.Add(BuildVersionCard(entry.Version, entry.Date, isLatest, contentWidth));
                 isLatest = false;
             }
             dialog.Controls.Add(list);
             dialog.ShowDialog(this);
+        }
+
+        // Σημειώσεις έκδοσης: κάθε γραμμή του locale κλειδιού ξεκινά με "+ " (προσθήκη), "~ " (βελτίωση/διόρθωση) ή "= " (σημείωση που δεν μετράται).
+        private static (int Added, int Improved, string? Summary, List<(char Type, string Text)> Items) ParseVersionNotes(string notes)
+        {
+            int added = 0, improved = 0;
+            string? summary = null;
+            var items = new List<(char, string)>();
+            foreach (var raw in notes.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var line = raw.Trim();
+                if (line.Length < 3 || line[1] != ' ') { summary = summary == null ? line : summary + " " + line; continue; }
+                var text = line[2..].Trim();
+                switch (line[0])
+                {
+                    case '+': added++; items.Add(('+', text)); break;
+                    case '~': improved++; items.Add(('~', text)); break;
+                    default: summary = summary == null ? text : summary + " " + text; break;
+                }
+            }
+            return (added, improved, summary, items);
+        }
+
+        private static string VersionCount(int n, string oneKey, string manyKey) =>
+            string.Format(LocalizationManager.T(n == 1 ? oneKey : manyKey), n);
+
+        private static Control BuildVersionCard(string version, string date, bool isLatest, int width)
+        {
+            var parsed = ParseVersionNotes(LocalizationManager.T("VersionNotes." + version));
+            var bg = isLatest ? UiTheme.AccentCyan : UiTheme.Surface;
+            var titleColor = isLatest ? Color.White : UiTheme.TextPrimary;
+            var textColor = isLatest ? Color.FromArgb(240, 255, 255, 255) : UiTheme.TextSecondary;
+            var addColor = isLatest ? Color.White : Color.FromArgb(76, 175, 80);
+            var impColor = isLatest ? Color.White : UiTheme.AccentCyan;
+            const int pad = 16;
+            int inner = width - pad * 2;
+
+            var card = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize = new Size(width, 0), MaximumSize = new Size(width, 0),
+                BackColor = bg, Padding = new Padding(pad, 12, pad, 14), Margin = new Padding(0, 0, 0, 10)
+            };
+            card.SizeChanged += (_, _) => UiTheme.ApplyRoundedRegion(card, 8);
+
+            // ----- επικεφαλίδα (κλικ = άνοιγμα/κλείσιμο για παλιότερες εκδόσεις) -----
+            var header = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0), BackColor = Color.Transparent };
+            string prefix = LocalizationManager.T("VersionHistory.VersionPrefix");
+            var arrow = new Label { Text = isLatest ? "" : "▸", AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold), ForeColor = UiTheme.AccentCyan, Margin = new Padding(0, 0, 6, 0) };
+            var title = new Label
+            {
+                Text = $"{prefix} {version}   •   {date}" + (isLatest ? "   •   " + LocalizationManager.T("VersionHistory.Current") : ""),
+                AutoSize = true, Font = new Font("Segoe UI", 12f, FontStyle.Bold), ForeColor = titleColor, Margin = new Padding(0)
+            };
+            var titleRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0), BackColor = Color.Transparent };
+            if (!isLatest) titleRow.Controls.Add(arrow);
+            titleRow.Controls.Add(title);
+            header.Controls.Add(titleRow);
+
+            var counts = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 4, 0, 0), BackColor = Color.Transparent };
+            if (parsed.Added > 0)
+                counts.Controls.Add(new Label { Text = "✚ " + VersionCount(parsed.Added, "VersionHistory.AddedOne", "VersionHistory.AddedMany"), AutoSize = true, Font = new Font("Segoe UI Symbol", 9.5f, FontStyle.Bold), ForeColor = addColor, Margin = new Padding(0, 0, 18, 0) });
+            if (parsed.Improved > 0)
+                counts.Controls.Add(new Label { Text = "▲ " + VersionCount(parsed.Improved, "VersionHistory.ImprovedOne", "VersionHistory.ImprovedMany"), AutoSize = true, Font = new Font("Segoe UI Symbol", 9.5f, FontStyle.Bold), ForeColor = impColor, Margin = new Padding(0) });
+            if (counts.Controls.Count > 0) header.Controls.Add(counts);
+            card.Controls.Add(header);
+
+            // ----- σώμα: περίληψη + δύο ομάδες (Προστέθηκαν / Βελτιώθηκαν) -----
+            var body = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0, 10, 0, 0), BackColor = Color.Transparent, Visible = isLatest };
+            if (!string.IsNullOrWhiteSpace(parsed.Summary))
+                body.Controls.Add(new Label { Text = parsed.Summary, AutoSize = true, MaximumSize = new Size(inner, 0), Font = new Font("Segoe UI", 9.5f, FontStyle.Italic), ForeColor = textColor, Margin = new Padding(0, 0, 0, 6) });
+
+            void AddGroup(char type, string sectionKey, Color glyphColor, string glyph)
+            {
+                var group = parsed.Items.Where(i => i.Type == type).ToList();
+                if (group.Count == 0) return;
+                body.Controls.Add(new Label { Text = UiTheme.UpperNoAccents(LocalizationManager.T(sectionKey)), AutoSize = true, Font = new Font("Segoe UI", 8.5f, FontStyle.Bold), ForeColor = glyphColor, Margin = new Padding(0, 6, 0, 3) });
+                foreach (var item in group)
+                {
+                    var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 0, 0, 3), BackColor = Color.Transparent };
+                    row.Controls.Add(new Label { Text = glyph, AutoSize = false, Size = new Size(20, 20), Font = new Font("Segoe UI Symbol", 8f), ForeColor = glyphColor, Margin = new Padding(0, 1, 0, 0) });
+                    row.Controls.Add(new Label { Text = item.Text, AutoSize = true, MaximumSize = new Size(inner - 26, 0), Font = UiTheme.FontBody, ForeColor = textColor, Margin = new Padding(0) });
+                    body.Controls.Add(row);
+                }
+            }
+            AddGroup('+', "VersionHistory.SectionAdded", addColor, "✚");
+            AddGroup('~', "VersionHistory.SectionImproved", impColor, "▲");
+            card.Controls.Add(body);
+
+            if (!isLatest)
+            {
+                void Toggle()
+                {
+                    body.Visible = !body.Visible;
+                    arrow.Text = body.Visible ? "▾" : "▸";
+                }
+                foreach (Control c in new Control[] { card, header, titleRow, title, arrow, counts })
+                {
+                    c.Cursor = Cursors.Hand;
+                    c.Click += (_, _) => Toggle();
+                }
+                foreach (Control c in counts.Controls) { c.Cursor = Cursors.Hand; c.Click += (_, _) => Toggle(); }
+            }
+            return card;
         }
 
         private FlowLayoutPanel CreatePagePanel() => new()
@@ -2302,6 +2384,86 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         // Πλήρως owner-draw στατιστική κάρτα (τίτλος + τιμή) — τα παιδιά-Label μέσα σε
         // Panel/FlowLayoutPanel εμφάνιζαν σποραδικά αόρατο κείμενο σε αυτό το build/runtime
         // (ίδιας οικογένειας quirk με το NavButton), οπότε ζωγραφίζουμε το κείμενο απευθείας.
+        // Συντομεύσεις πληκτρολογίου σε ΕΝΑ ενιαίο στοιχείο: ομάδες, "πλήκτρα" (keycaps) αριστερά και περιγραφή ευθυγραμμισμένη δεξιά.
+        // Πηγή: το locale κλειδί About.ShortcutsList — γραμμή "# Τίτλος" = νέα ομάδα, αλλιώς "Πλήκτρα  Περιγραφή" (διπλό κενό ως διαχωριστικό).
+        private sealed class ShortcutsCard : Control
+        {
+            private readonly List<(bool IsHeader, string Left, string Right)> _rows = new();
+            private const int CardWidth = 760, KeysX = 20, DescX = 330, RowH = 32, HeaderH = 36, PadTop = 12, PadBottom = 14;
+
+            public ShortcutsCard(string source)
+            {
+                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+                foreach (var raw in source.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var line = raw.Trim();
+                    if (line.StartsWith("# ")) { _rows.Add((true, line[2..].Trim(), "")); continue; }
+                    int sep = line.IndexOf("  ", StringComparison.Ordinal);
+                    if (sep <= 0) continue;
+                    _rows.Add((false, line[..sep].Trim(), line[(sep + 2)..].Trim()));
+                }
+                int h = PadTop + PadBottom + _rows.Sum(r => r.IsHeader ? HeaderH : RowH);
+                Size = new Size(CardWidth, h);
+            }
+
+            protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); UiTheme.ApplyRoundedRegion(this, 8); }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                using (var bg = new SolidBrush(UiTheme.Surface)) g.FillRectangle(bg, ClientRectangle);
+
+                using var headerFont = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+                using var keyFont = new Font("Segoe UI Semibold", 9f);
+                using var descFont = new Font("Segoe UI", 10f);
+                using var accent = new SolidBrush(UiTheme.AccentCyan);
+                using var descBrush = new SolidBrush(UiTheme.TextSecondary);
+                using var keyText = new SolidBrush(UiTheme.TextPrimary);
+                using var keyFill = new SolidBrush(UiTheme.Background);
+                using var keyBorder = new Pen(UiTheme.Border, 1f);
+                using var plusBrush = new SolidBrush(UiTheme.TextMuted);
+                using var sepPen = new Pen(Color.FromArgb(40, UiTheme.TextMuted), 1f);
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+                int y = PadTop;
+                bool first = true;
+                foreach (var row in _rows)
+                {
+                    if (row.IsHeader)
+                    {
+                        if (!first) g.DrawLine(sepPen, KeysX, y + 2, Width - KeysX, y + 2);
+                        g.DrawString(UiTheme.UpperNoAccents(row.Left), headerFont, accent, KeysX, y + 12);
+                        y += HeaderH;
+                        first = false;
+                        continue;
+                    }
+                    first = false;
+                    // keycaps: κάθε κομμάτι πριν/μετά το '+' ως ξεχωριστό "πλήκτρο"
+                    int x = KeysX;
+                    var parts = row.Left.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (row.Left.EndsWith("+,")) parts = row.Left[..^2].Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Append(",").ToArray();
+                    for (int i = 0; i < parts.Length; i++)
+                    {
+                        var size = TextRenderer.MeasureText(parts[i], keyFont, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding);
+                        int w = Math.Max(26, size.Width + 16);
+                        var capRect = new Rectangle(x, y + 3, w, RowH - 8);
+                        using (var path = UiTheme.RoundedPath(capRect, 6))
+                        {
+                            g.FillPath(keyFill, path);
+                            g.DrawPath(keyBorder, path);
+                        }
+                        g.DrawString(parts[i], keyFont, keyText, new RectangleF(capRect.X, capRect.Y, capRect.Width, capRect.Height), sf);
+                        x += w;
+                        if (i < parts.Length - 1) { g.DrawString("+", descFont, plusBrush, x + 1, y + 5); x += 16; }
+                    }
+                    g.DrawString(row.Right, descFont, descBrush, new RectangleF(DescX, y + 3, Width - DescX - KeysX, RowH - 6), new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap });
+                    y += RowH;
+                }
+            }
+        }
+
         private sealed class StatCard : Panel
         {
             private readonly string _title;
