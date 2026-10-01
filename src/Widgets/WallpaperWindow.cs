@@ -52,10 +52,14 @@ namespace MotionDesk.Widgets
             var settings = WallpaperSettings.Load();
             bool light = GetIsLightTheme();
             var palette = WavePalettes.Resolve(settings.PaletteName, light);
+            // "overlay-only": the animated wallpaper is off but the info overlay is on -> the window shows the normal Windows wallpaper
+            string effectiveMode = WallpaperHostEngine.Instance.EffectiveMode(settings);
 
             return JsonSerializer.Serialize(new
             {
-                mode = settings.Mode,
+                mode = effectiveMode,
+                desk = effectiveMode == "Desktop" ? MotionDesk.Services.DesktopWallpaperReader.Read() : null,
+                infoFont = string.IsNullOrWhiteSpace(settings.InfoFont) ? "Segoe UI Light" : settings.InfoFont,
                 waveStyle = settings.WaveStyle,
                 background = palette.Background,
                 wave = palette.WaveColor,
@@ -78,7 +82,7 @@ namespace MotionDesk.Widgets
                 weatherLon = settings.WeatherLon,
                 rotateMinutes = settings.RotateEveryMinutes,
                 windSim = settings.WindSimulation,
-                weatherInfo = settings.WeatherShowInfo && (settings.Mode == "Weather" || settings.InfoOnAllModes),
+                weatherInfo = settings.WeatherShowInfo && (effectiveMode == "Weather" || settings.InfoOnAllModes),
                 infoX = Math.Clamp(settings.WeatherInfoX, 0, 100),
                 infoY = Math.Clamp(settings.WeatherInfoY, 0, 100),
                 infoScale = Math.Clamp(settings.WeatherInfoScale, 40, 250),
@@ -100,6 +104,9 @@ namespace MotionDesk.Widgets
             });
         }
 
+        // Current Windows wallpaper (polled by the "Desktop" mode so a slideshow / a changed wallpaper is picked up)
+        public string GetDesktopWallpaperJson() => JsonSerializer.Serialize(MotionDesk.Services.DesktopWallpaperReader.Read());
+
         // Live weather for the "Weather" wallpaper mode (cached 10 min in WeatherService; the JS side polls every 10 min).
         public async System.Threading.Tasks.Task<string> GetWeatherJson()
         {
@@ -120,7 +127,7 @@ namespace MotionDesk.Widgets
         public string GetCurrentVideoUri()
         {
             var settings = WallpaperSettings.Load();
-            if (settings.Mode != "Video") return string.Empty;
+            if (WallpaperHostEngine.Instance.EffectiveMode(settings) != "Video") return string.Empty;
 
             string? path = PinnedVideoForThisScreen(settings) ?? settings.CurrentPlaylistFile();
             _lastServedSerial = settings.AdvanceSerial;
@@ -211,7 +218,7 @@ namespace MotionDesk.Widgets
 
     public sealed class WallpaperSettings
     {
-        public string Mode { get; set; } = "Waves"; // "Waves" | "Video" | "Particles" | "Weather"
+        public string Mode { get; set; } = "Waves"; // "Waves" | "Video" | "Particles" | "Weather" | "Desktop" (the normal Windows wallpaper, so the info overlay works over it)
         public string WaveStyle { get; set; } = "Ribbons"; // "Ribbons" | "Aurora" — παραλλαγές ΜΕΣΑ στο Waves mode
         public string VideoPath { get; set; } = string.Empty; // legacy single-video field, kept for back-compat
         public List<string> VideoPaths { get; set; } = new();
@@ -240,7 +247,8 @@ namespace MotionDesk.Widgets
         // Clock / date / temperature overlay of the Weather mode. Position is the CENTRE of the block, in % of the screen
         // (default: horizontally centred, in the upper third so it sits in the sky and not on the horizon/desktop icons).
         public bool WeatherShowInfo { get; set; } = true;
-        public bool InfoOnAllModes { get; set; } = true;     // the overlay also appears over videos / Waves / Particles
+        public bool InfoOnAllModes { get; set; } = true;     // the overlay also appears over videos / Waves / Particles / the Windows wallpaper
+        public string InfoFont { get; set; } = "Segoe UI Light";
         public int WeatherInfoX { get; set; } = 50;
         public int WeatherInfoY { get; set; } = 34;
         public int WeatherInfoScale { get; set; } = 100;  // % of the default size
@@ -678,6 +686,11 @@ namespace MotionDesk.Widgets
 
         private readonly List<WallpaperWindow> _windows = new();
         private bool _enabled;
+        // "Overlay-only": the animated wallpaper is OFF but the clock/date/temperature overlay is ON -> the windows run in "Desktop" mode
+        // (the normal Windows wallpaper + the overlay). IsEnabled stays false: the user still sees the wallpaper as switched off.
+        private bool _overlayOnly;
+        private bool Active => _enabled || _overlayOnly;
+        public string EffectiveMode(WallpaperSettings settings) => !_enabled && _overlayOnly ? "Desktop" : settings.Mode;
         private bool _pausedForFullscreen;
         private System.Windows.Forms.Timer? _fullscreenCheckTimer;
         private readonly ExplorerRestartWatcher _explorerWatcher = new();
@@ -701,7 +714,7 @@ namespace MotionDesk.Widgets
             AppActivity.FullscreenChanged += fullscreen =>
             {
                 _pausedForFullscreen = fullscreen;
-                if (!_enabled) return;
+                if (!Active) return;
                 foreach (var w in _windows) _ = w.SetPausedAsync(fullscreen);
             };
 
@@ -711,12 +724,12 @@ namespace MotionDesk.Widgets
             SystemEvents.DisplaySettingsChanged += (_, _) =>
             {
                 _displayDebounce?.Dispose();
-                _displayDebounce = new System.Threading.Timer(_ => _ui.Post(__ => { if (_enabled) RebuildWindows(); }, null),
+                _displayDebounce = new System.Threading.Timer(_ => _ui.Post(__ => { if (Active) RebuildWindows(); }, null),
                     null, 1200, System.Threading.Timeout.Infinite);
             };
             SystemEvents.UserPreferenceChanged += (_, e) =>
             {
-                if (e.Category == UserPreferenceCategory.General) _ui.Post(__ => { _ = RefreshAllAsync(); }, null);
+                if (e.Category == UserPreferenceCategory.General || e.Category == UserPreferenceCategory.Desktop) _ui.Post(__ => { _ = RefreshAllAsync(); }, null);
             };
 
             // Explorer.exe επανεκκινήθηκε -> το παλιό WorkerW (και το wallpaper window που ήταν
@@ -726,9 +739,9 @@ namespace MotionDesk.Widgets
             // WndProc τρέχει ήδη στο UI thread, οπότε δεν χρειάζεται Invoke/marshalling).
             _explorerWatcher.ExplorerRestarted += () =>
             {
-                if (!_enabled) return;
+                if (!Active) return;
                 var delay = new System.Windows.Forms.Timer { Interval = 1500 };
-                delay.Tick += (_, _) => { delay.Stop(); delay.Dispose(); if (_enabled) RebuildWindows(); };
+                delay.Tick += (_, _) => { delay.Stop(); delay.Dispose(); if (Active) RebuildWindows(); };
                 delay.Start();
             };
         }
@@ -742,7 +755,7 @@ namespace MotionDesk.Widgets
             _fullscreenCheckTimer = new System.Windows.Forms.Timer { Interval = 2000 };
             _fullscreenCheckTimer.Tick += (_, _) =>
             {
-                if (!_enabled) return;
+                if (!Active) return;
 
                 // Ασφαλιστική δικλείδα πέρα από το TaskbarCreated broadcast: αν το WorkerW στο
                 // οποίο είμαστε reparented δεν υπάρχει πλέον (π.χ. μετά από sleep/resume ή reset
@@ -779,6 +792,8 @@ namespace MotionDesk.Widgets
                 if (recommended != settings.PerformanceMode) { settings.PerformanceMode = recommended; settings.Save(); }
             }
 
+            bool wasOverlayOnly = _overlayOnly;
+            _overlayOnly = false;
             _enabled = true;
             bool freshlyBuilt = _windows.Count == 0;
             if (freshlyBuilt)
@@ -805,6 +820,27 @@ namespace MotionDesk.Widgets
                 }
             }
             EnsureFullscreenWatcher();
+            if (wasOverlayOnly && !freshlyBuilt) _ = RefreshAllAsync();   // switch the running windows from "Desktop" to the real mode
+        }
+
+        // Starts / stops the "overlay-only" state (see _overlayOnly). Called at startup, after Disable(), and whenever the overlay settings change.
+        public void UpdateOverlayOnly()
+        {
+            var s = WallpaperSettings.Load();
+            bool want = !_enabled && s.WeatherShowInfo && s.InfoOnAllModes;
+            if (want == _overlayOnly) { if (want) _ = RefreshAllAsync(); return; }
+            _overlayOnly = want;
+            if (want)
+            {
+                if (_windows.Count == 0) RebuildWindows();
+                else foreach (var w in _windows) { if (w.IsAttached) { if (!w.Visible) w.Show(); _ = w.SetPausedAsync(_pausedForFullscreen); } }
+                EnsureFullscreenWatcher();
+                _ = RefreshAllAsync();
+            }
+            else if (!_enabled)
+            {
+                foreach (var w in _windows) { w.Hide(); _ = w.SetPausedAsync(true); }
+            }
         }
 
         public void Disable()
@@ -815,6 +851,7 @@ namespace MotionDesk.Widgets
             foreach (var w in _windows) { w.Hide(); _ = w.SetPausedAsync(true); }
             _fullscreenCheckTimer?.Stop();
             _pausedForFullscreen = false;
+            UpdateOverlayOnly();   // the overlay keeps running over the normal Windows wallpaper when it is switched on
         }
 
         private void RebuildWindows()
@@ -828,7 +865,7 @@ namespace MotionDesk.Widgets
                 _windows.Add(window);
                 // BeginAttach (ΟΧΙ Show) — το παράθυρο γίνεται ορατό ΜΟΝΟ αφού πρώτα επιβεβαιωθεί
                 // ότι μπήκε πίσω από τα εικονίδια, βλ. σχόλιο στο WallpaperWindow.BeginAttach.
-                if (_enabled) window.BeginAttach();
+                if (Active) window.BeginAttach();
             }
         }
 
@@ -1026,6 +1063,15 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
             settings.WeatherInfoY = Math.Clamp(y, 0, 100);
             settings.WeatherInfoScale = Math.Clamp(scale, 40, 250);
             settings.WeatherFahrenheit = fahrenheit;
+            settings.Save();
+            UpdateOverlayOnly();
+            _ = RefreshAllAsync();
+        }
+
+        public void SetInfoFont(string family)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.InfoFont = family;
             settings.Save();
             _ = RefreshAllAsync();
         }

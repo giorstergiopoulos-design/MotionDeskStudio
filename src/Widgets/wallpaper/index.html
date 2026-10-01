@@ -8,6 +8,7 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 .videoLayer{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;background:#000;opacity:0;transition:opacity 650ms ease-in-out}
 .videoLayer.active{opacity:1}
 .videoHidden{display:none!important}
+#desk{position:fixed;inset:0;display:none;background-repeat:no-repeat;background-position:center}
 #wxInfo{position:fixed;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;color:#fff;pointer-events:none;display:none;
   font-family:"Segoe UI Light","Segoe UI",system-ui,sans-serif;text-shadow:0 2px 22px rgba(0,0,0,.42),0 0 2px rgba(0,0,0,.25);white-space:nowrap;--s:1}
 #wxTime{font-size:calc(var(--s)*13vh);font-weight:200;line-height:1;letter-spacing:.01em}
@@ -21,6 +22,7 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 <canvas id="waves"></canvas>
 <video id="videoA" class="videoLayer" muted playsinline></video>
 <video id="videoB" class="videoLayer" muted playsinline></video>
+<div id="desk"></div>
 <div id="wxInfo"><div id="wxTime"></div><div id="wxDate"></div><div id="wxTemp"></div><div id="wxCity"></div></div>
 <div id="pulse"></div>
 <script src="weather.js"></script>
@@ -442,6 +444,31 @@ function drawParticles(dtSeconds) {
 let currentVideoUri = null; // το URI που παίζει αυτή τη στιγμή (βλ. playCurrentVideo)
 let isPaused = false; // ορίζεται από motionDeskSetPaused — ώστε ένα refresh να μην ξυπνά ένα σκόπιμα παυμένο wallpaper
 
+// "Desktop" mode: the normal Windows wallpaper (image + fit style + background colour from the host), polled once a minute
+let deskTimer = null;
+function applyDesk(d) {
+    const el = document.getElementById('desk');
+    if (!el || !d) return;
+    el.style.backgroundColor = d.color || '#101418';
+    el.style.backgroundImage = d.uri ? `url("${d.uri}")` : 'none';
+    const st = d.style || 'Fill';
+    el.style.backgroundSize = st === 'Fit' ? 'contain' : st === 'Stretch' ? '100% 100%' : st === 'Center' || st === 'Tile' ? 'auto' : 'cover';
+    el.style.backgroundRepeat = st === 'Tile' ? 'repeat' : 'no-repeat';
+    el.style.backgroundPosition = 'center';
+}
+function setDeskVisible(v) { const el = document.getElementById('desk'); if (el) el.style.display = v ? 'block' : 'none'; }
+async function refreshDesk() {
+    const b = bridge();
+    if (!b) return;
+    try { applyDesk(JSON.parse(await b.GetDesktopWallpaperJson())); } catch (e) { /* κρατάει την προηγούμενη εικόνα */ }
+}
+function startDesktop() {
+    stopWaves();
+    videoLayers.forEach(v => { v.classList.add('videoHidden'); v.classList.remove('active'); v.pause(); });
+    applyDesk(cfg.desk);
+    setDeskVisible(true);
+}
+
 function drawWeather(dt) {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -472,6 +499,7 @@ function updateWeatherInfo() {
     }
     document.getElementById('wxTemp').textContent = [tempText, cond].filter(Boolean).join('  ·  ');
     document.getElementById('wxCity').textContent = cfg.weatherCity || '';
+    box.style.fontFamily = '"' + String(cfg.infoFont || 'Segoe UI Light').replace(/["\\]/g, '') + '", "Segoe UI", system-ui, sans-serif';
     box.style.left = (cfg.infoX ?? 50) + '%';
     box.style.top = (cfg.infoY ?? 34) + '%';
     box.style.setProperty('--s', ((cfg.infoScale ?? 100) / 100).toFixed(2));
@@ -503,6 +531,7 @@ function waveLoop(now) {
 }
 
 function startWaves() {
+    setDeskVisible(false);
     videoLayers.forEach(v => { v.classList.add('videoHidden'); v.classList.remove('active'); v.pause(); });
     canvas.style.display = 'block';
     if (!waveLoopHandle && !isPaused) waveLoopHandle = requestAnimationFrame(waveLoop);
@@ -520,6 +549,7 @@ async function playCurrentVideo() {
     if (!uri) { startWaves(); return; }
 
     stopWaves();
+    setDeskVisible(false);
     videoLayers.forEach(v => v.classList.remove('videoHidden'));
     const layer = activeVideo();
     // Ένα refresh (αλλαγή ρύθμισης: ήχος/απόδοση/παλέτα…) ΔΕΝ πρέπει να ξαναρχίζει το ίδιο βίντεο από την
@@ -638,8 +668,13 @@ window.motionDeskRefresh = async () => {
     clearInterval(audioTimer);
     audioTimer = (cfg.performanceMode === 'Battery' || isPaused) ? null : setInterval(refreshAudioPulse, cfg.performanceMode === 'High' ? 250 : 600);
 
+    clearInterval(deskTimer);
+    deskTimer = null;
     if (cfg.mode === 'Video') {
         await playCurrentVideo();
+    } else if (cfg.mode === 'Desktop') {
+        startDesktop();
+        deskTimer = setInterval(refreshDesk, 60 * 1000);
     } else {
         startWaves();
     }

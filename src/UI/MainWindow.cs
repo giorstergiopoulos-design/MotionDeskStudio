@@ -1046,7 +1046,7 @@ namespace MotionDesk.UI
 
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionMode"));
             var modeCombo = new FlatComboBox { Width = 200, Margin = new Padding(0, 0, 0, 10) };
-            modeCombo.SetItems(new[] { "Waves", "Video", "Particles", "Weather" }, settings.Mode);
+            modeCombo.SetItems(new[] { "Waves", "Video", "Particles", "Weather", "Desktop" }, settings.Mode);
             // Ξαναχτίζει ΟΛΟΚΛΗΡΗ τη σελίδα κάθε φορά που αλλάζει το Mode — ζητήθηκε ρητά bug fix:
             // πριν, οι ενότητες "Video Library"/"Theme & Colors"/"Wave Tuning" ήταν ΠΑΝΤΑ ορατές
             // ανεξάρτητα από το επιλεγμένο mode, οπότε η επιλογή βίντεο έμενε στην οθόνη ακόμη κι
@@ -1222,6 +1222,7 @@ namespace MotionDesk.UI
             // Theme/Palette και Wave Tuning ισχύουν για Waves ΚΑΙ Particles (μοιράζονται το ίδιο
             // cfg.speed/glowIntensity/palette στο JS engine) — άσχετα μόνο σε Video mode.
             if (settings.Mode == "Weather") BuildWeatherWallpaperSection(panel, settings);
+            if (settings.Mode == "Desktop") AddText(panel, LocalizationManager.T("Wallpaper.DesktopIntro"));
 
             if (settings.Mode is "Waves" or "Particles")
             {
@@ -1370,15 +1371,38 @@ namespace MotionDesk.UI
             panel.Controls.Add(infoShow);
             panel.Controls.Add(infoAll);
             panel.Controls.Add(infoF);
+            // ---- font of the overlay: common Windows fonts that are installed, plus "More…" for any other installed font
+            var fontRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+            fontRow.Controls.Add(new Label { Text = LocalizationManager.T("Wallpaper.InfoFont"), AutoSize = false, Width = 150, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody });
+            var installed = new HashSet<string>(new System.Drawing.Text.InstalledFontCollection().Families.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+            var fontNames = new List<string> { "Segoe UI Light", "Segoe UI", "Segoe UI Semibold", "Segoe UI Black", "Bahnschrift Light", "Bahnschrift", "Calibri Light", "Calibri", "Arial", "Arial Narrow", "Verdana", "Tahoma", "Trebuchet MS", "Georgia", "Cambria", "Consolas", "Courier New", "Impact", "Comic Sans MS", "Times New Roman" }
+                .Where(installed.Contains).ToList();
+            string currentFont = string.IsNullOrWhiteSpace(settings.InfoFont) ? "Segoe UI Light" : settings.InfoFont;
+            if (!fontNames.Contains(currentFont, StringComparer.OrdinalIgnoreCase)) fontNames.Insert(0, currentFont);
+            var fontCombo = new FlatComboBox { Width = 240 };
+            fontCombo.SetItems(fontNames, currentFont);
+            fontCombo.SelectedIndexChanged += (_, _) => { if (fontCombo.SelectedItem is { } f) WallpaperHostEngine.Instance.SetInfoFont(f); };
+            var moreFonts = NewHoverButton(LocalizationManager.T("Wallpaper.InfoFontMore"), () =>
+            {
+                using var dlg = new FontDialog { FontMustExist = true, ShowEffects = false, AllowScriptChange = false, Font = new Font(fontCombo.SelectedItem ?? "Segoe UI", 12f) };
+                if (dlg.ShowDialog() != DialogResult.OK) return;
+                var family = dlg.Font.FontFamily.Name;
+                if (!fontNames.Contains(family, StringComparer.OrdinalIgnoreCase)) fontNames.Insert(0, family);
+                fontCombo.SetItems(fontNames, family);
+                WallpaperHostEngine.Instance.SetInfoFont(family);
+            });
+            moreFonts.Margin = new Padding(10, 0, 0, 0);
+            fontRow.Controls.Add(fontCombo);
+            fontRow.Controls.Add(moreFonts);
+            panel.Controls.Add(fontRow);
             panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoX"), settings.WeatherInfoX, 0, 100, v => $"{v}%", CommitInfo, t => infoX = t));
             panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoY"), settings.WeatherInfoY, 0, 100, v => $"{v}%", CommitInfo, t => infoY = t));
             panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoScale"), settings.WeatherInfoScale, 40, 250, v => $"{v}%", CommitInfo, t => infoScale = t));
             panel.Controls.Add(NewHoverButton(LocalizationManager.T("Wallpaper.InfoReset"), () =>
             {
-                // the default position: centred horizontally, upper third of the screen, normal size
+                // back to the default position: centred horizontally, upper third of the screen (the size slider is left alone)
                 if (infoX != null) infoX.Value = 50;
                 if (infoY != null) infoY.Value = 34;
-                if (infoScale != null) infoScale.Value = 100;
             }));
         }
 
@@ -1437,7 +1461,7 @@ namespace MotionDesk.UI
         }
 
         // Time-of-day schedule: up to 3 windows, each switching the wallpaper MODE
-        private static readonly string[] ScheduleModes = { "Waves", "Particles", "Weather", "Video" };
+        private static readonly string[] ScheduleModes = { "Waves", "Particles", "Weather", "Video", "Desktop" };
 
         private void BuildWallpaperScheduleSection(Panel panel, WallpaperSettings settings)
         {

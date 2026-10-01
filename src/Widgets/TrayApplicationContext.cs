@@ -119,6 +119,9 @@ namespace MotionDesk.Widgets
                 _wallpaperEnabled = true;
             }
 
+            // The clock/date/temperature overlay keeps working over the normal Windows wallpaper when the animated wallpaper is off
+            WallpaperHostEngine.Instance.UpdateOverlayOnly();
+
             // "--background": η αυτόματη εκκίνηση με τα Windows (StartupManager.SetStartup) περνάει
             // αυτό το flag — ζητήθηκε ρητά ότι όταν υπάρχουν αποθηκευμένα widgets/DeskContainers, η
             // εφαρμογή πρέπει να ανοίγει στο παρασκήνιο (μόνο tray icon), όχι με το κύριο παράθυρο
