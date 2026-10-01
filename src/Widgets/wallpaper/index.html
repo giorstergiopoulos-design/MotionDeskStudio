@@ -10,11 +10,11 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 .videoHidden{display:none!important}
 #desk{position:fixed;inset:0;display:none;background-repeat:no-repeat;background-position:center}
 #wxInfo{position:fixed;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;color:#fff;pointer-events:none;display:none;
-  font-family:"Segoe UI Light","Segoe UI",system-ui,sans-serif;text-shadow:0 2px 22px rgba(0,0,0,.42),0 0 2px rgba(0,0,0,.25);white-space:nowrap;--s:1}
-#wxTime{font-size:calc(var(--s)*13vh);font-weight:200;line-height:1;letter-spacing:.01em}
+  font-family:"Segoe UI Light","Segoe UI",system-ui,sans-serif;text-shadow:0 2px 22px rgba(0,0,0,.42),0 0 2px rgba(0,0,0,.25);white-space:nowrap;--s:1;opacity:0;transition:opacity .7s ease}
+#wxTime{font-size:calc(var(--s)*13vh);font-weight:200;line-height:1;letter-spacing:.01em;font-variant-numeric:tabular-nums}
 #wxDate{font-size:calc(var(--s)*3.2vh);font-weight:300;letter-spacing:.05em;margin-top:calc(var(--s)*1.2vh);opacity:.95;text-transform:capitalize}
-#wxTemp{font-size:calc(var(--s)*4.4vh);font-weight:300;margin-top:calc(var(--s)*1.8vh)}
-#wxCity{font-size:calc(var(--s)*2.4vh);font-weight:300;letter-spacing:.12em;margin-top:calc(var(--s)*.6vh);opacity:.75;text-transform:uppercase}
+#wxTemp{font-size:calc(var(--s)*4.4vh);font-weight:300;margin-top:calc(var(--s)*1.8vh);min-height:1.25em;line-height:1.25}
+#wxCity{font-size:calc(var(--s)*2.4vh);font-weight:300;letter-spacing:.12em;margin-top:calc(var(--s)*.6vh);opacity:.75;text-transform:uppercase;min-height:1.25em;line-height:1.25}
 #pulse{position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.14),transparent 65%);opacity:0;transition:opacity 120ms linear}
 </style>
 </head>
@@ -112,7 +112,7 @@ function resizeCanvas() {
     // το Weather σκηνικό δουλεύει σε φυσικά pixels (ταυτοτικός μετασχηματισμός) — βλ. drawWeather
     if (window.WeatherWallpaper) WeatherWallpaper.resize(canvas.width, canvas.height, dpr);
 }
-window.addEventListener('resize', resizeCanvas);
+window.addEventListener('resize', () => { resizeCanvas(); lastFrameTime = 0; });
 resizeCanvas();
 
 function perfProfile() {
@@ -464,11 +464,14 @@ async function refreshDesk() {
     if (!b) return;
     try { applyDesk(JSON.parse(await b.GetDesktopWallpaperJson())); } catch (e) { /* κρατάει την προηγούμενη εικόνα */ }
 }
-function startDesktop() {
+async function startDesktop() {
     stopWaves();
     videoLayers.forEach(v => { v.classList.add('videoHidden'); v.classList.remove('active'); v.pause(); });
     applyDesk(cfg.desk);
     setDeskVisible(true);
+    // wait (max 1.5 s) until the picture is decoded so the window is not revealed with only the background colour
+    const uri = cfg.desk && (cfg.desk.uri ?? cfg.desk.Uri);
+    if (uri) await new Promise(res => { const img = new Image(); img.onload = img.onerror = () => res(); img.src = uri; setTimeout(res, 1500); });
 }
 
 function drawWeather(dt) {
@@ -506,14 +509,44 @@ function updateWeatherInfo() {
     box.style.top = (cfg.infoY ?? 34) + '%';
     box.style.setProperty('--s', ((cfg.infoScale ?? 100) / 100).toFixed(2));
     box.style.display = 'block';
+    // fade in once the temperature is known (or after 3.5 s without data) — no half-empty block that jumps when the data arrives
+    box.style.opacity = (typeof i.temp === 'number' || performance.now() > 3500) ? '1' : '0';
 }
 
 let weatherTimer = null;
 let rotationTimer = null; // εναλλαγή βίντεο ανά N λεπτά (Video mode)
+let weatherPollHandles = [];
+async function pollWeatherOnce() {
+    const b = bridge();
+    if (!b || !window.WeatherWallpaper) return false;
+    try {
+        const data = JSON.parse(await b.GetWeatherJson());
+        WeatherWallpaper.setWeather(data);
+        updateWeatherInfo();
+        return data.ok === true;
+    } catch (e) { return false; }   // κρατάει τα προηγούμενα δεδομένα
+}
+// Το host object δεν επιστρέφει Task: ζητάμε ανανέωση (επιστρέφει αμέσως) και διαβάζουμε την cache μετά από λίγο — με επαναλήψεις αν δεν έχει έρθει ακόμα.
 async function refreshWeather() {
     const b = bridge();
     if (!b || !window.WeatherWallpaper) return;
-    try { WeatherWallpaper.setWeather(JSON.parse(await b.GetWeatherJson())); updateWeatherInfo(); } catch (e) { /* κρατάει τα προηγούμενα δεδομένα */ }
+    weatherPollHandles.forEach(clearTimeout);
+    weatherPollHandles = [];
+    try { b.RequestWeatherRefresh(); } catch (e) { /* ignore */ }
+    if (await pollWeatherOnce()) {
+        // ίσως η cache ήταν παλιά και ανανεώνεται τώρα: μία ακόμα ανάγνωση σε λίγα δευτερόλεπτα
+        weatherPollHandles.push(setTimeout(pollWeatherOnce, 6000));
+        return;
+    }
+    [1500, 4000, 10000, 30000, 90000].forEach(ms => weatherPollHandles.push(setTimeout(pollWeatherOnce, ms)));
+}
+
+function renderFrame(dt) {
+    if (cfg.mode === 'Weather') drawWeather(dt);
+    else if (cfg.mode === 'Particles') drawParticles(dt);
+    else if (cfg.waveStyle === 'Aurora') drawAurora(dt);
+    else if (cfg.waveStyle === 'TechGrid') drawTechGrid(dt);
+    else drawWaves(dt);
 }
 
 function waveLoop(now) {
@@ -522,11 +555,7 @@ function waveLoop(now) {
 
     if (now - lastFrameTime >= minFrameMs) {
         const dt = Math.min(0.1, (now - lastFrameTime) / 1000 || 0.016);
-        if (cfg.mode === 'Weather') drawWeather(dt);
-        else if (cfg.mode === 'Particles') drawParticles(dt);
-        else if (cfg.waveStyle === 'Aurora') drawAurora(dt);
-        else if (cfg.waveStyle === 'TechGrid') drawTechGrid(dt);
-        else drawWaves(dt);
+        renderFrame(dt);
         lastFrameTime = now;
     }
     waveLoopHandle = requestAnimationFrame(waveLoop);
@@ -641,7 +670,24 @@ async function refreshAudioPulse() {
     } catch (e) { /* ignore */ }
 }
 
-window.motionDeskRefresh = async () => {
+let readySent = false;
+function signalReady() {
+    if (readySent) return;
+    readySent = true;
+    try { bridge()?.NotifyReady(); } catch (e) { /* ignore */ }
+}
+// The window is still hidden while it starts, and a hidden WebView does not fire animation frames — so the first frame of the canvas modes is
+// drawn explicitly here (the page is then already painted when the window is revealed) and the signal is sent from a timer, not from rAF.
+async function prepareFirstFrame() {
+    if (['Waves', 'Particles', 'Weather'].includes(cfg.mode)) { try { renderFrame(0.016); } catch (e) { /* ignore */ } }
+    await new Promise(res => setTimeout(res, 80));
+}
+
+// Refreshes are queued: overlapping runs (several settings changes in a row) interleaved their steps and made the scene flicker
+let refreshChain = Promise.resolve();
+window.motionDeskRefresh = () => (refreshChain = refreshChain.then(doRefresh).catch(() => {}));
+
+async function doRefresh() {
     const b = bridge();
     if (!b) return;
 
@@ -675,11 +721,12 @@ window.motionDeskRefresh = async () => {
     if (cfg.mode === 'Video') {
         await playCurrentVideo();
     } else if (cfg.mode === 'Desktop') {
-        startDesktop();
+        await startDesktop();
         deskTimer = setInterval(refreshDesk, 60 * 1000);
     } else {
         startWaves();
     }
+    if (!readySent) { await prepareFirstFrame(); signalReady(); }
 };
 
 // Αυτόματη παύση σε fullscreen εφαρμογές/παιχνίδια (καλείται από τη C# πλευρά) — καθαρή

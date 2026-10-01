@@ -25,6 +25,11 @@ namespace MotionDesk.Widgets
             _screenDeviceName = screenDeviceName;
         }
 
+        // Called by the page once its first frame is on screen (see index.html signalReady): the window is only REVEALED then, so the
+        // user never sees a black rectangle while WebView2 is still starting up (the flicker at startup / when the overlay-only mode starts).
+        public Action? ContentReady { get; set; }
+        public void NotifyReady() => ContentReady?.Invoke();
+
         public float GetAudioPeak()
         {
             _audio ??= new AudioPeakService();
@@ -115,10 +120,17 @@ namespace MotionDesk.Widgets
         }
 
         // Live weather for the "Weather" wallpaper mode (cached 10 min in WeatherService; the JS side polls every 10 min).
-        public async System.Threading.Tasks.Task<string> GetWeatherJson()
+        public string GetWeatherJson()
         {
             var settings = WallpaperSettings.Load();
-            return await MotionDesk.Services.WeatherService.GetWallpaperWeatherJsonAsync(settings.WeatherLat, settings.WeatherLon);
+            return MotionDesk.Services.WeatherService.GetWallpaperWeatherCached(settings.WeatherLat, settings.WeatherLon);
+        }
+
+        // Starts a background refresh when the cached weather is missing or older than 10 minutes (returns immediately)
+        public void RequestWeatherRefresh()
+        {
+            var settings = WallpaperSettings.Load();
+            MotionDesk.Services.WeatherService.RequestWallpaperWeatherRefresh(settings.WeatherLat, settings.WeatherLon);
         }
 
         // Αν αυτή η οθόνη έχει "καρφιτσωμένο" δικό της βίντεο (ScreenVideoOverride), το
@@ -467,6 +479,36 @@ namespace MotionDesk.Widgets
         // περάσει ξανά από όλο το attach dance.
         public bool IsAttached { get; private set; }
 
+        // The window is attached behind the icons while still HIDDEN; it is shown only when the page reports its first frame (or after a
+        // 4 s safety timeout) — otherwise the black form background flashes over the user's wallpaper while WebView2 starts.
+        private bool _contentReady;
+        private bool _wantShow;
+        public event Action? Revealed;      // raised when the window has been shown (the engine then retires the windows it replaces)
+        private System.Windows.Forms.Timer? _revealTimeout;
+
+        private void RevealWhenReady()
+        {
+            if (Visible) { BringToFront(); return; }
+            if (_contentReady) { Show(); SendToBack(); Revealed?.Invoke(); return; }
+            _wantShow = true;
+            if (_revealTimeout == null)
+            {
+                _revealTimeout = new System.Windows.Forms.Timer { Interval = 4000 };
+                _revealTimeout.Tick += (_, _) =>
+                {
+                    _revealTimeout?.Stop();
+                    if (_wantShow && !IsDisposed && !Visible) { _wantShow = false; Show(); SendToBack(); Revealed?.Invoke(); }
+                };
+            }
+            _revealTimeout.Stop(); _revealTimeout.Start();
+        }
+
+        private void MarkContentReady()
+        {
+            _contentReady = true;
+            if (_wantShow && !IsDisposed && !Visible) { _wantShow = false; _revealTimeout?.Stop(); Show(); SendToBack(); Revealed?.Invoke(); }
+        }
+
         public WallpaperWindow(Screen targetScreen)
         {
             TargetScreen = targetScreen;
@@ -540,7 +582,7 @@ namespace MotionDesk.Widgets
                 IsAttached = true;
                 SendToBack();
                 _reattachTimer?.Stop();
-                if (!Visible) Show(); else BringToFront();
+                RevealWhenReady();
                 BeginSettleRecheck();
                 return;
             }
@@ -594,7 +636,7 @@ namespace MotionDesk.Widgets
             {
                 IsAttached = true;
                 SendToBack();
-                if (!Visible) Show(); else BringToFront();
+                RevealWhenReady();
                 BeginSettleRecheck();
             }
             else
@@ -639,7 +681,10 @@ namespace MotionDesk.Widgets
                 await _webView.EnsureCoreWebView2Async(await WebView2Support.CreateEnvironmentAsync());
                 if (IsDisposed || _webView.CoreWebView2 == null) return;
                 WebView2Support.Harden(_webView.CoreWebView2);
-                _bridge = new WallpaperBridge(TargetScreen.DeviceName);
+                _bridge = new WallpaperBridge(TargetScreen.DeviceName)
+                {
+                    ContentReady = () => { if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(MarkContentReady)); }
+                };
                 _webView.CoreWebView2.AddHostObjectToScript("wallpaper", _bridge);
                 string htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "widgets", "wallpaper", "index.html");
                 // Μετά από κάθε φόρτωση σελίδας ξαναεφαρμόζουμε την κατάσταση παύσης — αλλιώς ένα
@@ -672,6 +717,9 @@ namespace MotionDesk.Widgets
                 _settleTimer?.Stop();
                 _settleTimer?.Dispose();
                 _settleTimer = null;
+                _revealTimeout?.Stop();
+                _revealTimeout?.Dispose();
+                _revealTimeout = null;
                 _bridge?.Dispose();
                 _bridge = null;
                 _webView?.Dispose();
@@ -731,7 +779,9 @@ namespace MotionDesk.Widgets
             SystemEvents.DisplaySettingsChanged += (_, _) =>
             {
                 _displayDebounce?.Dispose();
-                _displayDebounce = new System.Threading.Timer(_ => _ui.Post(__ => { if (Active) RebuildWindows(); }, null),
+                // Windows often raises DisplaySettingsChanged right after logon/start without any real change; rebuilding then destroyed and
+                // recreated every wallpaper window a second after startup (a visible flicker). Rebuild only if the monitor layout differs.
+                _displayDebounce = new System.Threading.Timer(_ => _ui.Post(__ => { if (Active && LayoutKey() != _layoutKey) RebuildWindows(); }, null),
                     null, 1200, System.Threading.Timeout.Infinite);
             };
             SystemEvents.UserPreferenceChanged += (_, e) =>
@@ -861,14 +911,37 @@ namespace MotionDesk.Widgets
             UpdateOverlayOnly();   // the overlay keeps running over the normal Windows wallpaper when it is switched on
         }
 
+        private string _layoutKey = "";
+        private static string LayoutKey() => string.Join("|", Screen.AllScreens.Select(sc => $"{sc.DeviceName}:{sc.Bounds}"));
+
         private void RebuildWindows()
         {
-            foreach (var w in _windows) w.Dispose();
+            _layoutKey = LayoutKey();
+            // The old windows stay on screen until a new one is actually visible (or 10 s pass): disposing them first left the plain
+            // desktop wallpaper showing for a moment while the new WebView2 started — a visible flicker on every rebuild.
+            var retiring = _windows.ToList();
             _windows.Clear();
+            void RetireOld(string? deviceName = null)      // null = all (safety timeout)
+            {
+                foreach (var w in retiring.ToList())
+                {
+                    if (deviceName != null && w.TargetScreen.DeviceName != deviceName) continue;   // per screen: keep the others until THEIR replacement is up
+                    if (!w.IsDisposed) w.Dispose();
+                    retiring.Remove(w);
+                }
+            }
+            if (retiring.Count > 0)
+            {
+                var safety = new System.Windows.Forms.Timer { Interval = 10_000 };
+                safety.Tick += (_, _) => { safety.Stop(); safety.Dispose(); RetireOld(null); };
+                safety.Start();
+            }
 
             foreach (var screen in Screen.AllScreens)
             {
                 var window = new WallpaperWindow(screen);
+                string deviceName = screen.DeviceName;
+                window.Revealed += () => RetireOld(deviceName);
                 _windows.Add(window);
                 // BeginAttach (ΟΧΙ Show) — το παράθυρο γίνεται ορατό ΜΟΝΟ αφού πρώτα επιβεβαιωθεί
                 // ότι μπήκε πίσω από τα εικονίδια, βλ. σχόλιο στο WallpaperWindow.BeginAttach.

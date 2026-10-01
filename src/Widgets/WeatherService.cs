@@ -135,6 +135,37 @@ namespace MotionDesk.Services
             WeatherCondition.Drizzle => 51, WeatherCondition.Rain => 63, WeatherCondition.Snow => 73, WeatherCondition.Thunderstorm => 95, _ => 0
         };
 
+        // Synchronous, non-blocking accessors for the WebView2 host object (async Task<T> across the COM bridge is not reliable):
+        // GetWallpaperWeatherCached returns whatever is cached for this location (or {"ok":false,"pending":true}),
+        // RequestWallpaperWeatherRefresh starts a background refresh when the cache is missing/stale (de-duplicated).
+        private static int _wpRefreshing;
+
+        public static string GetWallpaperWeatherCached(double lat, double lon)
+        {
+            string key = $"{lat.ToString(CultureInfo.InvariantCulture)},{lon.ToString(CultureInfo.InvariantCulture)}";
+            lock (_wpLock)
+            {
+                if (_wpCacheKey == key && _wpCacheJson != null) return _wpCacheJson;
+            }
+            return "{\"ok\":false,\"pending\":true}";
+        }
+
+        public static void RequestWallpaperWeatherRefresh(double lat, double lon)
+        {
+            string key = $"{lat.ToString(CultureInfo.InvariantCulture)},{lon.ToString(CultureInfo.InvariantCulture)}";
+            lock (_wpLock)
+            {
+                if (_wpCacheKey == key && _wpCacheJson != null && DateTime.UtcNow - _wpCacheAt < TimeSpan.FromMinutes(10)) return;   // still fresh
+            }
+            if (System.Threading.Interlocked.Exchange(ref _wpRefreshing, 1) == 1) return;
+            _ = Task.Run(async () =>
+            {
+                try { await GetWallpaperWeatherJsonAsync(lat, lon); }
+                catch (Exception) { /* offline: the page keeps polling */ }
+                finally { System.Threading.Interlocked.Exchange(ref _wpRefreshing, 0); }
+            });
+        }
+
         public static async Task<string> GetWallpaperWeatherJsonAsync(double lat, double lon)
         {
             string key = $"{lat.ToString(CultureInfo.InvariantCulture)},{lon.ToString(CultureInfo.InvariantCulture)}";
