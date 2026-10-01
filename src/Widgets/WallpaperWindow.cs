@@ -747,10 +747,7 @@ namespace MotionDesk.Widgets
         {
             if (!WmvConversionService.IsFfmpegAvailable)
             {
-                var choice = MessageBox.Show(
-                    $"Βρέθηκαν {wmvFiles.Count} αρχείο(α) .wmv στον φάκελο. Απαιτείται το δωρεάν εργαλείο FFmpeg για αυτόματη μετατροπή σε .mp4, το οποίο δεν εντοπίστηκε.\n\nΝα ανοίξει η σελίδα λήψης;",
-                    "Απαιτείται FFmpeg για μετατροπή .wmv", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                if (choice == DialogResult.Yes) WmvConversionService.OpenFfmpegDownloadPage();
+WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
                 return;
             }
 

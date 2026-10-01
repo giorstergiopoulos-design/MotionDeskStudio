@@ -52,7 +52,7 @@ namespace MotionDesk
             if ((DateTime.Now - _lastErrorDialog).TotalSeconds < 30) return;
             _lastErrorDialog = DateTime.Now;
 
-            MessageBox.Show($"Παρουσιάστηκε σφάλμα:\n\n{ex.Message}", "MotionDesk Studio",
+            MessageBox.Show(string.Format(MotionDesk.Services.LocalizationManager.T("Dialog.UnhandledErrorFormat"), ex.Message), "MotionDesk Studio",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }

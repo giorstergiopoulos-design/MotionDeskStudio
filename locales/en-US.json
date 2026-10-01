@@ -360,5 +360,12 @@
   "DCMenu.Remove": "Remove from container",
   "DCMenu.Unpin": "Unpin from DeskStrip",
   "QuickLook.EmptyFolder": "(empty folder)",
-  "QuickLook.ReadErrorFormat": "(unable to read: {0})"
+  "QuickLook.ReadErrorFormat": "(unable to read: {0})",
+  "Dialog.FfmpegMissingFormat": "Found {0} .wmv file(s). The built-in player has no decoder for this legacy codec (WMV3/VC-1) — it needs automatic conversion to .mp4 using the free FFmpeg tool, which was not found on this system.\n\nOpen the FFmpeg download page now? After installing, add the file again.",
+  "Dialog.FfmpegTitle": "FFmpeg required to convert .wmv",
+  "Dialog.SevenZipMissing": "One or more .7z files could not be extracted — the free 7-Zip tool is required and was not found on this system.\n\nOpen the download page now? After installing, add the file again.",
+  "Dialog.SevenZipTitle": "7-Zip required",
+  "Dialog.ConvertFailed": "The .wmv conversion failed (check whether the file is corrupt).",
+  "Dialog.ConvertFailedTitle": "Conversion error",
+  "Dialog.UnhandledErrorFormat": "An error occurred:\n\n{0}"
 }

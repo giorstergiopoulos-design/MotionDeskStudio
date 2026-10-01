@@ -90,6 +90,15 @@ namespace MotionDesk.Services
 
         // Ανοίγει τη σελίδα λήψης σε browser — ΔΕΝ κατεβάζουμε/εκτελούμε τίποτα εμείς οι ίδιοι,
         // ο χρήστης εγκαθιστά το FFmpeg με δική του ρητή ενέργεια.
+        // Κοινός, τοπικοποιημένος διάλογος "λείπει το FFmpeg" για όλα τα σημεία εισαγωγής .wmv.
+        public static void PromptInstallFfmpeg(int wmvCount)
+        {
+            var choice = MessageBox.Show(
+                string.Format(LocalizationManager.T("Dialog.FfmpegMissingFormat"), wmvCount),
+                LocalizationManager.T("Dialog.FfmpegTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (choice == DialogResult.Yes) OpenFfmpegDownloadPage();
+        }
+
         public static void OpenFfmpegDownloadPage()
         {
             try { Process.Start(new ProcessStartInfo("https://www.gyan.dev/ffmpeg/builds/") { UseShellExecute = true }); }

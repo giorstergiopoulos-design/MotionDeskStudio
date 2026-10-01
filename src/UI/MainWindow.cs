@@ -1257,9 +1257,9 @@ namespace MotionDesk.UI
 
             if (anySevenZipMissing)
             {
-                var choice = MessageBox.Show(
-                    "Ένα ή περισσότερα αρχεία .7z δεν μπόρεσαν να εξαχθούν — απαιτείται το δωρεάν εργαλείο 7-Zip, το οποίο δεν εντοπίστηκε στο σύστημα.\n\nΆνοιγμα της σελίδας λήψης τώρα; Μετά την εγκατάσταση, προσθέστε ξανά το αρχείο.",
-                    "Απαιτείται 7-Zip", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+var choice = MessageBox.Show(
+                    LocalizationManager.T("Dialog.SevenZipMissing"),
+                    LocalizationManager.T("Dialog.SevenZipTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                 if (choice == DialogResult.Yes) ArchivePlaylistService.OpenSevenZipDownloadPage();
             }
 
@@ -1272,10 +1272,7 @@ namespace MotionDesk.UI
             {
                 if (!WmvConversionService.IsFfmpegAvailable)
                 {
-                    var choice = MessageBox.Show(
-                        $"Βρέθηκαν {wmvFiles.Length} αρχείο(α) .wmv. Ο ενσωματωμένος player δεν έχει decoder για αυτόν τον παλιό codec (WMV3/VC-1) — χρειάζεται αυτόματη μετατροπή σε .mp4 μέσω του δωρεάν εργαλείου FFmpeg, το οποίο δεν εντοπίστηκε στο σύστημα.\n\nΆνοιγμα της σελίδας λήψης του FFmpeg τώρα; Μετά την εγκατάσταση, προσθέστε ξανά το αρχείο.",
-                        "Απαιτείται FFmpeg για μετατροπή .wmv", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                    if (choice == DialogResult.Yes) WmvConversionService.OpenFfmpegDownloadPage();
+WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 }
                 else
                 {
@@ -1285,7 +1282,7 @@ namespace MotionDesk.UI
                         if (mp4 != null) finalPaths.Add(mp4);
                     }
                     if (finalPaths.Count == 0)
-                        MessageBox.Show("Η μετατροπή .wmv απέτυχε (δείτε αν το αρχείο είναι κατεστραμμένο).", "Σφάλμα μετατροπής", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show(LocalizationManager.T("Dialog.ConvertFailed"), LocalizationManager.T("Dialog.ConvertFailedTitle"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
 

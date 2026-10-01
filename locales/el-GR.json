@@ -360,5 +360,12 @@
   "DCMenu.Remove": "Αφαίρεση από το container",
   "DCMenu.Unpin": "Ξεκαρφίτσωμα από το DeskStrip",
   "QuickLook.EmptyFolder": "(κενός φάκελος)",
-  "QuickLook.ReadErrorFormat": "(αδύνατη η ανάγνωση: {0})"
+  "QuickLook.ReadErrorFormat": "(αδύνατη η ανάγνωση: {0})",
+  "Dialog.FfmpegMissingFormat": "Βρέθηκαν {0} αρχείο(α) .wmv. Ο ενσωματωμένος player δεν έχει decoder για αυτόν τον παλιό codec (WMV3/VC-1) — χρειάζεται αυτόματη μετατροπή σε .mp4 μέσω του δωρεάν εργαλείου FFmpeg, το οποίο δεν εντοπίστηκε στο σύστημα.\n\nΆνοιγμα της σελίδας λήψης του FFmpeg τώρα; Μετά την εγκατάσταση, προσθέστε ξανά το αρχείο.",
+  "Dialog.FfmpegTitle": "Απαιτείται FFmpeg για μετατροπή .wmv",
+  "Dialog.SevenZipMissing": "Ένα ή περισσότερα αρχεία .7z δεν μπόρεσαν να εξαχθούν — απαιτείται το δωρεάν εργαλείο 7-Zip, το οποίο δεν εντοπίστηκε στο σύστημα.\n\nΆνοιγμα της σελίδας λήψης τώρα; Μετά την εγκατάσταση, προσθέστε ξανά το αρχείο.",
+  "Dialog.SevenZipTitle": "Απαιτείται 7-Zip",
+  "Dialog.ConvertFailed": "Η μετατροπή .wmv απέτυχε (δείτε αν το αρχείο είναι κατεστραμμένο).",
+  "Dialog.ConvertFailedTitle": "Σφάλμα μετατροπής",
+  "Dialog.UnhandledErrorFormat": "Παρουσιάστηκε σφάλμα:\n\n{0}"
 }
