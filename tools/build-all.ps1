@@ -15,8 +15,8 @@ $Iscc = "C:\Users\gstrj\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
 # --- CONFIGURE HERE ---
 $Projects = @(
     @{ Name='MotionDesk'; Path='C:\Users\gstrj\Documents\MotionDeskStudio'; Branch='claude/pensive-carson-sls1n6' },
-    @{ Name='GearWin';    Path='C:\Projects\GearWin';          Branch='claude/full-audit' },
-    @{ Name='Waveframe';  Path='C:\Projects\waveframe';        Branch='claude/full-audit' }
+    @{ Name='GearWin';    Path='C:\Users\gstrj\Documents\GearWin';          Branch='claude/full-audit' },
+    @{ Name='Waveframe';  Path='C:\Users\gstrj\Documents\waveframe';        Branch='claude/full-audit' }
 )
 
 function Run($exe, $argList) {
