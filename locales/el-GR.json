@@ -477,5 +477,15 @@
   "Wallpaper.Time.Dawn": "Αυγή",
   "Wallpaper.Time.Day": "Μέρα",
   "Wallpaper.Time.Dusk": "Δειλινό",
-  "Wallpaper.Time.Night": "Νύχτα"
+  "Wallpaper.Time.Night": "Νύχτα",
+  "Wallpaper.IncludeSubfolders": "Συμπερίληψη υποφακέλων κατά την προσθήκη φακέλου",
+  "Wallpaper.RemoveMissing": "Αφαίρεση αρχείων που λείπουν ({0})",
+  "Wallpaper.RepeatPerVideo": "Αναπαραγωγή κάθε βίντεο",
+  "Wallpaper.RepeatOnce": "μία φορά, μετά το επόμενο",
+  "Wallpaper.RotateEvery": "Αλλαγή στο επόμενο βίντεο",
+  "Wallpaper.RotateWhenEnds": "όταν τελειώσει",
+  "Wallpaper.RotateMinutesFormat": "κάθε {0} λεπτά",
+  "Wallpaper.SectionSchedule": "Πρόγραμμα ανά ώρα της ημέρας",
+  "Wallpaper.ScheduleNote": "Αλλαγή του τρόπου wallpaper αυτόματα με βάση το ρολόι — π.χ. ήρεμα κύματα την ημέρα και σκηνικό καιρού το βράδυ. Τα χρονικά παράθυρα μπορούν να περνούν τα μεσάνυχτα. Το πρόγραμμα αλλάζει μόνο τον τρόπο· δεν ενεργοποιεί ποτέ μόνο του το wallpaper.",
+  "Wallpaper.ScheduleEnable": "Χρήση προγράμματος"
 }

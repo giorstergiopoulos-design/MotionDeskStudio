@@ -102,6 +102,9 @@ namespace MotionDesk.Widgets
             WidgetSnapEngine.GridSize = Math.Clamp(appSettings.GridSize, 5, 100);
             _wallpaperEnabled = WallpaperHostEngine.Instance.IsEnabled;
 
+            // Time-of-day schedule (may switch the wallpaper mode before the wallpaper starts)
+            WallpaperHostEngine.Instance.ApplyScheduleNow();
+
             if (appSettings.StartWallpaperWithWindows)
             {
                 WallpaperHostEngine.Instance.Enable();

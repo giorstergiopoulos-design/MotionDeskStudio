@@ -75,7 +75,8 @@ namespace MotionDesk.Widgets
                 timeSim = settings.TimeSimulation,
                 weatherGlass = settings.WeatherGlass,
                 weatherLat = settings.WeatherLat,
-                weatherLon = settings.WeatherLon
+                weatherLon = settings.WeatherLon,
+                rotateMinutes = settings.RotateEveryMinutes
             });
         }
 
@@ -102,35 +103,33 @@ namespace MotionDesk.Widgets
             if (settings.Mode != "Video") return string.Empty;
 
             string? path = PinnedVideoForThisScreen(settings) ?? settings.CurrentPlaylistFile();
-            _lastServedShared = path;
+            _lastServedSerial = settings.AdvanceSerial;
             return string.IsNullOrEmpty(path) ? string.Empty : new Uri(path).AbsoluteUri;
         }
 
-        // Το κοινό playlist έχει ΕΝΑΝ δείκτη, αλλά υπάρχει ένα WallpaperBridge ανά οθόνη. Πριν, κάθε οθόνη που
-        // τελείωνε το βίντεο της προχωρούσε τον δείκτη — με 2 οθόνες το playlist προχωρούσε διπλά και
-        // "έτρωγε" βίντεο. Τώρα προχωράμε μόνο αν ο δείκτης ΕΙΝΑΙ ΑΚΟΜΑ στο βίντεο που σερβίραμε εμείς
-        // (αλλιώς κάποια άλλη οθόνη έχει ήδη προχωρήσει και απλώς παίρνουμε το τρέχον).
-        private string? _lastServedShared;
+        // Το κοινό playlist έχει ΕΝΑΝ δείκτη, αλλά υπάρχει ένα WallpaperBridge ανά οθόνη. Κάθε πραγματική προώθηση αυξάνει το AdvanceSerial·
+        // μια οθόνη προχωράει το playlist ΜΟΝΟ αν είναι ακόμα στο serial που σέρβιρε η ίδια (αλλιώς άλλη οθόνη έχει ήδη προχωρήσει και
+        // απλώς παίρνει το τρέχον). Έτσι δουλεύουν σωστά και οι επαναλήψεις ("παίξε κάθε βίντεο N φορές") που ΔΕΝ αλλάζουν αρχείο.
+        private int _lastServedSerial = -1;
 
-        // Καλείται από το JS όταν ένα βίντεο τελειώνει (advance) ή αποτυγχάνει να παιχτεί (skip).
+        // Καλείται από το JS όταν ένα βίντεο τελειώνει (advance), αποτυγχάνει να παιχτεί (skip) ή λήγει ο χρονιστής εναλλαγής.
         public string AdvanceVideo()
         {
             var settings = WallpaperSettings.Load();
 
-            // Μια "καρφιτσωμένη" οθόνη δεν προχωράει ποτέ στο κοινό playlist — ξαναπαίζει το
-            // ίδιο βίντεο (ο βρόχος <video loop> στο ίδιο το HTML το χειρίζεται ήδη συνήθως,
-            // αλλά αν φτάσει ως εδώ μέσω 'error', ξαναγυρνάμε στο ίδιο αρχείο).
+            // Μια "καρφιτσωμένη" οθόνη δεν προχωράει ποτέ στο κοινό playlist — ξαναπαίζει το ίδιο βίντεο.
             var pinned = PinnedVideoForThisScreen(settings);
             if (pinned != null) return new Uri(pinned).AbsoluteUri;
 
-            if (_lastServedShared == null || string.Equals(settings.CurrentPlaylistFile(), _lastServedShared, StringComparison.OrdinalIgnoreCase))
+            if (_lastServedSerial < 0 || settings.AdvanceSerial == _lastServedSerial)
             {
                 settings.AdvancePlaylist();
+                settings.AdvanceSerial++;
                 settings.Save();
             }
+            _lastServedSerial = settings.AdvanceSerial;
 
             string? path = settings.CurrentPlaylistFile();
-            _lastServedShared = path;
             return string.IsNullOrEmpty(path) ? string.Empty : new Uri(path).AbsoluteUri;
         }
     }
@@ -177,6 +176,19 @@ namespace MotionDesk.Widgets
         }
     }
 
+    public sealed class WallpaperScheduleRule
+    {
+        public bool Enabled { get; set; }
+        public int StartMinutes { get; set; }      // minutes after local midnight
+        public int EndMinutes { get; set; }        // exclusive; a window with End <= Start wraps past midnight
+        public string Mode { get; set; } = "Waves";
+
+        public bool Contains(int minutes) =>
+            StartMinutes == EndMinutes ? true
+            : StartMinutes < EndMinutes ? minutes >= StartMinutes && minutes < EndMinutes
+            : minutes >= StartMinutes || minutes < EndMinutes;
+    }
+
     public sealed class WallpaperSettings
     {
         public string Mode { get; set; } = "Waves"; // "Waves" | "Video" | "Particles" | "Weather"
@@ -202,6 +214,17 @@ namespace MotionDesk.Widgets
         // "Auto" = live. Otherwise Dawn|Day|Dusk|Night
         public string TimeSimulation { get; set; } = "Auto";
         public bool WeatherGlass { get; set; } = true;   // raindrops on a window pane while it rains
+
+        // Playlist behaviour
+        public bool IncludeSubfolders { get; set; } = false;   // "Add folder" also scans sub-folders
+        public int RepeatPerVideo { get; set; } = 1;            // each video plays N times before the next one (1..10)
+        public int RotateEveryMinutes { get; set; } = 0;        // 0 = switch when the video ends; N = switch every N minutes
+        public int RepeatsDone { get; set; } = 0;               // internal: how many times the current video already repeated
+        public int AdvanceSerial { get; set; } = 0;             // internal: incremented on every real advance (lets several screens share one playlist)
+
+        // Time-of-day schedule: switch the wallpaper MODE automatically (e.g. calm waves in the morning, weather at night)
+        public bool ScheduleEnabled { get; set; } = false;
+        public List<WallpaperScheduleRule> Schedule { get; set; } = new();
 
         // Ήχος wallpaper video — ζητήθηκε ρητά, πραγματικό DSP (Web Audio API μέσα στο
         // wallpaper/index.html) πάνω στον ΔΙΚΟ ΜΑΣ ήχο του video wallpaper (όχι system-wide, βλ.
@@ -318,7 +341,11 @@ namespace MotionDesk.Widgets
         public void AdvancePlaylist()
         {
             var playable = PlayableVideos();
-            if (playable.Count == 0) { CurrentVideoIndex = 0; ShuffleHistory.Clear(); return; }
+            if (playable.Count == 0) { CurrentVideoIndex = 0; ShuffleHistory.Clear(); RepeatsDone = 0; return; }
+
+            // "Play each video N times": stay on the same file until the repeat counter is used up
+            if (RepeatPerVideo > 1 && RepeatsDone + 1 < RepeatPerVideo) { RepeatsDone++; return; }
+            RepeatsDone = 0;
 
             if (Shuffle && playable.Count > 1)
             {
@@ -352,11 +379,21 @@ namespace MotionDesk.Widgets
             }
         }
 
+        public int RemoveMissingVideos()
+        {
+            var current = CurrentPlaylistFile();
+            int removed = VideoPaths.RemoveAll(p => !File.Exists(p));
+            DisabledVideoPaths.RemoveWhere(p => !File.Exists(p));
+            ShuffleHistory.RemoveAll(p => !File.Exists(p));
+            if (removed > 0) KeepCurrentVideo(current);
+            return removed;
+        }
+
         public int AddVideoFolder(string folderPath)
         {
             if (!Directory.Exists(folderPath)) return 0;
 
-            var found = Directory.EnumerateFiles(folderPath, "*.*", SearchOption.TopDirectoryOnly)
+            var found = Directory.EnumerateFiles(folderPath, "*.*", IncludeSubfolders ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly)
                 .Where(f => SupportedVideoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                 .ToList();
 
@@ -447,7 +484,9 @@ namespace MotionDesk.Widgets
         {
             IntPtr handle = Handle;
             Rectangle bounds = TargetScreen.Bounds;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             bool attached = await Task.Run(() => WallpaperInterop.AttachToDesktop(handle, bounds));
+            MotionDesk.Services.AttachLog.Write($"[{TargetScreen.DeviceName}] first attach {(attached ? "OK" : "FAILED (retrying every 1s)")} in {sw.ElapsedMilliseconds} ms");
             if (IsDisposed) return;
 
             if (attached)
@@ -488,6 +527,7 @@ namespace MotionDesk.Widgets
                 IntPtr handle = Handle;
                 Rectangle bounds = TargetScreen.Bounds;
                 bool ok = await Task.Run(() => WallpaperInterop.AttachToDesktop(handle, bounds));
+                MotionDesk.Services.AttachLog.Write($"[{TargetScreen.DeviceName}] settle re-check ({14 - _settleAttemptsLeft}/14) {(ok ? "OK" : "FAILED")}");
                 if (IsDisposed) return;
                 if (ok) SendToBack();
             };
@@ -501,6 +541,7 @@ namespace MotionDesk.Widgets
             IntPtr handle = Handle;
             Rectangle bounds = TargetScreen.Bounds;
             bool attached = await Task.Run(() => WallpaperInterop.AttachToDesktop(handle, bounds));
+            MotionDesk.Services.AttachLog.Write($"[{TargetScreen.DeviceName}] re-attach {(attached ? "OK" : "FAILED (will retry)")}");
             if (IsDisposed) return;
 
             if (attached)
@@ -795,7 +836,7 @@ namespace MotionDesk.Widgets
             // Τα .wmv ΔΕΝ παίζουν στο WebView2 (δεν έχει decoder WMV3/VC-1) — πριν, ένας φάκελος με
             // .wmv τα πρόσθετε ως έχουν και δεν έπαιζαν ποτέ. Τα μετατρέπουμε πρώτα σε .mp4 (FFmpeg) στο
             // παρασκήνιο, ακριβώς όπως η προσθήκη μεμονωμένων αρχείων.
-            var allFiles = Directory.EnumerateFiles(folder, "*.*", SearchOption.TopDirectoryOnly)
+            var allFiles = Directory.EnumerateFiles(folder, "*.*", WallpaperSettings.Load().IncludeSubfolders ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly)
                 .Where(f => WallpaperSettings.SupportedVideoExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                 .ToList();
             var wmvFiles = allFiles.Where(f => string.Equals(Path.GetExtension(f), ".wmv", StringComparison.OrdinalIgnoreCase)).ToList();
@@ -837,6 +878,79 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
             settings.Save();
             Enable();
             _ = RefreshAllAsync();
+        }
+
+        // ---- playlist options
+        public void SetIncludeSubfolders(bool enabled)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.IncludeSubfolders = enabled;
+            settings.Save();
+        }
+
+        public void SetPlaybackOptions(int repeatPerVideo, int rotateEveryMinutes)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.RepeatPerVideo = Math.Clamp(repeatPerVideo, 1, 10);
+            settings.RotateEveryMinutes = Math.Clamp(rotateEveryMinutes, 0, 120);
+            settings.RepeatsDone = 0;
+            settings.Save();
+            _ = RefreshAllAsync();
+        }
+
+        public int RemoveMissingVideos()
+        {
+            var settings = WallpaperSettings.Load();
+            int removed = settings.RemoveMissingVideos();
+            if (removed > 0) { settings.Save(); _ = RefreshAllAsync(); }
+            return removed;
+        }
+
+        // ---- time-of-day schedule (mode switching)
+        private System.Windows.Forms.Timer? _scheduleTimer;
+        private int _lastScheduleRule = -2;
+
+        public void SetSchedule(bool enabled, List<WallpaperScheduleRule> rules)
+        {
+            var settings = WallpaperSettings.Load();
+            settings.ScheduleEnabled = enabled;
+            settings.Schedule = rules;
+            settings.Save();
+            _lastScheduleRule = -2;       // re-evaluate immediately
+            EnsureScheduleTimer();
+            ScheduleTick();
+        }
+
+        public void ApplyScheduleNow() { EnsureScheduleTimer(); ScheduleTick(); }
+
+        public void EnsureScheduleTimer()
+        {
+            if (_scheduleTimer != null) return;
+            _scheduleTimer = new System.Windows.Forms.Timer { Interval = 60_000 };
+            _scheduleTimer.Tick += (_, _) => ScheduleTick();
+            _scheduleTimer.Start();
+        }
+
+        // Applies a rule only when the ACTIVE rule changes (so a manual mode change stays until the next boundary), and never turns
+        // the wallpaper on by itself.
+        private void ScheduleTick()
+        {
+            try
+            {
+                var settings = WallpaperSettings.Load();
+                if (!settings.ScheduleEnabled) { _lastScheduleRule = -2; return; }
+                var now = DateTime.Now; int minutes = now.Hour * 60 + now.Minute;
+                int idx = settings.Schedule.FindIndex(r => r.Enabled && r.Contains(minutes));
+                if (idx == _lastScheduleRule) return;
+                _lastScheduleRule = idx;
+                if (idx < 0) return;
+                var rule = settings.Schedule[idx];
+                if (string.Equals(settings.Mode, rule.Mode, StringComparison.Ordinal)) return;
+                settings.Mode = rule.Mode;
+                settings.Save();
+                if (_enabled) _ = RefreshAllAsync();
+            }
+            catch (Exception) { /* a schedule tick must never throw into the UI loop */ }
         }
 
         // ---- "Weather" mode settings (each change refreshes the running wallpaper)

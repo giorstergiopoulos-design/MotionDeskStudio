@@ -443,6 +443,7 @@ function drawWeather(dt) {
 
 // Ο καιρός έρχεται από τη C# πλευρά (cache 10 λεπτών, fallback σε 2ο πάροχο) — το JS δεν κάνει δικτυακές κλήσεις.
 let weatherTimer = null;
+let rotationTimer = null; // εναλλαγή βίντεο ανά N λεπτά (Video mode)
 async function refreshWeather() {
     const b = bridge();
     if (!b || !window.WeatherWallpaper) return;
@@ -542,6 +543,13 @@ async function advanceVideo() {
     if (!b) return;
     const uri = await b.AdvanceVideo();
     if (!uri) { startWaves(); return; }
+    // Ίδιο αρχείο (μοναδικό βίντεο ή "παίξε κάθε βίντεο N φορές"): επανεκκίνηση επί τόπου, χωρίς crossfade/reload
+    if (uri === currentVideoUri && activeVideo().src) {
+        const v = activeVideo();
+        v.currentTime = 0;
+        if (!isPaused) v.play().catch(() => {});
+        return;
+    }
     crossfadeTo(uri);
 }
 
@@ -574,6 +582,10 @@ window.motionDeskRefresh = async () => {
     if (window.WeatherWallpaper) {
         WeatherWallpaper.setConfig({ weatherSim: cfg.weatherSim || 'Auto', timeSim: cfg.timeSim || 'Auto', glass: cfg.weatherGlass !== false, lat: cfg.weatherLat, lon: cfg.weatherLon });
     }
+    clearInterval(rotationTimer);
+    rotationTimer = null;
+    if (cfg.mode === 'Video' && cfg.rotateMinutes > 0) rotationTimer = setInterval(() => { if (!isPaused) advanceVideo(); }, cfg.rotateMinutes * 60 * 1000);
+
     clearInterval(weatherTimer);
     weatherTimer = null;
     if (cfg.mode === 'Weather') {

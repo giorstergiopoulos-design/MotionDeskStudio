@@ -477,5 +477,15 @@
   "Wallpaper.Time.Dawn": "Dawn",
   "Wallpaper.Time.Day": "Day",
   "Wallpaper.Time.Dusk": "Dusk",
-  "Wallpaper.Time.Night": "Night"
+  "Wallpaper.Time.Night": "Night",
+  "Wallpaper.IncludeSubfolders": "Include subfolders when adding a folder",
+  "Wallpaper.RemoveMissing": "Remove missing files ({0})",
+  "Wallpaper.RepeatPerVideo": "Play each video",
+  "Wallpaper.RepeatOnce": "once, then next",
+  "Wallpaper.RotateEvery": "Switch to the next video",
+  "Wallpaper.RotateWhenEnds": "when it ends",
+  "Wallpaper.RotateMinutesFormat": "every {0} min",
+  "Wallpaper.SectionSchedule": "Schedule by time of day",
+  "Wallpaper.ScheduleNote": "Switch the wallpaper mode automatically by the clock — for example calm waves during the day and the weather scene at night. Windows may wrap past midnight. The schedule only changes the mode; it never turns the wallpaper on by itself.",
+  "Wallpaper.ScheduleEnable": "Use the schedule"
 }

@@ -1047,46 +1047,64 @@ namespace MotionDesk.UI
                 ("Add", LocalizationManager.T("Wallpaper.AddFolderButton"), (_, _) => { ChooseWallpaperFolder(); ShowWallpaper(); }),
                 ("Delete", LocalizationManager.T("Wallpaper.ClearPlaylist"), (_, _) => { WallpaperHostEngine.Instance.ClearVideo(); ShowWallpaper(); }));
 
+            var subfoldersCheck = new CheckBox { Text = LocalizationManager.T("Wallpaper.IncludeSubfolders"), AutoSize = true, Checked = settings.IncludeSubfolders, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 4, 0, 6) };
+            subfoldersCheck.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetIncludeSubfolders(subfoldersCheck.Checked);
+            panel.Controls.Add(subfoldersCheck);
+
             // Επιλογή ποια από τα φορτωμένα βίντεο (αρχεία ή περιεχόμενο φακέλου) θα αναπαράγονται: όλα / κανένα με ένα κλικ,
             // και μετά τικάρισμα μεμονωμένων γραμμών παρακάτω (κλικ και πάνω στο όνομα).
-            AddIconButtonGrid(panel,
+            var selectionButtons = new List<(string IconKey, string Text, EventHandler Action)>
+            {
                 ("Restore", LocalizationManager.T("Wallpaper.SelectAll"), (_, _) => { WallpaperHostEngine.Instance.SetAllVideosEnabled(true); ShowWallpaper(); }),
-                ("Close", LocalizationManager.T("Wallpaper.SelectNone"), (_, _) => { WallpaperHostEngine.Instance.SetAllVideosEnabled(false); ShowWallpaper(); }));
+                ("Close", LocalizationManager.T("Wallpaper.SelectNone"), (_, _) => { WallpaperHostEngine.Instance.SetAllVideosEnabled(false); ShowWallpaper(); }),
+            };
+            int missingCount = settings.VideoPaths.Count(vp => !File.Exists(vp));
+            if (missingCount > 0)
+                selectionButtons.Add(("Delete", string.Format(LocalizationManager.T("Wallpaper.RemoveMissing"), missingCount), (_, _) => { WallpaperHostEngine.Instance.RemoveMissingVideos(); ShowWallpaper(); }));
+            AddIconButtonGrid(panel, selectionButtons.ToArray());
 
             // Πραγματική λίστα με ΟΛΑ τα φορτωμένα βίντεο (όχι μόνο ένα στατιστικό "N αρχεία") —
             // κάθε γραμμή έχει το όνομα αρχείου και ένα ✕ για αφαίρεση, ζητήθηκε ρητά "να μπορεί
             // να προσθαφαιρεί αρχεία βίντεο" απευθείας από τη βιβλιοθήκη.
-            var videoListPanel = new Panel { Width = 720, Height = Math.Min(220, Math.Max(50, settings.VideoPaths.Count * 34 + 10)), Margin = new Padding(0, 0, 0, 10), AutoScroll = true, BackColor = UiTheme.Surface };
+            var videoListPanel = new Panel { Width = 720, Height = Math.Min(300, Math.Max(50, settings.VideoPaths.Count * 46 + 10)), Margin = new Padding(0, 0, 0, 10), AutoScroll = true, BackColor = UiTheme.Surface };
             int rowY = 4;
             foreach (var videoPath in settings.VideoPaths.ToArray())
             {
                 bool exists = File.Exists(videoPath);
-                var row = new Panel { Location = new Point(4, rowY), Size = new Size(700, 28) };
+                var row = new Panel { Location = new Point(4, rowY), Size = new Size(700, 42) };
                 // Ζητήθηκε ρητά "να επιλέγει ο χρήστης 1 ή περισσότερα βίντεο για να
                 // αναπαράγονται" — ένα φορτωμένο βίντεο μπορεί να μείνει στη βιβλιοθήκη χωρίς να
                 // συμμετέχει στην ενεργή αναπαραγωγή/shuffle (checkbox, όχι αφαίρεση).
-                var enabledCheck = new CheckBox { Checked = !settings.DisabledVideoPaths.Contains(videoPath), Location = new Point(2, 4), Size = new Size(20, 20) };
+                var enabledCheck = new CheckBox { Checked = !settings.DisabledVideoPaths.Contains(videoPath), Location = new Point(2, 11), Size = new Size(20, 20) };
                 enabledCheck.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetVideoEnabled(videoPath, enabledCheck.Checked);
                 var nameLabel = new Label
                 {
                     Text = Path.GetFileName(videoPath) + (exists ? "" : LocalizationManager.T("Wallpaper.MissingSuffix")),
                     AutoSize = false,
-                    Size = new Size(596, 24),
-                    Location = new Point(28, 2),
+                    Size = new Size(500, 28),
+                    Location = new Point(102, 7),
+                    TextAlign = ContentAlignment.MiddleLeft,
                     ForeColor = exists ? UiTheme.TextPrimary : UiTheme.TextMuted,
                     Font = UiTheme.FontBody,
                     AutoEllipsis = true
                 };
-                var removeBtn = new Label { Text = "✕", AutoSize = false, Size = new Size(24, 24), Location = new Point(670, 2), TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextSecondary, Cursor = Cursors.Hand, Font = new Font("Segoe UI", 9) };
+                var removeBtn = new Label { Text = "✕", AutoSize = false, Size = new Size(24, 24), Location = new Point(670, 9), TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextSecondary, Cursor = Cursors.Hand, Font = new Font("Segoe UI", 9) };
                 removeBtn.MouseEnter += (_, _) => removeBtn.ForeColor = Color.FromArgb(231, 76, 60);
                 removeBtn.MouseLeave += (_, _) => removeBtn.ForeColor = UiTheme.TextSecondary;
                 removeBtn.Click += (_, _) => { WallpaperHostEngine.Instance.RemoveVideo(videoPath); ShowWallpaper(); };
                 nameLabel.Click += (_, _) => enabledCheck.Checked = !enabledCheck.Checked;
+                // thumbnail (Windows Shell) + duration (FFmpeg, if present) — loaded in the background, the row never waits for them
+                var thumb = new PictureBox { Location = new Point(28, 3), Size = new Size(68, 36), SizeMode = PictureBoxSizeMode.Zoom, BackColor = UiTheme.Background, Cursor = Cursors.Hand };
+                thumb.Click += (_, _) => enabledCheck.Checked = !enabledCheck.Checked;
+                var durationLabel = new Label { Text = "", AutoSize = false, Size = new Size(60, 28), Location = new Point(604, 7), TextAlign = ContentAlignment.MiddleRight, ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody };
+                if (exists) _ = LoadVideoRowMetaAsync(videoPath, thumb, durationLabel);
                 row.Controls.Add(enabledCheck);
+                row.Controls.Add(thumb);
+                row.Controls.Add(durationLabel);
                 row.Controls.Add(nameLabel);
                 row.Controls.Add(removeBtn);
                 videoListPanel.Controls.Add(row);
-                rowY += 32;
+                rowY += 46;
             }
             if (settings.VideoPaths.Count == 0)
                 videoListPanel.Controls.Add(new Label { Text = LocalizationManager.T("Wallpaper.NoVideosYet"), AutoSize = true, Location = new Point(6, 6), ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody });
@@ -1095,6 +1113,12 @@ namespace MotionDesk.UI
             var shuffle = new CheckBox { Text = LocalizationManager.T("Wallpaper.Shuffle"), AutoSize = true, Checked = settings.Shuffle, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 4, 0, 10) };
             shuffle.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetShuffle(shuffle.Checked);
             panel.Controls.Add(shuffle);
+
+            // Επαναλήψεις ανά βίντεο + εναλλαγή ανά N λεπτά (αποθηκεύονται με καθυστέρηση 500ms μετά το τελευταίο σύρσιμο)
+            TrackBar? repeatTrack = null, rotateTrack = null;
+            void CommitPlayback() { if (repeatTrack != null && rotateTrack != null) WallpaperHostEngine.Instance.SetPlaybackOptions(repeatTrack.Value, rotateTrack.Value); }
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.RepeatPerVideo"), settings.RepeatPerVideo, 1, 10, v => v == 1 ? LocalizationManager.T("Wallpaper.RepeatOnce") : $"{v}×", CommitPlayback, t => repeatTrack = t));
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.RotateEvery"), settings.RotateEveryMinutes, 0, 60, v => v == 0 ? LocalizationManager.T("Wallpaper.RotateWhenEnds") : string.Format(LocalizationManager.T("Wallpaper.RotateMinutesFormat"), v), CommitPlayback, t => rotateTrack = t));
 
             AddText(panel, LocalizationManager.T("Wallpaper.SupportedFormats"));
 
@@ -1218,6 +1242,8 @@ namespace MotionDesk.UI
                 v => WallpaperHostEngine.Instance.SetWaveTuning(WallpaperSettings.Load().WaveSpeed, WallpaperSettings.Load().GlowIntensity, v / 10.0)));
             }
 
+            BuildWallpaperScheduleSection(panel, settings);
+
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionPerformance"));
             Dictionary<string, HoverButton>? perfButtons = null;
             perfButtons = AddToggleButtonGrid(panel,
@@ -1321,6 +1347,80 @@ namespace MotionDesk.UI
             0 => "Clear", 1 or 2 => "PartlyCloudy", 3 => "Cloudy", 45 or 48 => "Fog", 51 or 53 or 55 or 56 or 57 => "Drizzle",
             61 or 66 or 67 or 80 => "Rain", 63 or 81 => "Rain", 65 or 82 => "HeavyRain", 71 or 73 or 75 or 77 or 85 or 86 => "Snow", 95 or 96 or 99 => "Thunderstorm", _ => "Clear"
         };
+
+        private static async System.Threading.Tasks.Task LoadVideoRowMetaAsync(string path, PictureBox thumb, Label duration)
+        {
+            try
+            {
+                var bmp = await VideoMetaService.GetThumbnailAsync(path);
+                if (bmp != null && !thumb.IsDisposed) thumb.Image = bmp;      // the bitmap is shared/cached: never dispose it here
+                var len = await VideoMetaService.GetDurationAsync(path);
+                if (len != null && !duration.IsDisposed) duration.Text = len;
+            }
+            catch (Exception) { /* thumbnails/durations are decoration only */ }
+        }
+
+        // Slider with a live value readout that commits 500 ms after the last movement
+        private static Panel BuildOptionSlider(string label, int value, int min, int max, Func<int, string> format, Action commit, Action<TrackBar> register)
+        {
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+            row.Controls.Add(new Label { Text = label, AutoSize = false, Width = 230, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody });
+            var track = new TrackBar { Minimum = min, Maximum = max, Value = Math.Clamp(value, min, max), Width = 220, TickStyle = TickStyle.None };
+            var readout = new Label { Text = format(track.Value), AutoSize = false, Width = 130, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.AccentCyan, Font = UiTheme.FontBody };
+            var timer = new System.Windows.Forms.Timer { Interval = 500 };
+            timer.Tick += (_, _) => { timer.Stop(); commit(); };
+            track.ValueChanged += (_, _) => { readout.Text = format(track.Value); timer.Stop(); timer.Start(); };
+            track.Disposed += (_, _) => timer.Dispose();
+            register(track);
+            row.Controls.Add(track);
+            row.Controls.Add(readout);
+            return row;
+        }
+
+        // Time-of-day schedule: up to 3 windows, each switching the wallpaper MODE
+        private static readonly string[] ScheduleModes = { "Waves", "Particles", "Weather", "Video" };
+
+        private void BuildWallpaperScheduleSection(Panel panel, WallpaperSettings settings)
+        {
+            AddSection(panel, LocalizationManager.T("Wallpaper.SectionSchedule"));
+            AddText(panel, LocalizationManager.T("Wallpaper.ScheduleNote"));
+
+            var rules = settings.Schedule.Count > 0
+                ? settings.Schedule.Select(r => new WallpaperScheduleRule { Enabled = r.Enabled, StartMinutes = r.StartMinutes, EndMinutes = r.EndMinutes, Mode = r.Mode }).ToList()
+                : new List<WallpaperScheduleRule>
+                {
+                    new() { Enabled = false, StartMinutes = 7 * 60, EndMinutes = 19 * 60, Mode = "Waves" },
+                    new() { Enabled = false, StartMinutes = 19 * 60, EndMinutes = 23 * 60, Mode = "Weather" },
+                    new() { Enabled = false, StartMinutes = 23 * 60, EndMinutes = 7 * 60, Mode = "Particles" },
+                };
+            while (rules.Count < 3) rules.Add(new WallpaperScheduleRule { Enabled = false, StartMinutes = 0, EndMinutes = 0, Mode = "Waves" });
+
+            var master = new CheckBox { Text = LocalizationManager.T("Wallpaper.ScheduleEnable"), AutoSize = true, Checked = settings.ScheduleEnabled, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 2, 0, 8) };
+            panel.Controls.Add(master);
+
+            var times = Enumerable.Range(0, 48).Select(i => $"{i / 2:00}:{i % 2 * 30:00}").ToArray();
+            string Fmt(int m) => $"{m / 60 % 24:00}:{m % 60 / 30 * 30:00}";
+            void Commit() => WallpaperHostEngine.Instance.SetSchedule(master.Checked, rules.Select(r => new WallpaperScheduleRule { Enabled = r.Enabled, StartMinutes = r.StartMinutes, EndMinutes = r.EndMinutes, Mode = r.Mode }).ToList());
+
+            foreach (var rule in rules)
+            {
+                var rowPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+                var on = new CheckBox { Checked = rule.Enabled, AutoSize = false, Width = 26, Height = 28, Margin = new Padding(0, 2, 6, 0) };
+                var start = new FlatComboBox { Width = 90 }; start.SetItems(times, Fmt(rule.StartMinutes));
+                var end = new FlatComboBox { Width = 90, Margin = new Padding(8, 3, 3, 3) }; end.SetItems(times, Fmt(rule.EndMinutes));
+                var modeLabels = ScheduleModes.Select(m => m).ToArray();
+                var mode = new FlatComboBox { Width = 160, Margin = new Padding(16, 3, 3, 3) }; mode.SetItems(modeLabels, ScheduleModes.Contains(rule.Mode) ? rule.Mode : "Waves");
+                var arrow = new Label { Text = "→", AutoSize = false, Width = 24, Height = 28, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextSecondary, Margin = new Padding(6, 3, 0, 0) };
+                int ParseMinutes(string? t) => t != null && t.Length == 5 && int.TryParse(t[..2], out var h) && int.TryParse(t[3..], out var mi) ? h * 60 + mi : 0;
+                on.CheckedChanged += (_, _) => { rule.Enabled = on.Checked; Commit(); };
+                start.SelectedIndexChanged += (_, _) => { rule.StartMinutes = ParseMinutes(start.SelectedItem); Commit(); };
+                end.SelectedIndexChanged += (_, _) => { rule.EndMinutes = ParseMinutes(end.SelectedItem); Commit(); };
+                mode.SelectedIndexChanged += (_, _) => { rule.Mode = mode.SelectedItem ?? "Waves"; Commit(); };
+                rowPanel.Controls.Add(on); rowPanel.Controls.Add(start); rowPanel.Controls.Add(arrow); rowPanel.Controls.Add(end); rowPanel.Controls.Add(mode);
+                panel.Controls.Add(rowPanel);
+            }
+            master.CheckedChanged += (_, _) => Commit();
+        }
 
         private static string DescribeWallpaperState(WallpaperSettings s) =>
             string.Format(LocalizationManager.T("Wallpaper.StateFormat"), WallpaperHostEngine.Instance.IsEnabled ? LocalizationManager.T("Wallpaper.EnabledShort") : LocalizationManager.T("Wallpaper.DisabledShort"), s.Mode, s.PerformanceMode);
