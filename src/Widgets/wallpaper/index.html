@@ -429,6 +429,7 @@ function drawParticles(dtSeconds) {
     ctx.shadowBlur = 0;
 }
 
+let currentVideoUri = null; // το URI που παίζει αυτή τη στιγμή (βλ. playCurrentVideo)
 let isPaused = false; // ορίζεται από motionDeskSetPaused — ώστε ένα refresh να μην ξυπνά ένα σκόπιμα παυμένο wallpaper
 
 function waveLoop(now) {
@@ -466,6 +467,14 @@ async function playCurrentVideo() {
     stopWaves();
     videoLayers.forEach(v => v.classList.remove('videoHidden'));
     const layer = activeVideo();
+    // Ένα refresh (αλλαγή ρύθμισης: ήχος/απόδοση/παλέτα…) ΔΕΝ πρέπει να ξαναρχίζει το ίδιο βίντεο από την
+    // αρχή — αν παίζει ήδη αυτό το URI, απλώς το αφήνουμε να συνεχίσει.
+    if (currentVideoUri === uri && layer.src && !layer.ended) {
+        layer.classList.add('active');
+        if (!isPaused && layer.paused) layer.play().catch(() => {});
+        return;
+    }
+    currentVideoUri = uri;
     layer.src = uri;
     layer.classList.add('active');
     if (isPaused) return;
@@ -505,6 +514,7 @@ function crossfadeTo(uri) {
     // οποιονδήποτε λόγο, η playlist προχωράει στο επόμενο αντί να κολλήσει για πάντα.
     incoming.addEventListener('canplay', startPlayback, { once: true });
     safetyTimer = setTimeout(startPlayback, 5000);
+    currentVideoUri = uri;
     incoming.src = uri;
     incoming.load();
 }

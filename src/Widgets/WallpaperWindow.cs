@@ -794,7 +794,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
             settings.AudioMidGain = Math.Clamp(mid, -12, 12);
             settings.AudioTrebleGain = Math.Clamp(treble, -12, 12);
             settings.Save();
-            _ = RefreshAllAsync();
+            RefreshAllDebounced();
         }
 
         public void RemoveVideo(string path)
@@ -853,6 +853,22 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
             _ = RefreshAllAsync();
         }
 
+        // Τα sliders (ταχύτητα/λάμψη/ένταση ήχου/EQ) καλούν τον setter σε ΚΑΘΕ βήμα της κίνησης — πριν, κάθε
+        // βήμα έκανε refresh όλων των WebView2 (και ξανάρχιζε το video). Αποθηκεύουμε αμέσως αλλά κάνουμε ΕΝΑ
+        // refresh όταν σταματήσει η κίνηση για ~150ms.
+        private System.Windows.Forms.Timer? _refreshDebounce;
+
+        private void RefreshAllDebounced()
+        {
+            if (_refreshDebounce == null)
+            {
+                _refreshDebounce = new System.Windows.Forms.Timer { Interval = 150 };
+                _refreshDebounce.Tick += (_, _) => { _refreshDebounce!.Stop(); _ = RefreshAllAsync(); };
+            }
+            _refreshDebounce.Stop();
+            _refreshDebounce.Start();
+        }
+
         public void SetWaveTuning(double speed, double glow, double thickness)
         {
             var settings = WallpaperSettings.Load();
@@ -860,7 +876,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
             settings.GlowIntensity = glow;
             settings.LineThickness = thickness;
             settings.Save();
-            _ = RefreshAllAsync();
+            RefreshAllDebounced();
         }
 
         public void SetPerformanceMode(string mode)

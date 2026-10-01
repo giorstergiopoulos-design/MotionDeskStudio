@@ -48,6 +48,7 @@ namespace MotionDesk.Widgets
             public Rectangle Bounds;
         }
 
+        private const int MaxEntries = 14;
         private readonly List<Entry> _entries = new();
         private int _selectedIndex;
         private Bitmap? _background;
@@ -151,7 +152,12 @@ namespace MotionDesk.Widgets
         private void ActivateSelected()
         {
             if (_selectedIndex >= 0 && _selectedIndex < _entries.Count)
-                SetForegroundWindow(_entries[_selectedIndex].Hwnd);
+            {
+                var target = _entries[_selectedIndex].Hwnd;
+                // Ελαχιστοποιημένο παράθυρο: το SetForegroundWindow μόνο του δεν το επαναφέρει.
+                if (IsIconic(target)) ShowWindow(target, 9 /* SW_RESTORE */);
+                SetForegroundWindow(target);
+            }
             Close();
         }
 
@@ -167,7 +173,7 @@ namespace MotionDesk.Widgets
             for (int i = 0; i < _entries.Count; i++)
             {
                 if (i == _selectedIndex) RegisterLiveThumbnail(_entries[i]);
-                else _entries[i].Snapshot = CaptureSnapshot(_entries[i].Hwnd);
+                else _entries[i].Snapshot = CaptureSnapshot(_entries[i].Hwnd, FrontWidth);
             }
 
             LayoutThumbnails();
@@ -199,7 +205,7 @@ namespace MotionDesk.Widgets
                 {
                     DwmUnregisterThumbnail(entry.ThumbId);
                     entry.ThumbId = IntPtr.Zero;
-                    entry.Snapshot = CaptureSnapshot(entry.Hwnd);
+                    entry.Snapshot = CaptureSnapshot(entry.Hwnd, FrontWidth);
                 }
             }
         }
@@ -207,7 +213,7 @@ namespace MotionDesk.Widgets
         // Στιγμιότυπο πραγματικού περιεχομένου παραθύρου — PW_RENDERFULLCONTENT (0x2) είναι
         // απαραίτητο για σύγχρονα GPU/DWM-composited παράθυρα (browsers, WebView2, κ.λπ.),
         // διαφορετικά το κλασικό PrintWindow γυρνάει συχνά κενή/μαύρη εικόνα σε αυτά.
-        private static Bitmap? CaptureSnapshot(IntPtr hwnd)
+        private static Bitmap? CaptureSnapshot(IntPtr hwnd, int maxWidth)
         {
             if (!GetWindowRect(hwnd, out var rect)) return null;
             int w = rect.Right - rect.Left, h = rect.Bottom - rect.Top;
@@ -219,6 +225,21 @@ namespace MotionDesk.Widgets
                 IntPtr hdc = g.GetHdc();
                 try { PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT); }
                 finally { g.ReleaseHdc(hdc); }
+
+                // Σμίκρυνση στο μέγιστο μέγεθος που πραγματικά εμφανίζεται: ένα 4K παράθυρο κρατούσε ~33MB ανά
+                // στιγμιότυπο ενώ στην οθόνη φαίνεται στο ~30% του πλάτους.
+                if (maxWidth > 0 && w > maxWidth)
+                {
+                    int nh = Math.Max(1, (int)((long)h * maxWidth / w));
+                    var small = new Bitmap(maxWidth, nh, PixelFormat.Format32bppArgb);
+                    using (var sg = Graphics.FromImage(small))
+                    {
+                        sg.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                        sg.DrawImage(bmp, new Rectangle(0, 0, maxWidth, nh));
+                    }
+                    bmp.Dispose();
+                    return small;
+                }
                 return bmp;
             }
             catch { return null; }
@@ -455,8 +476,12 @@ namespace MotionDesk.Widgets
                 long style = GetWindowLong(hwnd, GWL_STYLE);
                 if ((style & WS_CAPTION) == 0) return true;
 
+                // Cloaked παράθυρα (UWP σε άλλο virtual desktop / "φαντάσματα" όπως Settings/Store) είναι
+                // IsWindowVisible αλλά ΔΕΝ φαίνονται — το Alt+Tab τα αποκλείει, και πριν εμφανίζονταν εδώ ως μαύρα καρέ.
+                if (DwmGetWindowAttribute(hwnd, 14 /* DWMWA_CLOAKED */, out int cloaked, sizeof(int)) == 0 && cloaked != 0) return true;
+
                 result.Add(hwnd);
-                return true;
+                return result.Count < MaxEntries; // όριο: κάθε στιγμιότυπο PrintWindow κοστίζει (χρόνος + RAM)
             }, IntPtr.Zero);
             return result;
         }
@@ -505,6 +530,9 @@ namespace MotionDesk.Widgets
         [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr hWnd, int uCmd);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
         [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+        [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
+        [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
     }
 

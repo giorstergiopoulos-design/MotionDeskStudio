@@ -74,6 +74,9 @@ namespace MotionDesk.Widgets
             }
             else
             {
+                // Ένα ήδη υπάρχον desktop.ini είναι Hidden+System — το File.WriteAllText πάνω του πετάει
+                // UnauthorizedAccessException (σε φάκελο που ήδη είχε εικονίδιο ή άλλη προσαρμογή).
+                if (File.Exists(iniPath)) File.SetAttributes(iniPath, FileAttributes.Normal);
                 File.WriteAllText(iniPath, $"[.ShellClassInfo]\r\nIconResource={icoPath},0\r\n");
                 File.SetAttributes(iniPath, FileAttributes.Hidden | FileAttributes.System | FileAttributes.Archive);
                 try { File.SetAttributes(folderPath, File.GetAttributes(folderPath) | FileAttributes.ReadOnly); } catch (IOException) { }

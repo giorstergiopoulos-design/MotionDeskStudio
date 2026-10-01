@@ -32,6 +32,7 @@ namespace MotionDesk.Widgets
         {
             _selectedScreen = initialScreen ?? Screen.PrimaryScreen ?? Screen.AllScreens[0];
             _selectedTemplate = ZoneLayoutStore.GetLayout(_selectedScreen.DeviceName).Template;
+            LoadStepperValuesFromLayout();
 
             Text = LocalizationManager.T("DeskZones.EditorTitle");
             StartPosition = FormStartPosition.CenterParent;
@@ -61,6 +62,8 @@ namespace MotionDesk.Widgets
                     {
                         _selectedScreen = screen;
                         _selectedTemplate = ZoneLayoutStore.GetLayout(screen.DeviceName).Template;
+                        LoadStepperValuesFromLayout();
+                        _colsStepper.Value = _cols; _rowsStepper.Value = _rows;
                         foreach (Control c in screenRow.Controls) if (c is ScreenTile t) t.SetSelected(t == tile);
                         RefreshBigPreview();
                         RefreshCardSelection();
@@ -153,6 +156,24 @@ namespace MotionDesk.Widgets
             bool showRows = _selectedTemplate is "Rows" or "Grid" or "Custom";
             _colsLabel.Visible = _colsStepper.Visible = showCols;
             _rowsLabel.Visible = _rowsStepper.Visible = showRows;
+        }
+
+        // Οι τιμές στηλών/σειρών δεν αποθηκεύονται ξεχωριστά — πριν, κάθε άνοιγμα του editor τις επανέφερε στο
+        // 3×2 και ένα "Εφαρμογή" πάνω σε υπάρχον Custom/Grid layout το άλλαζε σιωπηλά. Τις συμπεραίνουμε από
+        // το αποθηκευμένο layout (πλήθος διακριτών X/Y θέσεων των ζωνών).
+        private void LoadStepperValuesFromLayout()
+        {
+            var layout = ZoneLayoutStore.GetLayout(_selectedScreen.DeviceName);
+            if (layout.Zones.Count == 0) return;
+            int distinctX = layout.Zones.Select(z => Math.Round(z.X, 3)).Distinct().Count();
+            int distinctY = layout.Zones.Select(z => Math.Round(z.Y, 3)).Distinct().Count();
+            switch (layout.Template)
+            {
+                case "Columns": _cols = Math.Clamp(layout.Zones.Count, 1, 6); break;
+                case "Rows": _rows = Math.Clamp(layout.Zones.Count, 1, 4); break;
+                case "Grid":
+                case "Custom": _cols = Math.Clamp(distinctX, 1, 6); _rows = Math.Clamp(distinctY, 1, 4); break;
+            }
         }
 
         private ZoneLayoutData BuildSelected() => _selectedTemplate is "Columns" or "Rows" or "Grid" or "Custom"
