@@ -83,7 +83,7 @@ namespace MotionDesk.Widgets
                 var buffer = new char[Math.Min(fi.Length, MaxTextPreviewBytes)];
                 int read = reader.Read(buffer, 0, buffer.Length);
                 content = new string(buffer, 0, read);
-                if (fi.Length > MaxTextPreviewBytes) content += "\n\n[…περικοπή προεπισκόπησης…]";
+                if (fi.Length > MaxTextPreviewBytes) content += MotionDesk.Services.LocalizationManager.T("QuickLook.Truncated");
             }
             // WinForms TextBox δεν αναγνωρίζει μοναχά-\n αλλαγές γραμμής (π.χ. αρχεία από git με LF) —
             // κανονικοποίηση σε \r\n πριν την εμφάνιση, αλλιώς όλο το κείμενο φαίνεται σε μία γραμμή.

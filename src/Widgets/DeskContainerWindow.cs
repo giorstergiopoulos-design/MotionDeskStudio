@@ -428,7 +428,7 @@ namespace MotionDesk.Widgets
 
         private void AddViaDialog()
         {
-            using var dialog = new OpenFileDialog { Multiselect = true, Title = "Add files to DeskContainer", CheckFileExists = true };
+            using var dialog = new OpenFileDialog { Multiselect = true, Title = LocalizationManager.T("DeskContainer.AddFilesTitle"), CheckFileExists = true };
             if (dialog.ShowDialog(this) == DialogResult.OK)
                 AddPaths(dialog.FileNames);
         }

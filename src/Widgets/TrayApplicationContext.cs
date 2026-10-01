@@ -168,8 +168,8 @@ namespace MotionDesk.Widgets
         {
             using var dialog = new OpenFileDialog
             {
-                Filter = "Video (*.mp4;*.m4v;*.webm;*.mov;*.ogv;*.ogg;*.avi;*.mkv;*.wmv;*.mpeg;*.mpg;*.m2ts;*.ts)|*.mp4;*.m4v;*.webm;*.mov;*.ogv;*.ogg;*.avi;*.mkv;*.wmv;*.mpeg;*.mpg;*.m2ts;*.ts|Όλα τα αρχεία (*.*)|*.*",
-                Title = "Προσθήκη βίντεο στο Wallpaper Library",
+                Filter = LocalizationManager.T("Filter.Video") + "|" + LocalizationManager.T("Filter.AllFiles"),
+                Title = LocalizationManager.T("Wallpaper.AddVideoTitleTray"),
                 Multiselect = true
             };
 
@@ -215,7 +215,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
 
         private void ChooseWallpaperFolder()
         {
-            using var dialog = new FolderBrowserDialog { Description = "Επιλογή φακέλου video library" };
+            using var dialog = new FolderBrowserDialog { Description = LocalizationManager.T("Wallpaper.ChooseFolder") };
             if (dialog.ShowDialog() == DialogResult.OK)
             {
                 int added = WallpaperHostEngine.Instance.AddVideoFolder(dialog.SelectedPath);

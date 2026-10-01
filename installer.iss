@@ -32,6 +32,20 @@ greek.UpdateDetected=Εντοπίστηκε ήδη εγκατεστημένη έ
 english.UpdateDetected=An existing installation of {#MyAppName} version %1 was detected.%n%nIt will be updated to version {#MyAppVersion}.
 greek.KeepDataPromptText=Να διαγραφούν επίσης οι ρυθμίσεις, τα προφίλ και τα αποθηκευμένα DeskZones/DeskContainers του {#MyAppName};
 english.KeepDataPromptText=Do you also want to delete {#MyAppName}'s settings, profiles and saved DeskZones/DeskContainers?
+greek.AutostartTask=Αυτόματη εκκίνηση με την είσοδο στα Windows (System Tray)
+english.AutostartTask=Start automatically when signing in to Windows (System Tray)
+greek.StartupGroup=Ρυθμίσεις Εκκίνησης:
+english.StartupGroup=Startup settings:
+greek.FfmpegTask=Εγκατάσταση FFmpeg (για αναπαραγωγή βίντεο .wmv ως κινούμενο wallpaper)
+english.FfmpegTask=Install FFmpeg (to play .wmv videos as an animated wallpaper)
+greek.ExtraDepsGroup=Πρόσθετες εξαρτήσεις:
+english.ExtraDepsGroup=Additional dependencies:
+greek.InstallingWebView2=Εγκατάσταση Microsoft Edge WebView2 Runtime...
+english.InstallingWebView2=Installing Microsoft Edge WebView2 Runtime...
+greek.InstallingDotNet=Εγκατάσταση .NET 8.0 Desktop Runtime...
+english.InstallingDotNet=Installing .NET 8.0 Desktop Runtime...
+greek.InstallingFfmpeg=Εγκατάσταση FFmpeg...
+english.InstallingFfmpeg=Installing FFmpeg...
 
 ; Ρητό αίτημα χρήστη: "να έχει πληροφορίες και δομή και λειτουργίες όπως του gearwin" — ίδιο μοτίβο
 ; με τον installer του GearWin (../installer/OptimizerWpf.iss): σελίδα "Πληροφορίες" (InfoBeforeFile)
@@ -45,13 +59,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"; LicenseFile: "installer\l
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
-Name: "autostart"; Description: "Αυτόματη εκκίνηση με την είσοδο στα Windows (System Tray)"; GroupDescription: "Ρυθμίσεις Εκκίνησης:"
+Name: "autostart"; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:StartupGroup}"
 ; Προαιρετική εξάρτηση — ζητήθηκε ρητά "να εμφανιζεται η δυνατοτητα εγκαταστασης dependencies
 ; οπως το ffmpeg". Το FFmpeg χρειάζεται μόνο για αναπαραγωγή/μετατροπή .wmv βίντεο ως κινούμενο
 ; wallpaper (WmvConversionService) — δεν είναι απαραίτητο για την υπόλοιπη εφαρμογή, γι' αυτό
 ; είναι tickbox και όχι υποχρεωτικό όπως το WebView2/.NET Runtime. Εγκαθίσταται μέσω winget (ίδιο
 ; πακέτο, Gyan.FFmpeg, με αυτό που ήδη ψάχνει το WmvConversionService.FindFfmpeg()).
-Name: "installffmpeg"; Description: "Εγκατάσταση FFmpeg (για αναπαραγωγή βίντεο .wmv ως κινούμενο wallpaper)"; GroupDescription: "Πρόσθετες εξαρτήσεις:"; Flags: unchecked; Check: IsWingetAvailable and not IsFfmpegInstalled
+Name: "installffmpeg"; Description: "{cm:FfmpegTask}"; GroupDescription: "{cm:ExtraDepsGroup}"; Flags: unchecked; Check: IsWingetAvailable and not IsFfmpegInstalled
 
 [Files]
 ; Κύρια αρχεία εφαρμογής (δημιουργούνται από: dotnet publish -c Release -r win-x64)
@@ -74,15 +88,15 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 ; 1. Έλεγχος και εγκατάσταση WebView2 Runtime (εάν δεν υπάρχει).
-Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "Εγκατάσταση Microsoft Edge WebView2 Runtime..."; Check: not IsWebView2Installed
+Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "{cm:InstallingWebView2}"; Check: not IsWebView2Installed
 
 ; 2. Έλεγχος και εγκατάσταση .NET 8.0 Desktop Runtime (εάν δεν υπάρχει).
-Filename: "{tmp}\windowsdesktop-runtime-8.0-win-x64.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Εγκατάσταση .NET 8.0 Desktop Runtime..."; Check: not IsDotNet8Installed
+Filename: "{tmp}\windowsdesktop-runtime-8.0-win-x64.exe"; Parameters: "/quiet /norestart"; StatusMsg: "{cm:InstallingDotNet}"; Check: not IsDotNet8Installed
 
 ; 3. Προαιρετική εγκατάσταση FFmpeg μέσω winget (μόνο αν ο χρήστης επέλεξε το tickbox παραπάνω).
 ; "& exit 0" αποτρέπει το Inno Setup από το να δείξει σφάλμα αν το winget γυρίσει μη-μηδενικό
 ; exit code (π.χ. "no applicable update found" όταν είναι ήδη εγκατεστημένο).
-Filename: "{cmd}"; Parameters: "/C winget install --id Gyan.FFmpeg -e --silent --accept-package-agreements --accept-source-agreements & exit 0"; StatusMsg: "Εγκατάσταση FFmpeg..."; Flags: runhidden; Tasks: installffmpeg
+Filename: "{cmd}"; Parameters: "/C winget install --id Gyan.FFmpeg -e --silent --accept-package-agreements --accept-source-agreements & exit 0"; StatusMsg: "{cm:InstallingFfmpeg}"; Flags: runhidden; Tasks: installffmpeg
 
 ; 4. Εκκίνηση της εφαρμογής μετά το τέλος της εγκατάστασης
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

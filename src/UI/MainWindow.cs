@@ -774,7 +774,7 @@ namespace MotionDesk.UI
                     return true;
                 case Keys.Control | Keys.Shift | Keys.N:
                     using (var editor = new ZoneLayoutEditorForm())
-                        if (editor.ShowDialog(this) == DialogResult.OK) _statusLabel.Text = "DeskZone layout updated";
+                        if (editor.ShowDialog(this) == DialogResult.OK) _statusLabel.Text = LocalizationManager.T("Status.ZonesUpdated");
                     if (_currentPageKey == "DeskZones" && _pageBuilders.TryGetValue("DeskZones", out var dzBuilder)) dzBuilder();
                     return true;
                 case Keys.Control | Keys.Oemcomma:
@@ -815,7 +815,7 @@ namespace MotionDesk.UI
             dashboardRefreshTimer.Tick += (_, _) =>
             {
                 var m = SystemMonitorService.Instance.GetSnapshot();
-                systemCard.Text = $"CPU {m.CpuPercent:0.0}%   •   RAM {m.AvailableMemoryMb:0} / {m.TotalMemoryMb:0} MB free";
+                systemCard.Text = string.Format(LocalizationManager.T("Dashboard.SystemCardFormat"), m.CpuPercent.ToString("0.0"), m.AvailableMemoryMb.ToString("0"), m.TotalMemoryMb.ToString("0"));
             };
             dashboardRefreshTimer.Start();
             panel.Disposed += (_, _) => dashboardRefreshTimer.Dispose();
@@ -1022,9 +1022,9 @@ namespace MotionDesk.UI
             // με τα βίντεο". Πριν, η λίστα (dropdown/κάρτα) δεν ανανεωνόταν καθόλου μετά την
             // προσθήκη — μόνο το στατιστικό κείμενο του playlistCard.
             AddIconButtonGrid(panel,
-                ("Add", "Προσθήκη βίντεο…", (_, _) => ChooseWallpaperVideoFiles(ShowWallpaper)),
-                ("Add", "Προσθήκη φακέλου…", (_, _) => { ChooseWallpaperFolder(); ShowWallpaper(); }),
-                ("Delete", "Καθαρισμός playlist", (_, _) => { WallpaperHostEngine.Instance.ClearVideo(); ShowWallpaper(); }));
+                ("Add", LocalizationManager.T("Wallpaper.AddVideoButton"), (_, _) => ChooseWallpaperVideoFiles(ShowWallpaper)),
+                ("Add", LocalizationManager.T("Wallpaper.AddFolderButton"), (_, _) => { ChooseWallpaperFolder(); ShowWallpaper(); }),
+                ("Delete", LocalizationManager.T("Wallpaper.ClearPlaylist"), (_, _) => { WallpaperHostEngine.Instance.ClearVideo(); ShowWallpaper(); }));
 
             // Πραγματική λίστα με ΟΛΑ τα φορτωμένα βίντεο (όχι μόνο ένα στατιστικό "N αρχεία") —
             // κάθε γραμμή έχει το όνομα αρχείου και ένα ✕ για αφαίρεση, ζητήθηκε ρητά "να μπορεί
@@ -1042,7 +1042,7 @@ namespace MotionDesk.UI
                 enabledCheck.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetVideoEnabled(videoPath, enabledCheck.Checked);
                 var nameLabel = new Label
                 {
-                    Text = Path.GetFileName(videoPath) + (exists ? "" : "  (λείπει)"),
+                    Text = Path.GetFileName(videoPath) + (exists ? "" : LocalizationManager.T("Wallpaper.MissingSuffix")),
                     AutoSize = false,
                     Size = new Size(596, 24),
                     Location = new Point(28, 2),
@@ -1061,10 +1061,10 @@ namespace MotionDesk.UI
                 rowY += 32;
             }
             if (settings.VideoPaths.Count == 0)
-                videoListPanel.Controls.Add(new Label { Text = "Δεν έχουν προστεθεί βίντεο ακόμα.", AutoSize = true, Location = new Point(6, 6), ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody });
+                videoListPanel.Controls.Add(new Label { Text = LocalizationManager.T("Wallpaper.NoVideosYet"), AutoSize = true, Location = new Point(6, 6), ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody });
             panel.Controls.Add(videoListPanel);
 
-            var shuffle = new CheckBox { Text = "Shuffle", AutoSize = true, Checked = settings.Shuffle, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 4, 0, 10) };
+            var shuffle = new CheckBox { Text = LocalizationManager.T("Wallpaper.Shuffle"), AutoSize = true, Checked = settings.Shuffle, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 4, 0, 10) };
             shuffle.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetShuffle(shuffle.Checked);
             panel.Controls.Add(shuffle);
 
@@ -1201,13 +1201,13 @@ namespace MotionDesk.UI
         }
 
         private static string DescribeWallpaperState(WallpaperSettings s) =>
-            $"{(WallpaperHostEngine.Instance.IsEnabled ? "Ενεργό" : "Ανενεργό")}  •  Mode: {s.Mode}  •  Performance: {s.PerformanceMode}";
+            string.Format(LocalizationManager.T("Wallpaper.StateFormat"), WallpaperHostEngine.Instance.IsEnabled ? LocalizationManager.T("Wallpaper.EnabledShort") : LocalizationManager.T("Wallpaper.DisabledShort"), s.Mode, s.PerformanceMode);
 
         private static string DescribePlaylist(WallpaperSettings s)
         {
             var playable = s.VideoPaths.Where(File.Exists).ToList();
-            if (playable.Count == 0) return "Κενή — εμφανίζεται το MotionDesk Waves φόντο.";
-            return $"{playable.Count} βίντεο{(s.Shuffle ? " (shuffle)" : "")} — τρέχον: {Path.GetFileName(s.CurrentPlaylistFile() ?? "")}";
+            if (playable.Count == 0) return LocalizationManager.T("Wallpaper.PlaylistEmpty");
+            return string.Format(LocalizationManager.T("Wallpaper.PlaylistFormat"), playable.Count, s.Shuffle ? LocalizationManager.T("Wallpaper.ShuffleSuffix") : "", Path.GetFileName(s.CurrentPlaylistFile() ?? ""));
         }
 
         private static Panel BuildWaveSlider(string label, int value, int min, int max, Action<int> onChange)
@@ -1227,8 +1227,8 @@ namespace MotionDesk.UI
             // γίνεται στο AddWallpaperVideosAsync.
             using var dialog = new OpenFileDialog
             {
-                Filter = "Video ή playlist (*.mp4;*.m4v;*.webm;*.mov;*.ogv;*.ogg;*.avi;*.mkv;*.wmv;*.mpeg;*.mpg;*.m2ts;*.ts;*.zip;*.7z)|*.mp4;*.m4v;*.webm;*.mov;*.ogv;*.ogg;*.avi;*.mkv;*.wmv;*.mpeg;*.mpg;*.m2ts;*.ts;*.zip;*.7z|All files (*.*)|*.*",
-                Title = "Προσθήκη βίντεο ή playlist (zip/7z) στο Wallpaper Library",
+                Filter = LocalizationManager.T("Filter.VideoPlaylist") + "|" + LocalizationManager.T("Filter.AllFiles"),
+                Title = LocalizationManager.T("Wallpaper.AddVideoTitle"),
                 Multiselect = true
             };
 
@@ -1310,7 +1310,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
 
         private static void ChooseWallpaperFolder()
         {
-            using var dialog = new FolderBrowserDialog { Description = "Επιλογή φακέλου video library" };
+            using var dialog = new FolderBrowserDialog { Description = LocalizationManager.T("Wallpaper.ChooseFolder") };
             if (dialog.ShowDialog() == DialogResult.OK)
                 WallpaperHostEngine.Instance.AddVideoFolder(dialog.SelectedPath);
         }
@@ -1354,7 +1354,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 chooseBtn.FlatAppearance.BorderSize = 0;
                 chooseBtn.Click += (_, _) =>
                 {
-                    using var dlg = new OpenFileDialog { Filter = "Icon files (*.ico)|*.ico", Title = LocalizationManager.T("Personalization.ChooseIcon") };
+                    using var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Icons"), Title = LocalizationManager.T("Personalization.ChooseIcon") };
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
                         set(dlg.FileName);
@@ -1413,7 +1413,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             {
                 using var folderDlg = new FolderBrowserDialog { Description = LocalizationManager.T("Personalization.FolderIcon") };
                 if (folderDlg.ShowDialog() != DialogResult.OK) return;
-                using var iconDlg = new OpenFileDialog { Filter = "Icon files (*.ico)|*.ico", Title = LocalizationManager.T("Personalization.ChooseIcon") };
+                using var iconDlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Icons"), Title = LocalizationManager.T("Personalization.ChooseIcon") };
                 if (iconDlg.ShowDialog(this) == DialogResult.OK)
                 {
                     IconAtlasEngine.SetFolderIcon(folderDlg.SelectedPath, iconDlg.FileName);
@@ -1437,7 +1437,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 string capturedRole = registryName;
                 browseBtn.Click += (_, _) =>
                 {
-                    using var dlg = new OpenFileDialog { Filter = "Cursor files (*.cur;*.ani)|*.cur;*.ani", Title = LocalizationManager.T("Personalization.Browse") };
+                    using var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Cursors"), Title = LocalizationManager.T("Personalization.Browse") };
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
                         DeskCursorsEngine.SetCursor(capturedRole, dlg.FileName);
@@ -1504,7 +1504,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
 
             AddButtonGrid(panel, (LocalizationManager.T("Personalization.PinApp"), (_, _) =>
             {
-                using var dlg = new OpenFileDialog { Filter = "Applications (*.exe;*.lnk)|*.exe;*.lnk", Title = LocalizationManager.T("Personalization.PinApp") };
+                using var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Apps"), Title = LocalizationManager.T("Personalization.PinApp") };
                 if (dlg.ShowDialog(this) == DialogResult.OK)
                 {
                     DeskStripHostEngine.Instance.PinApp(dlg.FileName);
@@ -1539,7 +1539,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 browseBtn.FlatAppearance.BorderSize = 0;
                 browseBtn.Click += (_, _) =>
                 {
-                    using var dlg = new OpenFileDialog { Filter = "WAV files (*.wav)|*.wav", Title = LocalizationManager.T("Personalization.Browse") };
+                    using var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Wav"), Title = LocalizationManager.T("Personalization.Browse") };
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
                         DeskSoundsEngine.SetSound(capturedEvent, dlg.FileName);
@@ -1628,7 +1628,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             AddButtonGrid(panel, (LocalizationManager.T("Personalization.SetLockScreenImage"), async (_, _) =>
             {
                 string fileName;
-                using (var dlg = new OpenFileDialog { Filter = "Images (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp", Title = LocalizationManager.T("Personalization.SetLockScreenImage") })
+                using (var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Images"), Title = LocalizationManager.T("Personalization.SetLockScreenImage") })
                 {
                     if (dlg.ShowDialog(this) != DialogResult.OK) return;
                     fileName = dlg.FileName;
@@ -1919,29 +1919,11 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         }
 
         // Ιστορικό εκδόσεων — απλή, in-code λίστα· ανοίγει σε ξεχωριστό (δευτερεύον) παράθυρο.
-        private static readonly (string Version, string Date, string Notes)[] VersionHistory =
+        // Οι σημειώσεις κάθε έκδοσης ζουν στα locale αρχεία (κλειδί "VersionNotes.<έκδοση>") ώστε να
+        // ακολουθούν την επιλεγμένη γλώσσα — πριν ήταν hardcoded και μισές ελληνικά / μισές αγγλικά.
+        private static readonly (string Version, string Date)[] VersionHistory =
         {
-            ("1.6.2", "2026-10", "FancyWM-style πλοήγηση ζωνών με πληκτρολόγιο (Ctrl+Alt+Shift+βελάκι — το απλό Ctrl+Alt+βελάκι βρέθηκε ήδη δεσμευμένο από οδηγούς γραφικών σε πολλά μηχανήματα), μετακινεί το ενεργό παράθυρο στη γειτονική DeskZone χωρίς ποντίκι. Πραγματικές σημαίες γλώσσας (όχι πια unicode emoji που αποδίδονταν ως \"GR\"/\"GB\"). Διορθώθηκε πραγματικό bug όπου η αναπαραγωγή wallpaper playlist μπορούσε να κολλήσει μετά την πρώτη μετάβαση αντί να προχωράει βίντεο-βίντεο (race condition στο crossfade μεταξύ δύο video layers). Επιβεβαιώθηκε ζωντανά ότι η αυτόματη μετατροπή .wmv→.mp4 και η εισαγωγή πολλαπλών βίντεο ταυτόχρονα δουλεύουν σωστά. Η \"Σχετικά\" μετακινήθηκε κάτω από τη \"Διαχείριση Ήχου\" στο μενού. Ολοκληρώθηκε η μετάφραση της Παλέτας Εντολών (πριν έδειχνε πάντα αγγλικά ανεξάρτητα από τη γλώσσα)."),
-            ("1.6.1", "2026-10", "Απόδοση + ολοκλήρωση μετάφρασης. Η σελίδα \"Απόδοση\" απέκτησε μετρητή GPU (φόρτος/θερμοκρασία, το ίδιο live hardware sensor με το widget System Monitor) δίπλα στο CPU/Μνήμη. Επιβεβαιώθηκε ότι το hitch στο άνοιγμα του System Monitor widget ήταν ήδη διορθωμένο (ζέσταμα GPU sensors σε background thread). Ολοκληρώθηκε η μετάφραση (ελληνικά/αγγλικά) στις σελίδες Widgets, Προφίλ, Αυτοματισμοί, Εξατομίκευση, Ρυθμίσεις, και Απόδοση — ζωντανά επιβεβαιωμένο με πλήρη εναλλαγή γλώσσας και στις δύο κατευθύνσεις."),
-            ("1.6.0", "2026-09", "Σταθερότητα + DeskZones snap engine. Διορθώθηκε crash-loop στο Audio Enhancement (leaked Timer μετά από αλλαγή σελίδας — το SetPage τώρα κάνει σωστά Dispose στην παλιά σελίδα). Νέο: πραγματικός ισοσταθμιστής (bass/mid/treble/ένταση) πάνω στον ήχο του ίδιου του βίντεο wallpaper, μέσω Web Audio API — χωρίς εξωτερικό εργαλείο, δεν επηρεάζει τον ήχο άλλων εφαρμογών. Widget Δίσκοι: διορθώθηκε ο κύκλος να μην επικαλύπτεται πλέον από τα κουμπιά ◀/▶, και το κείμενο μέσα στον κύκλο πλέον σμικραίνει αυτόματα ώστε να χωράει πάντα (ακόμα και σε δίσκους με μεγάλα μεγέθη). Μερική διόρθωση μικτών Ελληνικών/Αγγλικών κειμένων (μενού tray, Πίνακας Ελέγχου, μερικά παράθυρα διαλόγου) ώστε να ακολουθούν πραγματικά την επιλεγμένη γλώσσα. DeskZones: ξαναχτίστηκε ολόκληρη η μηχανή \"κουμπώματος\" παραθύρων — αντί για το παλιό, αναξιόπιστο heuristic πάνω σε raw mouse hook, χρησιμοποιεί πλέον το ίδιο δημόσιο, τεκμηριωμένο σήμα των Windows (SetWinEventHook/EVENT_SYSTEM_MOVESIZESTART) που λένε τα ίδια τα Windows σε κάθε εργαλείο προσβασιμότητας πότε ΠΡΑΓΜΑΤΙΚΑ ξεκίνησε μετακίνηση παραθύρου. Διορθώθηκε επίσης πραγματικό bug στη γεωμετρία των ζωνών όπου ζώνες ακουμπισμένες στην άκρη της οθόνης ποτέ δεν έφταναν την πραγματική άκρη. Το ημιδιάφανο overlay των ζωνών έγινε πραγματικά ημιδιάφανο (πραγματικό per-pixel alpha layered window αντί για αδιαφανές chroma-key). Νέο: μαγνητικό snap στα πρότυπα του AquaSnap — χωρίς Shift, σέρνοντας ένα παράθυρο κοντά σε άκρη/γωνία της οθόνης εμφανίζεται αυτόματα προεπισκόπηση μισού/τετάρτου της οθόνης· το πλήρες πλέγμα ζωνών DeskZones συνεχίζει να χρειάζεται Shift όπως πριν."),
-            ("1.5.0", "2026-09", "Μεγάλο πέρασμα κατόπιν feedback χρήστη. DeskZones: διορθώθηκε bug όπου η επιλογή αριθμού σειρών/στηλών σε ένα preset εφάρμοζε πάντα πλήρες πλέγμα αντί για καθαρές σειρές/στήλες· επίσης διόρθωση στο snap-to-zone ώστε τα παράθυρα να τεντώνουν μέχρι τις πραγματικές άκρες της οθόνης (αντιστάθμιση αόρατου περιθωρίου DWM). DeskContainers: διπλό-κλικ στον τίτλο μετονομάζει. Widgets: Clock με θέματα analog (Classic/Neon/Minimal) + γραμματοσειρά/χρώμα digital, Δίσκοι ξαναχτίστηκε ως κυκλικό ring ανά δίσκο με ◀/▶ σελιδοποίηση, νέο στυλ wallpaper \"TechGrid\" (κύκλωμα, tech-themed). Wallpaper: smooth crossfade ανάμεσα σε βίντεο (χωρίς μαύρο/λευκό flash), δυνατότητα φόρτωσης playlist από .zip/.7z, checkbox ενεργοποίησης/απενεργοποίησης ανά βίντεο στη βιβλιοθήκη. Νέα σελίδα \"Διαχείριση Ήχου\" (πρώην Audio Visualizer): πραγματική system-wide ενίσχυση ήχου μέσω ενσωμάτωσης με το Equalizer APO (ανοιχτού κώδικα, ήδη υπογεγραμμένο) όταν είναι εγκατεστημένο — presets Flat/Bass Boost/Treble Boost/Vocal Boost/Loudness, μαζί με ζωντανό visualizer. Η σελίδα \"Βοήθεια\" ενσωματώθηκε στη Σχετικά (είχαν διπλή πληροφορία). Προστέθηκε ενότητα \"Εξαρτήσεις συστήματος\" στις Ρυθμίσεις (FFmpeg/WebView2 Runtime, εγκατάσταση μέσω winget). Το κουμπί άδειας χρήσης δείχνει πλέον το κείμενο της άδειας σε παράθυρο εντός της εφαρμογής (πριν άνοιγε λάθος τον επιλογέα \"Άνοιγμα με\" των Windows, αφού το LICENSE δεν έχει επέκταση). PE metadata (Company/Copyright/Description) προστέθηκαν για λιγότερα false-positive antivirus flags."),
-            ("1.4.1", "2026-09", "ΣΟΒΑΡΗ διόρθωση στο κινούμενο wallpaper, ειδικά σε Windows 11: εντοπίστηκε ότι στη νεότερη \"raised desktop\" διάταξη (Progman με WS_EX_NOREDIRECTIONBITMAP, από Windows 11 24H2 και μετά) το κλασικό μήνυμα 0x052C (wParam=0, lParam=0) που ζητά από το Progman να φτιάξει το αδερφό WorkerW πίσω από τα εικονίδια ΔΕΝ κάνει τίποτα — χρειάζεται wParam=0xD, lParam=1. Χωρίς αυτό, σε επηρεαζόμενα Windows 11 builds το attach απλά δεν έβρισκε ποτέ ξεχωριστό WorkerW και έπεφτε πάντα στο εφεδρικό μονοπάτι (Progman απευθείας), εξηγώντας γιατί το πρόβλημα επέμενε παρά τις προηγούμενες διορθώσεις. Προστέθηκε ρητή ανίχνευση αυτής της διάταξης και αποστολή ΚΑΙ των δύο παραλλαγών του μηνύματος. Επίσης η επαλήθευση \"πέτυχε το SetParent\" άλλαξε από GetParent σε GetAncestor(GA_PARENT) — το GetParent μπορεί να γυρίσει λάθος τιμή (owner αντί για parent) όσο ένα παράθυρο κουβαλάει ταυτόχρονα WS_POPUP, ενώ το GetAncestor λέει πάντα την αλήθεια. Bug fix: το widget \"Δίσκοι\" δεν γέμιζε καθόλου το δικό του φόντο σε κάθε γραμμή δίσκου (μοναδικό custom control του project που το ξέχασε) — εμφανιζόταν ως ανοιχτό γκρι κουτί μέσα στο σκούρο θέμα· τώρα γεμίζει UiTheme.Surface όπως όλα τα υπόλοιπα. Διερευνήθηκε ρητά αν το K-Lite Mega Codec Pack θα βοηθούσε στο .wmv: όχι — το Chromium/WebView2 γράφει δικό του, αυτόνομο media pipeline (βασισμένο σε FFmpeg) και ΔΕΝ περνάει ποτέ από DirectShow/Media Foundation filters που εγκαθιστά ένα codec pack συστήματος, οπότε η εγκατάσταση K-Lite δεν θα άλλαζε τίποτα για το ενσωματωμένο player. Το FFmpeg (που ήδη χρησιμοποιεί το WmvConversionService) έχει ήδη δικό του, ενσωματωμένο VC-1/WMV3 decoder — δεν χρειάζεται κανένα codec pack, μόνο να υπάρχει το ίδιο το FFmpeg στο σύστημα."),
-            ("1.4.0", "2026-09", "Μεγάλο πέρασμα κατόπιν λεπτομερούς feedback χρήστη. Clock: η ώρα κεντράρεται πλέον πραγματικά μέσα στο widget (και στα δύο δύο variants), ξεχωριστή γραμμή ημερομηνίας κάτω από το αναλογικό ρολόι, νέες επιλογές 12/24ωρη μορφή και εμφάνιση/απόκρυψη δευτερολέπτων από το μενού ☰. System Monitor: προστέθηκαν Δίκτυο και GPU (φόρτος/τάση/θερμοκρασία, μέσω της νέας ανοιχτού-κώδικα βιβλιοθήκης LibreHardwareMonitorLib) — το κείμενο δεν κόβεται πια (Dock=Fill αντί για σταθερό ύψος). Weather: προστέθηκε ποσοστό υγρασίας και κλίμακα Μποφόρ δίπλα στην ταχύτητα ανέμου, μεγαλύτερο κινούμενο εικονίδιο καιρού. Νέο widget \"Δίσκοι\" (χρήση/χωρητικότητα κάθε μονάδας δίσκου). Audio Visualizer: δεύτερο στυλ απεικόνισης \"Winamp\" (gradient μπάρες + αντανάκλαση) δίπλα στο υπάρχον \"WMP Legacy\", επιλέξιμο από το μενού ☰. Drag & drop αρχείων/φακέλων προστέθηκε σε ΟΛΑ τα widgets (πριν υπήρχε μόνο στα DeskContainers). Τα DeskContainers μπορούν πλέον να κλειδωθούν στη θέση τους (🔒/🔓, όπως ήδη τα widgets) και θυμούνται/επανανοίγουν αυτόματα σε κάθε session μαζί με τα widgets (πριν μόνο τα widgets αποθηκεύονταν στο \"Last Session\"). Η αυτόματη εκκίνηση με τα Windows ανοίγει πλέον στο παρασκήνιο (μόνο tray icon, χωρίς αναδυόμενο κύριο παράθυρο) όταν υπάρχουν αποθηκευμένα widgets/DeskContainers. ΣΟΒΑΡΟ bug διορθώθηκε στη ζωντανή προεπισκόπηση της σκουρότητας θέματος: το slider ενημέρωνε ζωντανά μόνο τα owner-draw κομμάτια (πλευρικό μενού/λογότυπο), όχι το κυρίως περιεχόμενο, μέχρι να αφεθεί το slider — τώρα ενημερώνεται ζωντανά όλο το παράθυρο· προστέθηκε επίσης SuspendLayout/DoubleBuffered γύρω από την πλήρη ανακατασκευή σελίδας για να εξαφανιστούν τα στιγμιαία λευκά τετραγωνάκια. Νέα ενότητες \"Οδηγίες χρήσης\" και \"Άδεια χρήσης\" στη σελίδα Σχετικά (πριν υπήρχαν μόνο συντομεύσεις) — προστέθηκε αρχείο LICENSE (MIT). Ο installer (Inno Setup) απέκτησε δομή όπως το GearWin: σελίδα \"Πληροφορίες\" πριν την εγκατάσταση, υποχρεωτική σελίδα άδειας, μήνυμα ανίχνευσης ενημέρωσης. Νέο: διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας κρύβει/επαναφέρει όλα τα εικονίδια εκτός από Ο Υπολογιστής μου/φάκελος χρήστη/Πίνακας Ελέγχου/Κάδος Ανακύκλωσης (στυλ Stardock Fences) — χρειάζεται δοκιμή σε πραγματική επιφάνεια εργασίας. Το \"Flip 3D\" μετονομάστηκε σε \"DeskFlip\" (αποφυγή της επίσημης ονομασίας λειτουργίας της Microsoft) και ξαναχτίστηκε: πραγματική διαγώνια στοίβα σε βάθος (όχι πια αριστερό/δεξί fan) με πραγματικό οπτικό \"γείρισμα\" (parallelogram warp πάνω σε στιγμιότυπο) στα παράθυρα πίσω από το επιλεγμένο, το οποίο παραμένει ζωντανό DWM thumbnail — η πλήρης, ζωντανή 3D απόδοση του αυθεντικού Vista Flip 3D δεν είναι εφικτή από δημόσιο API (μόνο ο ίδιος ο DWM compositor της Microsoft την είχε), αυτή είναι η πλησιέστερη δυνατή προσέγγιση. Το .wmv πλέον μετατρέπεται ΑΥΤΟΜΑΤΑ σε .mp4 μέσω FFmpeg (WmvConversionService) πριν προστεθεί στο Wallpaper Studio, αντί για απλή προειδοποίηση — αν το FFmpeg δεν εντοπιστεί στο σύστημα, προσφέρεται άμεσο άνοιγμα της σελίδας λήψης του. Το μενού (☰) των DeskContainers ξαναχτίστηκε ώστε να ταιριάζει επακριβώς στη διάρθρωση/λειτουργίες του πραγματικού Stardock Fences (μετά από screenshots του χρήστη): Rename, View (Roll-up container, Exclude from quick-hide, Opacity 25-100%, Copy/Edit color), Sort by (Name/Size/Item type/Date modified/Date created/Date added/Number of times opened) με υπο-μενού Organize ('Place all new icons in this container by default', 'Manage sorting rules'), Configure container. Το διπλό-κλικ που κρύβει τα εικονίδια της επιφάνειας εργασίας κρύβει/ξαναδείχνει πλέον και τα DeskContainers μαζί (εκτός όσων έχουν 'Exclude from quick-hide'), όπως τα πραγματικά Fences. Εξατομίκευση: νέο κουμπί 'Εισαγωγή icon pack (depot)…' που σαρώνει έναν φάκελο για έτοιμα ζευγάρια εικονιδίων Κάδου Ανακύκλωσης με τη σύμβαση ονοματοδοσίας \"-empty\"/\"-full\" (π.χ. sdushantha/recycle-bin-themes στο GitHub) και τα εφαρμόζει αυτόματα. Wallpaper Waves/Aurora/Particles: το πλάτος/η λάμψη/η ταχύτητα αντιδρούν πλέον πραγματικά στην ένταση του ήχου συστήματος (attack γρήγορο, release αργό), όχι μόνο το ξεχωριστό radial glow overlay που υπήρχε ήδη."),
-            ("1.3.0", "2026-09", "Πλήρες πέρασμα στα native widgets (Clock/Network/Audio Visualizer/Weather) — δεν είναι πια \"μόνο μαύρα\": θεματισμένο, στρογγυλεμένο κέλυφος με ζωντανή αντίδραση σε αλλαγή θέματος/σκουρότητας. Clock: επιλογή Digital/Analog (χειροποίητο ρολόι με δείκτες) από το μενού ☰. Network: ζωντανό mini-sparkline download/upload κάτω από τα στατιστικά. Audio Visualizer: αντικαταστάθηκε το ASCII κείμενο με πραγματικό multi-band equalizer (WASAPI loopback + FFT μέσω NAudio.Dsp, ήδη διαθέσιμο dependency) σε στυλ WMP Legacy — segmented LED μπάρες με peak-hold καπάκι που πέφτει αργά. Weather: επιλογή τοποθεσίας (μενού ☰ → \"Set location…\", γεωκωδικοποίηση μέσω Open-Meteo), χειροποίητα κινούμενα εικονίδια καιρού ανάλογα με τη συνθήκη (ήλιος με περιστρεφόμενες ακτίνες, σύννεφο, βροχή/χιόνι που πέφτει, κεραυνός), και αυτόματο fallback σε δεύτερο δωρεάν πάροχο (wttr.in, χωρίς API key) αν ο πρώτος (Open-Meteo) αποτύχει. ΣΟΒΑΡΟ bug βρέθηκε και διορθώθηκε: το URL του καιρού χτιζόταν με πλωτούς αριθμούς χωρίς ρητό InvariantCulture — σε κουλτούρες με κόμμα ως δεκαδικό (π.χ. el-GR) το 37.9838 γινόταν \"37,9838\" μέσα στο URL, το Open-Meteo επέστρεφε σιωπηλά JSON σφάλματος (όχι HTTP error) και το widget έδειχνε μόνιμα \"Weather unavailable\" χωρίς κανένα exception να καταγραφεί."),
-            ("1.2.9", "2026-09", "Κρίσιμη διόρθωση του κινούμενου wallpaper (Waves/Particles/Video), δανεισμένη από τον τρόπο που το κάνει το Lively Wallpaper: το WinForms παράθυρο του wallpaper δημιουργείται πάντα με native style WS_POPUP, ακόμη κι όταν είναι FormBorderStyle.None. Το SetParent προς το WorkerW/Progman άλλαζε μόνο τον λογικό parent — ΔΕΝ μετέτρεπε αυτόματα το WS_POPUP σε WS_CHILD, με αποτέλεσμα σε πολλά builds Windows 10/11 το παράθυρο να μην συμμετέχει σωστά στο compositing/z-order του νέου parent (να παραμένει αόρατο ή να συμπεριφέρεται σαν προστασία οθόνης πάνω από την επιφάνεια εργασίας), ακόμη κι όταν το ίδιο το SetParent \"πετύχαινε\" τυπικά. Προστέθηκε ρητή μετατροπή WS_POPUP→WS_CHILD (SetWindowLongPtr + SWP_FRAMECHANGED) πριν από κάθε SetParent. Επιβεβαιώθηκε ζωντανά ότι το παράθυρο πλέον γίνεται πραγματικό child του Progman στο σωστό μέγεθος οθόνης."),
-            ("1.2.8", "2026-09", "UI polish πέρασμα: (1) Τα ελληνικά κεφαλαία σε τίτλους ενοτήτων/καρτών δεν έχουν πλέον τόνους (σωστή ορθογραφική σύμβαση — π.χ. \"ΕΞΑΤΟΜΙΚΕΥΣΗ\" όχι \"ΕΞΑΤΟΜΙΚΕΥΣΉ\"). (2) Όλα τα HoverButton της εφαρμογής έγιναν πλήρως στρογγυλεμένα (\"pills\") καθολικά, με τον ίδιο μηχανισμό (Selectable=false) που ήδη διόρθωσε το ορατό focus-rectangle bug στο PillButton του DeskZones editor. (3) Τα κουμπιά DeskSounds (Αναζήτηση/Προεπισκόπηση/Καθαρισμός) έκοβαν κείμενο — φαρδύτερα + μετατοπισμένα δεξιά. (4) Bug fix: όσο ο χρήστης ήταν στο \"Φόντο οθόνης κλειδώματος\", η σελίδα \"autoscroll-άριζε\" πίσω στα DeskSounds κάθε 2 δευτερόλεπτα — αιτία ήταν ο περιοδικός timer του DeskStrip που ανακατασκεύαζε τη δική του λίστα μέσα σε ΑΥΤΟ-scroll container, επαναφέροντας σιωπηλά τη θέση κύλισης της ΣΕΛΙΔΑΣ. Διορθώθηκε με αποθήκευση/επαναφορά της θέσης κύλισης γύρω από κάθε ανανέωση."),
-            ("1.2.7", "2026-09", "Τα DeskZones έγιναν ΠΡΑΓΜΑΤΙΚΑ FancyZones-style (μετά από screenshots του πραγματικού PowerToys Editor) — όχι πια μόνιμα ορατά bordered παράθυρα στην επιφάνεια εργασίας. Κράτα Shift ενώ σέρνεις ένα παράθυρο για να δεις τις ζώνες και να κουμπώσεις (χωρίς Shift, το σύρσιμο είναι απολύτως κανονικό). Νέος επεξεργαστής διάταξης (Ctrl+Shift+N) με 7 templates (No layout/Focus/Columns/Rows/Grid/Priority Grid/Custom) — ρυθμιζόμενο πλήθος στηλών/σειρών ΜΟΝΟ στο Custom, τα presets κρατούν σταθερό σχήμα. ΣΟΒΑΡΟ bug βρέθηκε και διορθώθηκε πριν προλάβει να κυκλοφορήσει: ένα self-referential Click handler (this.Click καλούσε το OnClick() που ακριβώς πυροδοτεί το ίδιο το Click) προκαλούσε άπειρη αναδρομή σε κάθε κλικ πάνω σε template card — StackOverflowException, μη-πιάσιμο από το .NET, τερμάτιζε αμέσως όλη την εφαρμογή χωρίς κανένα exception log. Εντοπίστηκε με προσωρινό debug logging που αποκάλυψε ότι ο handler δεν πρόλαβε καν να τρέξει μία φορά. Επίσης διορθώθηκε ξεχωριστό bug στη χαρτογράφηση παραμέτρων του template \"Rows\" (διάβαζε λάθος μεταβλητή για το πλήθος σειρών) και οπτικό bug όπου το keyboard-focus-rectangle ενός στρογγυλεμένου (\"pill\") κουμπιού πρόβαλλε έξω από το στρογγυλεμένο περίγραμμά του."),
-            ("1.2.6", "2026-09", "Bugfix πέρασμα κατόπιν αναφορών: (1) Τα DeskZones \"άνοιγαν μόνα τους\" στην εκκίνηση — αιτία ήταν ρυπασμένο saved \"Last Session\" προφίλ από εσωτερικά test runs, καθαρίστηκε· το smoke test script τώρα καθαρίζει μόνο του τα test zones. (2) Αφαιρέθηκε η Fences-style λειτουργία roll-up/hover-collapse από τα DeskZones — η πραγματική τους λειτουργία (snap-on-drop, στυλ FancyZones) παρέμενε ήδη σωστή, το roll-up ήταν το πιο \"Fences\" κομμάτι. (3) Διορθώθηκε ΣΟΒΑΡΟ bug όπου η ενεργοποίηση wallpaper (ειδικά η πρώτη σε φρέσκια συνεδρία) μπλόκαρε συγχρονισμένα το UI thread έως ~8.5 δευτερόλεπτα ανά οθόνη (WorkerW attach retry loop) — \"κολλούσε\" όλη η εφαρμογή. Τρέχει πλέον σε background thread. (4) Οι ενότητες Video Library/Theme&Colors/Wave Tuning στη σελίδα Wallpaper ήταν ΠΑΝΤΑ ορατές ανεξάρτητα από το επιλεγμένο Mode — τώρα εμφανίζονται μόνο όταν είναι σχετικές. (5) Διορθώθηκε bug όπου η εναλλαγή Dark→Light \"δεν αποκρινόταν\" (re-entrancy στο popup του theme dropdown). (6) Διορθώθηκε \"τρεμόπαιγμα\" στο slider σκουρότητας θέματος — ζωντανή προεπισκόπηση χωρίς ανακατασκευή σελίδας, πλήρης εφαρμογή μόνο στην αποδέσμευση του slider. (7) Το ιστορικό εκδόσεων έκοβε κείμενο σε μεγάλες καταχωρήσεις — τα cards παίρνουν πλέον το πραγματικό ύψος που χρειάζονται. (8) Η πιο πρόσφατη έκδοση στο ιστορικό ξεχωρίζει τώρα με χρωματιστό πλαίσιο."),
-            ("1.2.5", "2026-09", "Νέο slider \"Σκουρότητα σκούρου θέματος\" στις Ρυθμίσεις (0-100%, 50% = η αρχική βάση, αμετάβλητη) — ζωντανή προεπισκόπηση καθώς σέρνεις, όπως το ήδη υπάρχον Window Opacity. Βρέθηκε και διορθώθηκε bug πριν προλάβει να κυκλοφορήσει: η πρώτη υλοποίηση έκανε όλα τα επίπεδα (φόντο/sidebar/κάρτες/hover/περιγράμματα) να συγκλίνουν σε πανομοιότυπο καθαρό μαύρο στο 100% — τώρα κάθε επίπεδο έχει δικό του ρητό \"floor\" χρώμα, διατηρώντας οπτικό διαχωρισμό σε όλο το εύρος."),
-            ("1.2.4", "2026-09", "Ολοκληρώθηκαν τα \"μερικώς εφικτά\" στοιχεία του Customization Vision, στη σελίδα Εξατομίκευση: πακέτα .theme (gallery έτοιμων θεμάτων Windows + αποθήκευση τρέχουσας ρύθμισης ως νέο .theme, μέσω του ίδιου του OS handler) και φόντο οθόνης κλειδώματος (Personalization CSP, με elevation μόνο για τη μία ενέργεια — καμία ολόκληρη elevated εκκίνηση της εφαρμογής). Ο installer μεταγλωττίστηκε για πρώτη φορά ρητά κατόπιν αιτήματος."),
-            ("1.2.3", "2026-09", "Νέα σελίδα \"Εξατομίκευση\" (Ctrl+0) με τα ασφαλή (registry/native API μόνο) κομμάτια του Customization Vision — όλα τα ονόματα ελέγχθηκαν για συγκρούσεις επωνυμίας πριν επιλεγούν: IconAtlas (εικονίδιο This PC / Κάδος Ανακύκλωσης άδειος-γεμάτος / ανά φάκελο), DeskCursors (προσαρμοσμένο σχήμα δείκτη ποντικιού), DeskStrip (πλωτό dock καρφιτσωμένων εφαρμογών με live ένδειξη \"τρέχει τώρα\"), DeskSounds (πλήρες σχήμα ήχων συστήματος πέρα από τα stock cues). Ένα visual-style engine και η επαναφορά classic Start Menu/taskbar εξετάστηκαν και αποκλείστηκαν ρητά — και τα δύο θα απαιτούσαν patch προστατευμένων αρχείων συστήματος."),
-            ("1.2.2", "2026-09", "Sidebar nav tooltips now always show the keyboard shortcut (e.g. \"Widgets (Ctrl+2)\"), not just in collapsed mode. New Quick Look preview for DeskContainers — press Space or right-click → Quick Look on a file icon to instantly preview images and text files, or browse a folder's contents, without opening any external app."),
-            ("1.2.1", "2026-09", "Flip 3D: real keyboard cycling (←/→/Tab/Enter), angled tilted-card layout with the selected window centered. Fixed the sidebar logo showing a stray gray box in compact mode and added a glossy highlight. DeskZones layouts now cover every connected screen, not just the primary one. Wallpaper auto-pauses when another app goes fullscreen. Keyboard shortcuts for every major function (Ctrl+1…9 navigate pages, Ctrl+K palette, Ctrl+B collapse sidebar, Ctrl+E toggle wallpaper, Ctrl+Shift+N new DeskZone — full list in About). Uninstaller now offers to remove saved settings. Installer explicitly declared x64-only."),
-            ("1.2.0", "2026-09", "DeskZones reworked as FancyZones-style window snapping (drag any window into a zone to fill it); new DeskContainers feature for grouping files/folders/shortcuts on the desktop. Fixed the wallpaper hiding desktop icons when the WorkerW attach silently failed. Custom rounded dropdowns everywhere (replacing classic ComboBoxes) — and fixed a real crash where opening one closed instantly (context-menu disposal bug affecting every popup menu in the app). Collapsible sidebar (icon-only, animated, square tiles). Window opacity setting. Animated wave header background. Sparkline charts for Network/Processes. Nav reorder, bigger logo/title with version number, active-state highlighting on toggle buttons, more icons app-wide."),
-            ("1.1.2", "2026-09", "Fixed a real crash where creating any DeskZone layout threw a NullReferenceException. Vector icons (no font-glyph dependency) across the sidebar and Widget Gallery. Removed duplicate page titles app-wide. Merged Performance/System Monitor into one tab. Widgets and DeskZones now both show visible ✕ close and ☰ settings-menu buttons instead of relying on right-click."),
-            ("1.1.1", "2026-09", "Fixed Dashboard sidebar entry being invisible (Home icon added), richer gradient/glow wallpaper wave rendering, Performance page redesigned as a distinct wallpaper-performance control center (no longer duplicates System Monitor's live stats)."),
-            ("1.1.0", "2026-09", "Theme system (Light/Dark/Follow Windows), localization (EL/EN), colored System Monitor meters, DeskZones/Profiles two-column layouts with layout icons, visible widget Close/Lock buttons, animated sidebar logo, fixed invisible-text rendering bugs (NavButton, StatCard)."),
-            ("1.0.0", "2026-09", "Initial unified build: Dashboard, Widget Gallery, DeskZones, Wallpaper Studio (video playlist + MotionDesk Waves), System Monitor, Profiles, Performance, Automation, Command Palette, tray integration, global hotkeys."),
+            ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
         };
 
 
@@ -2007,7 +1989,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                     if (apoInstalled)
                     {
                         var (ok, msg) = EqualizerApoService.ApplyPreset(p.Name);
-                        _statusLabel.Text = ok ? $"Audio Enhancement: {p.Name} (system-wide)" : $"Equalizer APO: {msg}";
+                        _statusLabel.Text = ok ? string.Format(LocalizationManager.T("Status.AudioPresetSystemWideFormat"), p.Name) : $"Equalizer APO: {msg}";
                     }
                 }))).ToArray();
             presetButtons = AddToggleButtonGrid(panel, presetItems);
@@ -2052,7 +2034,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             _currentPageKey = "About";
             var panel = CreatePagePanel();
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            AddText(panel, $"Version {version?.ToString(3) ?? "1.0.0"}   •   .NET 8 Windows desktop workspace manager.");
+            AddText(panel, string.Format(LocalizationManager.T("About.VersionLine"), version?.ToString(3) ?? "1.0.0"));
             AddText(panel, LocalizationManager.T("About.Body"));
 
             // Κάρτες ανά θέμα (πρώην ξεχωριστή σελίδα "Βοήθεια") — ζητήθηκε ρητά να ενσωματωθεί
@@ -2078,8 +2060,8 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
 
             AddSection(panel, LocalizationManager.T("About.SectionCapabilities"));
             AddText(panel, LocalizationManager.T("About.CapabilitiesList"));
-            AddText(panel, $"Runtime: .NET 8 / WinForms / win-x64   •   WebView2: lazy-loaded   •   Active widgets: {WidgetHostEngine.Instance.GetActiveWidgets().Count}");
-            AddButton(panel, "Version History…", (_, _) => ShowVersionHistory());
+            AddText(panel, string.Format(LocalizationManager.T("About.RuntimeLine"), WidgetHostEngine.Instance.GetActiveWidgets().Count));
+            AddButton(panel, LocalizationManager.T("VersionHistory.Button"), (_, _) => ShowVersionHistory());
 
             AddSection(panel, LocalizationManager.T("About.SectionInstructions"));
             AddText(panel, LocalizationManager.T("About.InstructionsList"));
@@ -2174,7 +2156,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         {
             using var dialog = new Form
             {
-                Text = "Version History",
+                Text = LocalizationManager.T("VersionHistory.Title"),
                 StartPosition = FormStartPosition.CenterParent,
                 Size = new Size(560, 460),
                 BackColor = UiTheme.Background,
@@ -2195,7 +2177,8 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 // πλάτος 470px που ήδη όριζε το MaximumSize του label) και το card παίρνει ακριβώς
                 // όσο ύψος χρειάζεται, όχι ένα άκαμπτο νούμερο.
                 var notesFont = UiTheme.FontBody;
-                var notesSize = TextRenderer.MeasureText(entry.Notes, notesFont, new Size(470, int.MaxValue), TextFormatFlags.WordBreak);
+                string notes = LocalizationManager.T("VersionNotes." + entry.Version);
+                var notesSize = TextRenderer.MeasureText(notes, notesFont, new Size(470, int.MaxValue), TextFormatFlags.WordBreak);
                 int cardHeight = Math.Max(80, 34 + notesSize.Height + 18);
 
                 var card = new Panel { Width = 500, Height = cardHeight, BackColor = UiTheme.Surface, Padding = new Padding(14), Margin = new Padding(0, 0, 0, 10) };
@@ -2212,9 +2195,9 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                     };
                 }
 
-                string header = $"v{entry.Version}   •   {entry.Date}" + (isLatest ? "   •   τρέχουσα" : "");
+                string header = $"v{entry.Version}   •   {entry.Date}" + (isLatest ? "   •   " + LocalizationManager.T("VersionHistory.Current") : "");
                 card.Controls.Add(new Label { Text = header, Font = new Font("Segoe UI", 11f, FontStyle.Bold), ForeColor = UiTheme.AccentCyan, AutoSize = true, Location = new Point(14, 10) });
-                card.Controls.Add(new Label { Text = entry.Notes, Font = notesFont, ForeColor = UiTheme.TextSecondary, MaximumSize = new Size(470, 0), AutoSize = true, Location = new Point(14, 34) });
+                card.Controls.Add(new Label { Text = notes, Font = notesFont, ForeColor = UiTheme.TextSecondary, MaximumSize = new Size(470, 0), AutoSize = true, Location = new Point(14, 34) });
                 list.Controls.Add(card);
                 isLatest = false;
             }
@@ -2693,7 +2676,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         private void UpdateStatus()
         {
             var m = SystemMonitorService.Instance.GetSnapshot();
-            _statusLabel.Text = $"CPU {m.CpuPercent:0.0}%  •  RAM {m.AvailableMemoryMb:0} MB free";
+            _statusLabel.Text = string.Format(LocalizationManager.T("Status.SystemFormat"), m.CpuPercent.ToString("0.0"), m.AvailableMemoryMb.ToString("0"));
         }
 
         private sealed class SettingsView : Panel
@@ -2934,7 +2917,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             private FlowLayoutPanel BuildOpacityRow()
             {
                 var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 4) };
-                row.Controls.Add(new Label { Text = "Window opacity:", AutoSize = true, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody, Padding = new Padding(0, 6, 8, 0) });
+                row.Controls.Add(new Label { Text = LocalizationManager.T("Settings.WindowOpacityLabel"), AutoSize = true, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody, Padding = new Padding(0, 6, 8, 0) });
                 int initial = Math.Clamp((int)Math.Round(AppSettings.Load().WindowOpacity * 100), 60, 100);
                 var track = new TrackBar { Minimum = 60, Maximum = 100, Value = initial, Width = 200, TickFrequency = 10, SmallChange = 1, LargeChange = 5 };
                 var valueLabel = new Label { Text = $"{initial}%", AutoSize = true, ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody, Padding = new Padding(8, 6, 0, 0) };

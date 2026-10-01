@@ -311,7 +311,7 @@ namespace MotionDesk.Widgets
                 }
             }
 
-            g.DrawString("←/→, Tab ή ροδέλα ποντικιού για περιήγηση  •  Enter για ενεργοποίηση  •  Esc για έξοδο",
+            g.DrawString(MotionDesk.Services.LocalizationManager.T("DeskFlip.Hint"),
                 hintFont, mutedBrush, 24, 24);
         }
 

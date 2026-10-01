@@ -35,13 +35,14 @@ namespace MotionDesk.Services
         // ΗΔΗ ζωντανή ανάλυση φάσματος (WASAPI loopback) — αλλάζει πραγματικά το πώς αποδίδεται/
         // απεικονίζεται ο ήχος στον visualizer, με πραγματικά δεδομένα, όχι fake.
         public float[] BandGains { get; }
-        public static readonly (string Name, string Description)[] Presets =
+        // Το δεύτερο στοιχείο είναι κλειδί τοπικοποίησης (Preset.<όνομα>.Desc), όχι κείμενο.
+        public static readonly (string Name, string DescriptionKey)[] Presets =
         {
-            ("Flat", "Χωρίς ενίσχυση — ουδέτερη απεικόνιση."),
-            ("Bass Boost", "Έμφαση στις χαμηλές συχνότητες (μπάσα)."),
-            ("Treble Boost", "Έμφαση στις υψηλές συχνότητες (πρίμα)."),
-            ("Vocal Boost", "Έμφαση στις μεσαίες συχνότητες (φωνή)."),
-            ("Loudness", "Ενίσχυση μπάσων ΚΑΙ πρίμων μαζί (καμπύλη Fletcher-Munson, στυλ FXSound \"Loudness\")."),
+            ("Flat", "Preset.Flat.Desc"),
+            ("Bass Boost", "Preset.BassBoost.Desc"),
+            ("Treble Boost", "Preset.TrebleBoost.Desc"),
+            ("Vocal Boost", "Preset.VocalBoost.Desc"),
+            ("Loudness", "Preset.Loudness.Desc"),
         };
 
         public AudioSpectrumService(int bandCount = 20)

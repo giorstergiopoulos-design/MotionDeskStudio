@@ -589,7 +589,7 @@ namespace MotionDesk.Widgets
         {
             using var dlg = new Form
             {
-                Text = "Set weather location",
+                Text = LocalizationManager.T("Weather.SetLocationTitle"),
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent,
                 ClientSize = new Size(320, 120),
@@ -597,10 +597,10 @@ namespace MotionDesk.Widgets
                 MinimizeBox = false,
                 BackColor = UiTheme.Surface
             };
-            var label = new Label { Text = "City name:", Location = new Point(14, 14), AutoSize = true, ForeColor = UiTheme.TextPrimary };
+            var label = new Label { Text = LocalizationManager.T("Weather.CityName"), Location = new Point(14, 14), AutoSize = true, ForeColor = UiTheme.TextPrimary };
             var textBox = new TextBox { Location = new Point(14, 36), Width = 290, Text = LocationName ?? "" };
-            var okBtn = new Button { Text = "OK", Location = new Point(140, 74), DialogResult = DialogResult.OK };
-            var cancelBtn = new Button { Text = "Cancel", Location = new Point(228, 74), DialogResult = DialogResult.Cancel };
+            var okBtn = new Button { Text = LocalizationManager.T("Common.OK"), Location = new Point(140, 74), DialogResult = DialogResult.OK };
+            var cancelBtn = new Button { Text = LocalizationManager.T("Common.Cancel"), Location = new Point(228, 74), DialogResult = DialogResult.Cancel };
             dlg.Controls.Add(label); dlg.Controls.Add(textBox); dlg.Controls.Add(okBtn); dlg.Controls.Add(cancelBtn);
             dlg.AcceptButton = okBtn; dlg.CancelButton = cancelBtn;
 

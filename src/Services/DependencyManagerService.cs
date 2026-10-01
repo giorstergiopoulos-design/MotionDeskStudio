@@ -18,7 +18,10 @@ namespace MotionDesk.Services
     {
         public string Id { get; init; } = "";
         public string Name { get; init; } = "";
-        public string Description { get; init; } = "";
+        public string DescriptionKey { get; init; } = "";
+        // Υπολογίζεται σε κάθε ανάγνωση — το All είναι static και αρχικοποιείται μία φορά, οπότε ένα σταθερό
+        // string θα έμενε στη γλώσσα της πρώτης προσπέλασης ακόμη κι αν ο χρήστης άλλαζε γλώσσα.
+        public string Description => LocalizationManager.T(DescriptionKey);
         public Func<bool> IsInstalled { get; init; } = () => false;
 
         // WinGet package id για αυτόματη εγκατάσταση/ενημέρωση, ή null αν δεν υποστηρίζεται.
@@ -36,7 +39,7 @@ namespace MotionDesk.Services
             {
                 Id = "webview2",
                 Name = "Microsoft Edge WebView2 Runtime",
-                Description = "Απαιτείται για το κινούμενο wallpaper και τα widgets (rendering μηχανή).",
+                DescriptionKey = "Dependency.WebView2Desc",
                 IsInstalled = IsWebView2Installed,
                 WingetId = "Microsoft.EdgeWebView2Runtime"
             },
@@ -44,7 +47,7 @@ namespace MotionDesk.Services
             {
                 Id = "ffmpeg",
                 Name = "FFmpeg",
-                Description = "Απαιτείται για αναπαραγωγή/μετατροπή βίντεο .wmv σε κινούμενο wallpaper.",
+                DescriptionKey = "Dependency.FfmpegDesc",
                 IsInstalled = () => WmvConversionService.IsFfmpegAvailable,
                 WingetId = "Gyan.FFmpeg"
             }
@@ -82,7 +85,7 @@ namespace MotionDesk.Services
         public static async Task<(bool Success, string Output)> InstallViaWingetAsync(string wingetId)
         {
             if (!IsWingetAvailable())
-                return (false, "Το winget δεν βρέθηκε στο σύστημα.");
+                return (false, LocalizationManager.T("Dependency.WingetMissing"));
 
             var psi = new ProcessStartInfo("winget",
                 $"install --id {wingetId} -e --silent --accept-package-agreements --accept-source-agreements")
@@ -96,7 +99,7 @@ namespace MotionDesk.Services
             try
             {
                 using var proc = Process.Start(psi);
-                if (proc == null) return (false, "Δεν ήταν δυνατή η εκκίνηση του winget.");
+                if (proc == null) return (false, LocalizationManager.T("Dependency.WingetStartFailed"));
                 // Ταυτόχρονη ανάγνωση: η διαδοχική (πρώτα stdout, μετά stderr) μπλόκαρε αν γέμιζε πρώτα το stderr.
                 var stdoutTask = proc.StandardOutput.ReadToEndAsync();
                 var stderrTask = proc.StandardError.ReadToEndAsync();

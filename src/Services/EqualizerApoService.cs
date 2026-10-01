@@ -41,7 +41,7 @@ namespace MotionDesk.Services
         // πειράζει τίποτα άλλο που έχει ήδη ο χρήστης στο config.txt του.
         public static (bool Success, string Message) ApplyPreset(string presetName)
         {
-            if (!IsInstalled) return (false, "Equalizer APO δεν εντοπίστηκε.");
+            if (!IsInstalled) return (false, LocalizationManager.T("Apo.NotFound"));
 
             string filters = presetName switch
             {
@@ -67,7 +67,7 @@ namespace MotionDesk.Services
             }
             catch (UnauthorizedAccessException)
             {
-                return (false, "Χωρίς δικαίωμα εγγραφής στον φάκελο του Equalizer APO — δοκιμάστε εκτέλεση ως διαχειριστής μία φορά, ή ελέγξτε τα δικαιώματα του φακέλου.");
+                return (false, LocalizationManager.T("Apo.NoWriteAccess"));
             }
             catch (IOException ex) { return (false, ex.Message); }
         }
