@@ -488,10 +488,13 @@ function updateWeatherInfo() {
     if (!box) return;
     if (!cfg.weatherInfo || !window.WeatherWallpaper) { box.style.display = 'none'; return; }   // το cfg.weatherInfo ισχύει ήδη ανά mode (βλ. C#)
     const i = WeatherWallpaper.info();
-    const lang = cfg.lang === 'el' ? 'el-GR' : 'en-US';
-    document.documentElement.lang = cfg.lang === 'el' ? 'el' : 'en';   // σωστά κεφαλαία στα ελληνικά (χωρίς τόνους) στο text-transform
+    // 1.7.8: 14 γλώσσες (ίδιες με το GearWin) - το cfg.lang είναι ο κωδικός της εφαρμογής (el/en/de/fr/...).
+    const LOCALES = { el: 'el-GR', en: 'en-US', de: 'de-DE', fr: 'fr-FR', es: 'es-ES', ko: 'ko-KR', zh: 'zh-CN', it: 'it-IT',
+                      ru: 'ru-RU', ja: 'ja-JP', pt: 'pt-PT', tr: 'tr-TR', ar: 'ar-SA', hi: 'hi-IN' };
+    const lang = LOCALES[cfg.lang] || 'en-US';
+    document.documentElement.lang = LOCALES[cfg.lang] ? cfg.lang : 'en';   // σωστά κεφαλαία στα ελληνικά (χωρίς τόνους) στο text-transform
     const t = new Date(2000, 0, 1, i.h, i.m);
-    document.getElementById('wxTime').textContent = t.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit', hour12: cfg.lang !== 'el' });
+    document.getElementById('wxTime').textContent = t.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit', hour12: cfg.lang === 'el' ? false : undefined });
     document.getElementById('wxDate').textContent = i.date.toLocaleDateString(lang, { weekday: 'long', day: 'numeric', month: 'long' });
     const condId = ({ 0: 'Clear', 1: 'PartlyCloudy', 2: 'PartlyCloudy', 3: 'Cloudy', 45: 'Fog', 48: 'Fog', 51: 'Drizzle', 53: 'Drizzle', 55: 'Drizzle', 56: 'Drizzle', 57: 'Drizzle',
         61: 'Rain', 63: 'Rain', 66: 'Rain', 67: 'Rain', 80: 'Rain', 81: 'Rain', 65: 'HeavyRain', 82: 'HeavyRain', 71: 'Snow', 73: 'Snow', 75: 'Snow', 77: 'Snow', 85: 'Snow', 86: 'Snow',

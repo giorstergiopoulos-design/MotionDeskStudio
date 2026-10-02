@@ -226,9 +226,22 @@ namespace MotionDesk.UI
             Invalidate(true);
         }
 
+        // 1.7.8 - διπλό buffering για container controls (Panel/TableLayoutPanel/FlowLayoutPanel) που δεν το
+        // εκθέτουν δημόσια: χωρίς αυτό το animation πλάτους του sidebar άφηνε "κυματισμούς" από παλιά καρέ.
+        private static void EnableDoubleBuffer(Control c)
+        {
+            try
+            {
+                typeof(Control).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                    ?.SetValue(c, true);
+            }
+            catch { }
+        }
+
         private void BuildChrome()
         {
             _sidebar = new Panel { Dock = DockStyle.Left, Width = SidebarExpandedWidth, Padding = new Padding(16, 20, 16, 12) };
+            EnableDoubleBuffer(_sidebar);
 
             // TableLayoutPanel αντί για Dock=Top (brand) + Dock=Fill (nav) απευθείας μέσα στο
             // padded _sidebar: σε αυτόν τον συνδυασμό το Fill rectangle του _nav υπολογιζόταν
@@ -238,6 +251,7 @@ namespace MotionDesk.UI
             // το πρώτο κουμπί πλοήγησης (Dashboard). Οι σταθερές δύο σειρές ενός
             // TableLayoutPanel δεν έχουν αυτή την ασάφεια.
             _sidebarLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+            EnableDoubleBuffer(_sidebarLayout);
             _sidebarLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
             _sidebarLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             _sidebarLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
@@ -311,6 +325,7 @@ namespace MotionDesk.UI
             // να γεμίζουν ΑΚΡΙΒΩΣ το διαθέσιμο πλάτος, χωρίς περιθώριο. Ζητήθηκε ρητά καμία
             // scrollbar· καλύτερα να κόβεται καθαρά ένα τελευταίο στοιχείο παρά να εμφανίζεται.
             _nav = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false, Padding = new Padding(0, 14, 0, 0) };
+            EnableDoubleBuffer(_nav);
             _sidebarLayout.Controls.Add(_nav, 0, 1);
             RebuildSidebarNav();
 
@@ -319,6 +334,7 @@ namespace MotionDesk.UI
             _sidebarLayout.Controls.Add(_collapseToggle, 0, 2);
 
             _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(32, 24, 32, 24) };
+            EnableDoubleBuffer(_content);
 
             // Απαλό, κινούμενο κύμα-φόντο πίσω από τον τίτλο κάθε σελίδας (ζητήθηκε ρητά) — ίδια
             // "γλώσσα" με το wallpaper/λογότυπο, αλλά πολύ χαμηλής έντασης ώστε να μην αποσπά.
@@ -543,10 +559,15 @@ namespace MotionDesk.UI
                     // 56 (όχι ίσο με το πλήρες πλάτος του container, 64) — σκόπιμο περιθώριο
                     // ασφαλείας ώστε τίποτα να μην ακουμπάει/κόβεται στο δεξί άκρο, ό,τι κι αν
                     // προκαλούσε το προηγούμενο ζήτημα ("κόβονται τα εικονίδια").
-                    Width = value ? 56 : 184;
+                    if (!SuppressWidth) ApplyWidth();
                     Invalidate();
                 }
             }
+
+            // 1.7.8 - κατά το animation του sidebar το πλάτος του κάθε κουμπιού ΑΚΟΛΟΥΘΕΙ το πλάτος του sidebar
+            // (ορίζεται από το MainWindow ανά καρέ) αντί να πηδά αμέσως 56 <-> 184 - αυτό προκαλούσε τα "κύματα".
+            public bool SuppressWidth { get; set; }
+            public void ApplyWidth() => Width = _collapsed ? 56 : 184;
 
             private readonly ToolTip _tip = new() { InitialDelay = 300, AutoPopDelay = 4000 };
             private readonly string? _shortcutHint;
@@ -632,7 +653,9 @@ namespace MotionDesk.UI
             {
                 Dock = DockStyle.Fill;
                 Cursor = Cursors.Hand;
-                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+                // ResizeRedraw: το κουμπί ξαναζωγραφίζεται σε ΚΑΘΕ αλλαγή πλάτους (animation) ώστε το βέλος να μένει
+                // κεντραρισμένο και να μη μένουν υπολείμματα ("κυματισμοί") από παλιά καρέ.
+                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
                 MouseEnter += (_, _) => { _hover = true; Invalidate(); };
                 MouseLeave += (_, _) => { _hover = false; Invalidate(); };
                 MouseUp += (_, e) => { if (e.Button == MouseButtons.Left && ClientRectangle.Contains(e.Location)) Click?.Invoke(this, EventArgs.Empty); };
@@ -674,7 +697,8 @@ namespace MotionDesk.UI
             else
             {
                 ApplySidebarCollapsedVisuals(false);
-                AnimateSidebarWidth(SidebarExpandedWidth);
+                _collapseToggle.Collapsed = true; // το βέλος αλλάζει κατεύθυνση ΜΟΝΟ όταν τελειώσει η επέκταση
+                AnimateSidebarWidth(SidebarExpandedWidth, () => _collapseToggle.Collapsed = false);
             }
         }
 
@@ -714,25 +738,37 @@ namespace MotionDesk.UI
             if (!AppSettings.Load().EnableAnimations)
             {
                 _sidebar.Width = targetWidth;
+                foreach (var btn in _navButtons.Values) { btn.SuppressWidth = false; btn.ApplyWidth(); }
                 onComplete?.Invoke();
                 return;
             }
             _sidebarAnimTimer?.Stop();
             _sidebarAnimTimer?.Dispose();
             int startWidth = _sidebar.Width;
-            const int totalSteps = 10;
-            int step = 0;
-            _sidebarAnimTimer = new System.Windows.Forms.Timer { Interval = 12 };
+            // 1.7.8 - animation βασισμένη στον ΠΡΑΓΜΑΤΙΚΟ χρόνο (220 ms, ease-out cubic) αντί για 10 σταθερά βήματα:
+            // ο timer των WinForms έχει ανάλυση ~15 ms, οπότε τα 10 βήματα ήταν λίγα/ανομοιόμορφα (σκαλοπάτια).
+            // Το πλάτος κάθε κουμπιού μενού ακολουθεί το πλάτος του sidebar ανά καρέ, ώστε περιεχόμενο και κουμπί
+            // να μένουν κεντραρισμένα χωρίς να "πηδούν".
+            const double durationMs = 220;
+            foreach (var btn in _navButtons.Values) btn.SuppressWidth = true;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            _sidebarAnimTimer = new System.Windows.Forms.Timer { Interval = 8 };
             _sidebarAnimTimer.Tick += (_, _) =>
             {
-                step++;
-                double t = Math.Min(1.0, step / (double)totalSteps);
+                double t = Math.Min(1.0, clock.Elapsed.TotalMilliseconds / durationMs);
                 double eased = 1 - Math.Pow(1 - t, 3);
-                _sidebar.Width = (int)(startWidth + (targetWidth - startWidth) * eased);
+                int w = (int)Math.Round(startWidth + (targetWidth - startWidth) * eased);
+                if (w != _sidebar.Width)
+                {
+                    _sidebar.Width = w;
+                    int usable = Math.Max(56, w - _sidebar.Padding.Horizontal);
+                    foreach (var btn in _navButtons.Values) btn.Width = Math.Clamp(usable, 56, 184);
+                }
                 if (t >= 1.0)
                 {
-                    _sidebar.Width = targetWidth;
                     _sidebarAnimTimer?.Stop();
+                    _sidebar.Width = targetWidth;
+                    foreach (var btn in _navButtons.Values) { btn.SuppressWidth = false; btn.ApplyWidth(); }
                     onComplete?.Invoke();
                 }
             };
@@ -1712,9 +1748,9 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                     MessageBox.Show(this, LocalizationManager.T("Personalization.IconPackNotFound"), LocalizationManager.T("Personalization.IconPackTitle"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 ShowPersonalization();
-            }));
-
-            AddButtonGrid(panel, (LocalizationManager.T("Personalization.FolderIcon"), (_, _) =>
+            }),
+            // 1.7.8 - "Εισαγωγή icon pack" και "Ορισμός εικονιδίου φακέλου" στην ΙΔΙΑ γραμμή (ένα AddButtonGrid).
+            (LocalizationManager.T("Personalization.FolderIcon"), (_, _) =>
             {
                 using var folderDlg = new FolderBrowserDialog { Description = LocalizationManager.T("Personalization.FolderIcon") };
                 if (folderDlg.ShowDialog() != DialogResult.OK) return;
@@ -2108,11 +2144,8 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             panel.Controls.Add(procs);
             var powerCard = AddCard(panel, LocalizationManager.T("Performance.PowerLabel"), "");
 
-            // last 2 minutes (60 samples @ 2 s) of CPU/RAM (and GPU when available) as sparklines
-            var cpuRamHistory = new SparklineCard(LocalizationManager.T("Performance.HistoryCpuRam"), 2, 100, 60) { Width = 500, Height = 110, Margin = new Padding(0, 0, 0, 10) };
-            panel.Controls.Add(cpuRamHistory);
-            var gpuHistory = new SparklineCard(LocalizationManager.T("Performance.HistoryGpu"), 1, 100, 60) { Width = 500, Height = 110, Margin = new Padding(0, 0, 0, 10) };
-            panel.Controls.Add(gpuHistory);
+            // 1.7.8: οι κάρτες ιστορικού "CPU & RAM"/"GPU" στο τέλος της σελίδας αφαιρέθηκαν (ζητήθηκε ρητά) - το ποσοστό RAM
+            // φαίνεται πλέον μέσα στη γραμμή "Μνήμη" επάνω, τα CPU/GPU στις δικές τους γραμμές.
 
             // top 5 memory users (refreshed every ~6 s on a background thread)
             AddSection(panel, LocalizationManager.T("Performance.TopMemory"));
@@ -2128,8 +2161,6 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             var timer = new System.Windows.Forms.Timer { Interval = 2000 };
             timer.Tick += (_, _) => {
                 var m = AdvancedSystemMonitorService.Instance.GetSnapshot();
-                double ramPct = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
-                cpuRamHistory.Push(m.CpuPercent, ramPct, $"CPU {m.CpuPercent:0}%   •   RAM {ramPct:0}%");
                 if (topTick++ % 3 == 0 && !topBusy)
                 {
                     topBusy = true;
@@ -2146,7 +2177,6 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 if (gpuReady)
                 {
                     var g = GpuMonitorService.Instance.GetSnapshot();
-                    if (g.Available) gpuHistory.Push(g.LoadPercent ?? 0, null, $"GPU {g.LoadPercent ?? 0:0}%" + (g.TemperatureC.HasValue ? $"   {g.TemperatureC:0}°C" : ""));
                     gpu.SetValue(g.Available ? g.LoadPercent ?? 0 : 0,
                         g.Available ? $"{g.LoadPercent:0.0}%" + (g.TemperatureC.HasValue ? $"   {g.TemperatureC:0}°C" : "") : LocalizationManager.T("Performance.GpuUnavailable"));
                 }
@@ -2258,7 +2288,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         // ακολουθούν την επιλεγμένη γλώσσα — πριν ήταν hardcoded και μισές ελληνικά / μισές αγγλικά.
         private static readonly (string Version, string Date)[] VersionHistory =
         {
-            ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
+            ("1.7.8", "2026-10"), ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
         };
 
 
@@ -3420,29 +3450,26 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             // Πραγματικές emoji σημαίες: χρειάζονται τη γραμματοσειρά "Segoe UI Emoji" για να
             // αποδοθούν ως έγχρωμα εικονίδια αντί για γράμματα περιφερειακού δείκτη (GR/GB) —
             // αυτό ήταν το ζητούμενο πρόβλημα ("δεν έχεις βάλει τις σημαίες στο dropdown").
-            private static readonly string[] LanguageCodes = { "Follow", "el", "en" };
-
             private static Panel BuildLanguageRow()
             {
                 var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 10) };
                 row.Controls.Add(new Label { Text = LocalizationManager.T("Settings.Language") + ":", AutoSize = true, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody, Padding = new Padding(0, 6, 8, 0) });
-                // ΔΙΟΡΘΩΣΗ πραγματικού bug ("θέλω σημαίες"): τα unicode emoji σημαίες (🇬🇷/🇬🇧) μέσα
-                // στο κείμενο αποδίδονταν ως απλά γράμματα περιφερειακού δείκτη σε πλαισιάκι
-                // ("GR"/"GB"), όχι ως έγχρωμες σημαίες — ούτε το GDI (ToolStripMenuItem text) ούτε
-                // το GDI+ (Graphics.DrawString) υποστηρίζουν πραγματικά έγχρωμες (COLR/CPAL) emoji
-                // γραμματοσειρές σε WinForms, ανεξάρτητα από τη γραμματοσειρά. Τώρα πραγματικά,
-                // ζωγραφισμένα bitmap (βλ. FlagIcons.cs) μέσω του νέου Image-aware SetItems.
-                var combo = new FlatComboBox { Width = 220 };
-                var labels = new[]
+                // Σημαίες ως πραγματικά bitmap (βλ. FlagIcons.cs) - τα unicode emoji σημαίες δεν αποδίδονται έγχρωμα σε WinForms.
+                // 1.7.8: ΟΛΕΣ οι 14 γλώσσες του GearWin + "Follow Windows" (πρώτη θέση).
+                var combo = new FlatComboBox { Width = 240 };
+                var codes = new List<string> { "Follow" };
+                var labels = new List<string> { LocalizationManager.T("Settings.LanguageFollow") };
+                var icons = new List<Image> { FlagIcons.Globe() };
+                foreach (var (code, _, native) in LocalizationManager.Supported)
                 {
-                    LocalizationManager.T("Settings.LanguageFollow"),
-                    LocalizationManager.T("Settings.LanguageGreek"),
-                    LocalizationManager.T("Settings.LanguageEnglish")
-                };
-                var icons = new Image[] { FlagIcons.Globe(), FlagIcons.Greece(), FlagIcons.UnitedKingdom() };
+                    codes.Add(code);
+                    labels.Add(native);
+                    icons.Add(FlagIcons.For(code));
+                }
                 var currentLang = AppSettings.Load().Language;
-                combo.SetItems(labels, icons, labels[currentLang switch { "el" => 1, "en" => 2, _ => 0 }]);
-                combo.SelectedIndexChanged += (_, _) => LocalizationManager.SetLanguage(LanguageCodes[combo.SelectedIndex]);
+                var idx = codes.IndexOf(currentLang);
+                combo.SetItems(labels, icons, labels[idx < 0 ? 0 : idx]);
+                combo.SelectedIndexChanged += (_, _) => LocalizationManager.SetLanguage(codes[combo.SelectedIndex]);
                 row.Controls.Add(combo);
                 return row;
             }
