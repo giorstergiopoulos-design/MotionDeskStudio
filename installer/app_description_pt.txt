@@ -1,0 +1,30 @@
+﻿MotionDesk Studio
+
+Uma shell gratuita e de código aberto de personalização do ambiente de trabalho e da área de trabalho para
+Windows 10/11: fundos animados em direto, widgets flutuantes, disposições de janelas com alinhamento a zonas
+e personalização segura de ícones do sistema, tudo numa aplicação leve.
+
+Principais funcionalidades:
+
+* Estúdio de fundos - fundos animados de vídeo/GIF apresentados atrás dos ícones do ambiente de trabalho
+  (injeção WorkerW), pausa automática quando um jogo ou outra aplicação passa a ecrã inteiro e modos de
+  desempenho com perceção da bateria (Alto / Equilibrado / Poupança de energia / Bateria).
+
+* Galeria de widgets - widgets nativos com tema: Relógio (digital/analógico, 12 h/24 h), Monitor do sistema
+  (CPU/RAM/rede/GPU), débito de rede, um visualizador de áudio (estilos WMP Legacy / Winamp) controlado pelo
+  áudio real do sistema, Meteorologia (temperatura, vento/Beaufort, humidade, ícone animado) e utilização
+  dos discos. Cada widget pode ser bloqueado e memoriza a sua posição entre sessões.
+
+* DeskZones e DeskContainers - alinhamento de janelas ao estilo FancyZones em disposições de zonas
+  personalizadas, mais contentores ao estilo Stardock Fences para agrupar ficheiros/pastas/atalhos no
+  ambiente de trabalho, com suporte de arrastar e largar.
+
+* Personalização (IconAtlas) - altere os ícones de «Este PC» e do Cesto de Reciclagem (vazio/cheio) e os
+  ícones de pastas apenas através de mecanismos oficiais do registo do Windows, sem alterar ficheiros do
+  sistema.
+
+* Perfis de área de trabalho, regras de automação, paleta de comandos, integração na área de notificação e
+  atalhos globais completam a shell.
+
+A aplicação funciona totalmente em local; o único acesso à rede serve para obter dados meteorológicos das
+API gratuitas Open-Meteo/wttr.in quando um widget de Meteorologia está ativo.

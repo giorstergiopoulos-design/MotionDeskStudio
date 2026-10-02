@@ -1,0 +1,43 @@
+﻿このアプリは、最もシンプルで寛容なオープンソース ライセンスの 1 つである MIT ライセンスのもと、オープン
+ソース ソフトウェアとして無料で配布されます。自由に使用、改変、再配布できます。
+
+重要 - 免責事項: 本ソフトウェアは「現状のまま」、いかなる保証もなく提供されます。作者は、アプリの使用
+(アニメーション壁紙のデスクトップへの組み込みやシステム アイコンのカスタマイズ機能を含む) によって
+生じる可能性のある損害、データ損失、システムの問題について一切責任を負いません。ご利用は完全に自己責任
+で行ってください。
+
+----------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 MotionDesk Studio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+----------------------------------------------------------------------
+
+サードパーティ コンポーネント
+
+このアプリには、次のオープンソース ライブラリも含まれており、それぞれ独自のライセンスに従います（説明は英語版をご覧ください）:
+
+- LibreHardwareMonitorLib (github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+- NAudio / NAudio.Wasapi (github.com/naudio/NAudio)
+- Microsoft.Web.WebView2 (Microsoft Edge WebView2 SDK)
+- .NET / Windows Forms runtime
+
+----------------------------------------------------------------------
+
+天気データは、実行時に無料の Open-Meteo API (open-meteo.com)、フォールバックとして wttr.in (github.com/chubin/wttr.in) から取得されます。どちらも API キー不要で、要求された座標/都市名以外の個人データは送信されません。

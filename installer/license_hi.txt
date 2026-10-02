@@ -1,0 +1,42 @@
+﻿यह ऐप MIT लाइसेंस के अंतर्गत ओपन-सोर्स सॉफ़्टवेयर के रूप में मुफ़्त वितरित किया जाता है — जो सबसे सरल और उदार
+ओपन-सोर्स लाइसेंसों में से एक है। आप इसे स्वतंत्र रूप से उपयोग, संशोधित और पुनर्वितरित कर सकते हैं।
+
+महत्वपूर्ण - अस्वीकरण: सॉफ़्टवेयर बिना किसी प्रकार की वारंटी के "जैसा है" प्रदान किया जाता है। ऐप के उपयोग से
+होने वाली किसी भी हानि, डेटा हानि या सिस्टम समस्या (एनिमेटेड वॉलपेपर के डेस्कटॉप में समावेश और सिस्टम
+आइकन अनुकूलन सुविधाओं सहित) के लिए लेखक कोई ज़िम्मेदारी नहीं लेता। उपयोग पूरी तरह आपके अपने जोखिम पर है।
+
+----------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 MotionDesk Studio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+----------------------------------------------------------------------
+
+तृतीय-पक्ष घटक
+
+इस ऐप में निम्नलिखित ओपन-सोर्स लाइब्रेरी भी शामिल हैं, प्रत्येक अपने लाइसेंस के अंतर्गत (विवरण अंग्रेज़ी पाठ में):
+
+- LibreHardwareMonitorLib (github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+- NAudio / NAudio.Wasapi (github.com/naudio/NAudio)
+- Microsoft.Web.WebView2 (Microsoft Edge WebView2 SDK)
+- .NET / Windows Forms runtime
+
+----------------------------------------------------------------------
+
+मौसम डेटा रनटाइम पर मुफ़्त Open-Meteo API (open-meteo.com) से और विकल्प के रूप में wttr.in (github.com/chubin/wttr.in) से लिया जाता है — दोनों बिना API कुंजी के; अनुरोधित निर्देशांक/शहर के नाम के अलावा कोई व्यक्तिगत डेटा नहीं भेजा जाता।

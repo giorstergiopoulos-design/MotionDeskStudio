@@ -1,0 +1,43 @@
+﻿Esta aplicación se distribuye GRATIS como software de código abierto, bajo la licencia MIT, una de las
+licencias de código abierto más sencillas y permisivas. Es libre de usarla, modificarla y redistribuirla.
+
+IMPORTANTE - AVISO LEGAL: el software se proporciona "TAL CUAL", sin garantía de ningún tipo. El autor
+NO asume NINGUNA responsabilidad por daños, pérdida de datos o problemas del sistema que puedan derivarse
+del uso de la aplicación (incluidas la inyección del fondo animado en el escritorio y la personalización
+de iconos del sistema). El uso es por completo bajo su propio riesgo.
+
+----------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 MotionDesk Studio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+----------------------------------------------------------------------
+
+Componentes de terceros
+
+Esta aplicación también incluye las siguientes bibliotecas de código abierto, cada una con su propia licencia (descripciones en el texto en inglés):
+
+- LibreHardwareMonitorLib (github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+- NAudio / NAudio.Wasapi (github.com/naudio/NAudio)
+- Microsoft.Web.WebView2 (Microsoft Edge WebView2 SDK)
+- .NET / Windows Forms runtime
+
+----------------------------------------------------------------------
+
+Los datos meteorológicos se obtienen en tiempo de ejecución de la API gratuita Open-Meteo (open-meteo.com) y, como alternativa, de wttr.in (github.com/chubin/wttr.in); ambas sin clave de API, y no se envían datos personales más allá de las coordenadas/el nombre de la ciudad solicitados.

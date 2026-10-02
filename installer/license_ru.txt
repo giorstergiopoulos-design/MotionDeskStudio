@@ -1,0 +1,44 @@
+﻿Это приложение распространяется БЕСПЛАТНО как программное обеспечение с открытым исходным кодом по
+лицензии MIT — одной из самых простых и либеральных лицензий. Вы можете свободно использовать,
+изменять и распространять его.
+
+ВАЖНО — ОТКАЗ ОТ ОТВЕТСТВЕННОСТИ: программное обеспечение предоставляется «КАК ЕСТЬ», без каких-либо
+гарантий. Автор НЕ НЕСЁТ НИКАКОЙ ответственности за любой ущерб, потерю данных или проблемы с системой,
+которые могут возникнуть при использовании приложения (включая внедрение живых обоев в рабочий стол и
+настройку системных значков). Вы используете приложение исключительно на свой страх и риск.
+
+----------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2026 MotionDesk Studio
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+----------------------------------------------------------------------
+
+Сторонние компоненты
+
+Это приложение также включает следующие библиотеки с открытым исходным кодом, каждая под собственной лицензией (описания — в английском тексте):
+
+- LibreHardwareMonitorLib (github.com/LibreHardwareMonitor/LibreHardwareMonitor)
+- NAudio / NAudio.Wasapi (github.com/naudio/NAudio)
+- Microsoft.Web.WebView2 (Microsoft Edge WebView2 SDK)
+- .NET / Windows Forms runtime
+
+----------------------------------------------------------------------
+
+Данные о погоде загружаются во время работы из бесплатного API Open-Meteo (open-meteo.com), а в качестве резерва — из wttr.in (github.com/chubin/wttr.in); оба сервиса используются без ключа API, и никакие личные данные, кроме запрошенных координат/названия города, не отправляются.

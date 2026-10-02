@@ -1,0 +1,29 @@
+﻿MotionDesk Studio
+
+Windows 10/11 için ücretsiz, açık kaynaklı bir masaüstü özelleştirme ve çalışma alanı kabuğu - canlı
+animasyonlu duvar kâğıtları, yüzen masaüstü pencere öğeleri, bölgelere yaslanan pencere düzenleri ve güvenli
+sistem simgesi kişiselleştirme, hepsi tek bir hafif uygulamada.
+
+Ana özellikler:
+
+* Duvar Kâğıdı Stüdyosu - masaüstü simgelerinizin arkasında işlenen animasyonlu video/GIF duvar kâğıtları
+  (WorkerW yerleştirme), bir oyun veya başka bir uygulama tam ekrana geçtiğinde otomatik duraklatma ve pil
+  duyarlı performans modları (Yüksek / Dengeli / Düşük Güç / Pil).
+
+* Pencere Öğesi Galerisi - temalı yerel masaüstü pencere öğeleri: Saat (dijital/analog, 12/24 saat), Sistem
+  İzleyici (CPU/RAM/ağ/GPU), ağ verimi, gerçek sistem sesiyle çalışan bir ses görselleştirici (WMP Legacy /
+  Winamp stilleri), Hava Durumu (sıcaklık, rüzgâr/Beaufort, nem, animasyonlu durum simgesi) ve disk
+  kullanımı. Her pencere öğesi yerinde kilitlenebilir ve konumunu oturumlar arasında hatırlar.
+
+* DeskZones ve DeskContainers - özel bölge düzenlerine FancyZones tarzı pencere yaslama ve masaüstündeki
+  dosya/klasör/kısayolları gruplamak için Stardock Fences tarzı kapsayıcılar, sürükle-bırak desteğiyle.
+
+* Kişiselleştirme (IconAtlas) - «Bu Bilgisayar» ve Geri Dönüşüm Kutusu (boş/dolu) simgelerini ve klasör
+  başına simgeleri yalnızca resmî Windows kayıt defteri mekanizmalarıyla değiştirin - sistem dosyalarına
+  yama yapılmaz.
+
+* Çalışma alanı profilleri, otomasyon kuralları, bir komut paleti, tepsi entegrasyonu ve genel kısayol
+  tuşları kabuğu tamamlar.
+
+Uygulama tamamen yerel çalışır; tek ağ erişimi, bir Hava Durumu pencere öğesi etkin olduğunda ücretsiz
+Open-Meteo/wttr.in API'lerinden hava durumu verisi almaktır.

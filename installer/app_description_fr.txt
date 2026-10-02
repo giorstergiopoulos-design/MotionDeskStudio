@@ -1,0 +1,30 @@
+﻿MotionDesk Studio
+
+Un shell gratuit et open source de personnalisation du bureau et d'espace de travail pour Windows 10/11 -
+fonds d'écran animés, widgets flottants, dispositions de fenêtres avec alignement sur des zones et
+personnalisation sûre des icônes système, le tout dans une application légère.
+
+Fonctionnalités principales :
+
+* Studio de fonds d'écran - fonds d'écran vidéo/GIF animés affichés derrière vos icônes de bureau
+  (injection WorkerW), mise en pause automatique lorsqu'un jeu ou une autre application passe en plein
+  écran, et modes de performance adaptés à la batterie (Élevé / Équilibré / Économie / Batterie).
+
+* Galerie de widgets - widgets de bureau natifs et thématisés : Horloge (numérique/analogique, 12 h/24 h),
+  Moniteur système (CPU/RAM/réseau/GPU), débit réseau, un visualiseur audio (styles WMP Legacy / Winamp)
+  piloté par le son réel du système, Météo (température, vent/Beaufort, humidité, icône animée) et
+  utilisation des disques. Chaque widget peut être verrouillé et mémorise sa position d'une session à l'autre.
+
+* DeskZones et DeskContainers - alignement des fenêtres façon FancyZones dans des dispositions de zones
+  personnalisées, ainsi que des conteneurs façon Stardock Fences pour regrouper fichiers/dossiers/
+  raccourcis sur le bureau, avec glisser-déposer.
+
+* Personnalisation (IconAtlas) - modifiez les icônes de « Ce PC » et de la Corbeille (vide/pleine) ainsi
+  que les icônes de dossiers via les seuls mécanismes officiels du registre Windows - sans modifier de
+  fichiers système.
+
+* Profils d'espace de travail, règles d'automatisation, palette de commandes, intégration à la zone de
+  notification et raccourcis globaux complètent le shell.
+
+L'application fonctionne entièrement en local ; le seul accès réseau sert à récupérer les données météo
+auprès des API gratuites Open-Meteo/wttr.in lorsqu'un widget Météo est actif.

@@ -1,0 +1,30 @@
+﻿MotionDesk Studio
+
+Un shell gratuito y de código abierto de personalización del escritorio y espacio de trabajo para Windows
+10/11: fondos animados, widgets flotantes de escritorio, diseños de ventanas con ajuste a zonas y
+personalización segura de iconos del sistema, todo en una aplicación ligera.
+
+Funciones principales:
+
+* Estudio de fondos - fondos animados de vídeo/GIF renderizados detrás de los iconos del escritorio
+  (inyección WorkerW), pausa automática cuando un juego u otra aplicación pasa a pantalla completa y
+  modos de rendimiento según la batería (Alto / Equilibrado / Bajo consumo / Batería).
+
+* Galería de widgets - widgets de escritorio nativos y con tema: Reloj (digital/analógico, 12 h/24 h),
+  Monitor del sistema (CPU/RAM/red/GPU), rendimiento de red, un visualizador de audio (estilos WMP Legacy /
+  Winamp) controlado por el audio real del sistema, Tiempo (temperatura, viento/Beaufort, humedad, icono
+  animado) y uso de discos. Cada widget puede bloquearse y recuerda su posición entre sesiones.
+
+* DeskZones y DeskContainers - ajuste de ventanas al estilo FancyZones en diseños de zonas personalizados,
+  además de contenedores al estilo Stardock Fences para agrupar archivos/carpetas/accesos directos en el
+  escritorio, con arrastrar y soltar.
+
+* Personalización (IconAtlas) - cambie los iconos de «Este equipo» y de la Papelera de reciclaje
+  (vacía/llena) y los iconos de carpetas solo mediante mecanismos oficiales del registro de Windows, sin
+  modificar archivos del sistema.
+
+* Perfiles de espacio de trabajo, reglas de automatización, paleta de comandos, integración en la bandeja
+  y atajos globales completan el shell.
+
+La aplicación funciona totalmente en local; el único acceso a la red sirve para obtener datos del tiempo de
+las API gratuitas Open-Meteo/wttr.in cuando hay un widget del Tiempo activo.

@@ -1,0 +1,30 @@
+﻿MotionDesk Studio
+
+Eine kostenlose, quelloffene Desktop-Anpassungs- und Arbeitsbereichs-Shell für Windows 10/11 - animierte
+Live-Hintergründe, schwebende Desktop-Widgets, Fensterlayouts mit Einrasten in Zonen und sichere
+Anpassung von Systemsymbolen, alles in einer schlanken App.
+
+Hauptfunktionen:
+
+* Hintergrund-Studio - animierte Video-/GIF-Hintergründe hinter Ihren Desktop-Symbolen (WorkerW-
+  Einbettung), automatische Pause, wenn ein Spiel oder eine andere App im Vollbild läuft, sowie
+  akkubewusste Leistungsmodi (Hoch / Ausgewogen / Energiesparen / Akku).
+
+* Widget-Galerie - native Desktop-Widgets im passenden Design: Uhr (digital/analog, 12/24 Std.),
+  Systemmonitor (CPU/RAM/Netzwerk/GPU), Netzwerkdurchsatz, ein Audio-Visualizer (Stile WMP Legacy /
+  Winamp) mit echtem Systemton, Wetter (Temperatur, Wind/Beaufort, Luftfeuchtigkeit, animiertes
+  Wettersymbol) und Datenträgerbelegung. Jedes Widget lässt sich fixieren und merkt sich seine Position.
+
+* DeskZones & DeskContainers - Fenster-Einrasten im FancyZones-Stil in eigene Zonenlayouts sowie
+  Container im Stil von Stardock Fences zum Gruppieren von Dateien/Ordnern/Verknüpfungen auf dem
+  Desktop, mit Drag-and-drop.
+
+* Personalisierung (IconAtlas) - ändern Sie die Symbole von „Dieser PC“ und Papierkorb (leer/voll) sowie
+  Ordnersymbole ausschließlich über offizielle Windows-Registrierungsmechanismen - ohne Patchen von
+  Systemdateien.
+
+* Arbeitsbereich-Profile, Automatisierungsregeln, eine Befehlspalette, Tray-Integration und globale
+  Hotkeys runden die Shell ab.
+
+Die App läuft vollständig lokal; der einzige Netzwerkzugriff dient dem Abruf von Wetterdaten über die
+kostenlosen APIs Open-Meteo/wttr.in, wenn ein Wetter-Widget aktiv ist.
