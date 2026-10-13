@@ -129,7 +129,11 @@ namespace MotionDesk.Widgets
         public static ZoneLayoutData BuildTemplate(string template, int n1 = 3, int n2 = 2)
         {
             var zones = new List<ZoneRect>();
-            const double gap = 0.012; // μικρό, ορατό κενό ανάμεσα σε ζώνες, όπως το πραγματικό FancyZones
+            // Ζητήθηκε ρητά "οι ζώνες να εφάπτονται ακριβώς ώστε και τα παράθυρα να εφάπτονται,
+            // χωρίς κενά μεταξύ τους" — μηδενισμός του προηγούμενου μικρού οπτικού κενού
+            // (FancyZones-style) ανάμεσα σε γειτονικές ζώνες. Η υπόλοιπη λογική (CellRange/
+            // Priority Grid) παραμένει ίδια — με gap=0 απλώς δεν αφαιρεί τίποτα πλέον.
+            const double gap = 0.0;
 
             // Άκρα ενός κελιού [index, index+1) πάνω σε "count" ίσα κομμάτια του 0..1, με gap/2
             // ΜΟΝΟ στις εσωτερικές πλευρές (index>0 για την αρχή, index<count-1 για το τέλος).

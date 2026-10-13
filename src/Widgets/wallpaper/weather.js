@@ -973,6 +973,14 @@ function draw(target, dt, profile) {
     drawHillsLayer(sky, graded);
 
     // ---- composite
+    // ΔΙΟΡΘΩΣΗ "το εφέ των σταγόνων στην οθόνη δεν λειτουργεί": το updateGlass (που ΓΕΜΙΖΕΙ το
+    // glass[] array) καλούνταν ΜΕΤΑ τον υπολογισμό του useGlass — στο πρώτο frame που αρχίζει η
+    // βροχή, glass.length ήταν ακόμα 0 ΤΗ ΣΤΙΓΜΗ του ελέγχου, οπότε useGlass έβγαινε false και το
+    // drawGlass παραλειπόταν ΕΝΤΕΛΩΣ για εκείνο το frame (και κάθε φορά που το glass[] άδειαζε
+    // προσωρινά κοντά στο κατώφλι βροχής 0.12, το effect έσβηνε/αναβόσβηνε αντί να παραμένει
+    // σταθερό). Τώρα το updateGlass τρέχει ΠΡΩΤΑ, ώστε το useGlass να βλέπει πάντα την
+    // ενημερωμένη κατάσταση του ΙΔΙΟΥ frame.
+    updateGlass(dt);
     const useGlass = cfg.glass && glass.length > 0;
     let c2 = target;
     if (useGlass) {
@@ -994,10 +1002,7 @@ function draw(target, dt, profile) {
     if (useGlass) {
         target.setTransform(1, 0, 0, 1, 0, 0);
         target.drawImage(sceneCv, 0, 0);
-        updateGlass(dt);
         drawGlass(target, sceneCv);
-    } else {
-        updateGlass(dt);
     }
 }
 
@@ -1008,7 +1013,10 @@ window.WeatherWallpaper = {
     info: () => {
         const m = localMinutes();
         const d = new Date(Date.now() + (offsetMinutes() + new Date().getTimezoneOffset()) * 60000);   // wall-clock date at the location
-        return { h: Math.floor(m / 60) % 24, m: Math.floor(m % 60), date: d, temp: data && data.ok ? data.temp : null, code: cfg.weatherSim && cfg.weatherSim !== 'Auto' ? ({ Clear: 0, PartlyCloudy: 2, Cloudy: 3, Drizzle: 51, Rain: 63, HeavyRain: 65, Thunderstorm: 95, Snow: 73, Fog: 45 })[cfg.weatherSim] : (data && data.ok ? data.code : null) };
+        // Ζητήθηκε ρητά "εμφάνιση ανέμου μαζί με την ώρα/ημερομηνία/θερμοκρασία στην επιφάνεια
+        // εργασίας" — windKmh/beaufort εκτίθενται εδώ ώστε το index.html να τα δείξει στο ίδιο
+        // overlay (βλ. updateWeatherInfo). S.wind είναι ήδη σε km/h (βλ. computeTargets).
+        return { h: Math.floor(m / 60) % 24, m: Math.floor(m % 60), date: d, temp: data && data.ok ? data.temp : null, code: cfg.weatherSim && cfg.weatherSim !== 'Auto' ? ({ Clear: 0, PartlyCloudy: 2, Cloudy: 3, Drizzle: 51, Rain: 63, HeavyRain: 65, Thunderstorm: 95, Snow: 73, Fog: 45 })[cfg.weatherSim] : (data && data.ok ? data.code : null), windKmh: Math.round(S.wind), beaufort: BFN };
     },
     // test helpers (headless screenshots)
     _state: () => ({ S, TGT, bf: BFN, t: localMinutes(), sun: sunTimes(offsetMinutes()) }),

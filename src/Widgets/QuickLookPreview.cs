@@ -50,6 +50,7 @@ namespace MotionDesk.Widgets
                 KeyPreview = true
             };
             form.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape || e.KeyCode == Keys.Space) form.Close(); };
+            form.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(form.Handle);
             return form;
         }
 

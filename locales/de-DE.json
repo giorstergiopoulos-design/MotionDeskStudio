@@ -407,7 +407,7 @@
   "Filter.Wav": "WAV-Dateien (*.wav)|*.wav",
   "Filter.Images": "Bilder (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp",
   "About.VersionLine": "Version {0}   •   .NET-8-Windows-Desktop-Arbeitsbereich-Manager.",
-  "About.RuntimeLine": "Laufzeit: .NET 8 / WinForms / win-x64   •   WebView2: bei Bedarf geladen   •   Aktive Widgets: {0}",
+  "About.RuntimeLine": "Laufzeit: .NET 10 / WinForms / win-x64   •   WebView2: bei Bedarf geladen   •   Aktive Widgets: {0}",
   "Settings.WindowOpacityLabel": "Fensterdeckkraft:",
   "DeskContainer.AddFilesTitle": "Dateien zum DeskContainer hinzufügen",
   "Weather.SetLocationTitle": "Wetterstandort festlegen",

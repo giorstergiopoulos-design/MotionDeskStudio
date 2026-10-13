@@ -1,5 +1,7 @@
+using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace MotionDesk.UI
@@ -73,6 +75,143 @@ namespace MotionDesk.UI
                 });
             }
             return sb.ToString();
+        }
+    }
+
+    // ΔΙΟΡΘΩΣΗ ζητήματος "η διαφάνεια να αφορά το παράθυρο όχι το περιεχόμενο": το παλιό μοντέλο
+    // (Form.Opacity) θολώνει ΟΛΟΚΛΗΡΟ το παράθυρο σαν bitmap — κείμενο/εικονίδια ξεθωριάζουν μαζί
+    // με το φόντο. Το DWM "blur-behind" (SetWindowCompositionAttribute, WCA_ACCENT_POLICY) κάνει
+    // ΑΚΡΙΒΩΣ το αντίθετο: θολώνει/διαφανοποιεί μόνο ό,τι είναι ΠΙΣΩ από το παράθυρο (την επιφάνεια
+    // εργασίας), ενώ το ίδιο το περιεχόμενο που ζωγραφίζει η εφαρμογή (κείμενο, εικονίδια, γραμμές)
+    // παραμένει πλήρως αδιαφανές — ο μηχανισμός υπήρχε ήδη (DeskContainerWindow.ApplyGlassBlur)
+    // αλλά με σταθερό, μη ρυθμιζόμενο alpha· εδώ γίνεται κοινός και παραμετρικός ώστε να τον
+    // χρησιμοποιούν και τα DeskContainers και τα widgets αντί για Form.Opacity.
+    public static class GlassBlur
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ACCENT_POLICY { public int AccentState; public int AccentFlags; public int GradientColor; public int AnimationId; }
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WINDOWCOMPOSITIONATTRIBDATA { public int Attribute; public IntPtr Data; public int SizeOfData; }
+
+        [DllImport("user32.dll")] private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WINDOWCOMPOSITIONATTRIBDATA data);
+
+        // ΔΙΟΡΘΩΣΗ "μη εμφάνιση λευκού πλαισίου στο widget" (ζητήθηκε ρητά "έλεγχος για όλα"):
+        // τα Windows 11 ζωγραφίζουν ένα λεπτό accent-χρωματιστό περίγραμμα (συνήθως ανοιχτόχρωμο/
+        // λευκό) γύρω από ΚΑΘΕ top-level παράθυρο, ακόμα και borderless (FormBorderStyle=None) —
+        // ορατό γύρω από widgets/containers ανεξάρτητα από θέμα. DWMWA_BORDER_COLOR = COLORREF
+        // "none" (0xFFFFFFFE) το απενεργοποιεί ρητά για συγκεκριμένο hwnd. Άκυρο/no-op σε Windows
+        // εκδόσεις πριν το 22H2 (απλά επιστρέφει κωδικό σφάλματος, δεν πετάει exception).
+        private const int DWMWA_BORDER_COLOR = 34;
+        private const uint DWMWA_COLOR_NONE = 0xFFFFFFFE;
+        [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref uint value, int size);
+
+        public static void DisableNativeBorderAccent(IntPtr handle)
+        {
+            try { uint none = DWMWA_COLOR_NONE; DwmSetWindowAttribute(handle, DWMWA_BORDER_COLOR, ref none, sizeof(uint)); }
+            catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { }
+        }
+
+        // Αμυντική διόρθωση για το αναφερόμενο "το drag&drop δεν λειτουργεί": αν η εφαρμογή τρέχει
+        // ΚΑΤΑ ΛΑΘΟΣ elevated (π.χ. ξεκίνησε από ένα admin terminal/IDE κατά τη διάρκεια δοκιμών) ενώ
+        // ο Explorer/η πηγή του drag τρέχει στο κανονικό (medium) επίπεδο, τα Windows (UIPI) μπλοκάρουν
+        // σιωπηλά τα μηνύματα OLE drag-drop προς το "ψηλότερο" παράθυρο — χωρίς κανένα σφάλμα, απλά
+        // δεν συμβαίνει τίποτα. Το ChangeWindowMessageFilterEx είναι η τεκμηριωμένη λύση της Microsoft
+        // γι' αυτό ακριβώς το σενάριο. Αβλαβές/no-op όταν η εφαρμογή ΔΕΝ τρέχει elevated (η πλειονότητα
+        // των περιπτώσεων) — απλά επιτρέπει ρητά μηνύματα που θα περνούσαν ούτως ή άλλως.
+        private const uint WM_DROPFILES = 0x0233;
+        private const uint WM_COPYDATA = 0x004A;
+        private const uint WM_COPYGLOBALDATA = 0x0049;
+        private const uint MSGFLT_ALLOW = 1;
+        [DllImport("user32.dll")] private static extern bool ChangeWindowMessageFilterEx(IntPtr hwnd, uint message, uint action, IntPtr pChangeFilterStruct);
+
+        public static void AllowDragDropAcrossUipi(IntPtr handle)
+        {
+            try
+            {
+                ChangeWindowMessageFilterEx(handle, WM_DROPFILES, MSGFLT_ALLOW, IntPtr.Zero);
+                ChangeWindowMessageFilterEx(handle, WM_COPYDATA, MSGFLT_ALLOW, IntPtr.Zero);
+                ChangeWindowMessageFilterEx(handle, WM_COPYGLOBALDATA, MSGFLT_ALLOW, IntPtr.Zero);
+            }
+            catch (EntryPointNotFoundException) { } // Windows 7-; δεν χρειάζεται εκεί (δεν υπήρχε UIPI messagefilter API ακόμα)
+        }
+
+        // Ζητήθηκε ρητά "ενσωμάτωσε... σκιασμένα popup" (MediaPlayerPro: τα context menus/flyouts
+        // του έχουν DropShadowEffect) — η καθιερωμένη, native τεχνική των Windows για μια πραγματική
+        // (όχι ζωγραφισμένη) σκιά γύρω από ένα borderless popup/dialog είναι το CS_DROPSHADOW class
+        // style, που ζωγραφίζει ο ίδιος ο DWM compositor. Εφαρμόζεται ΜΕΤΑ τη δημιουργία του handle
+        // (π.χ. dialog.HandleCreated += (_,_) => UiTheme.GlassBlur.ApplyWindowDropShadow(dialog.Handle))
+        // ώστε να δουλεύει και σε ανώνυμα "new Form{...}" dialogs χωρίς να χρειάζεται custom
+        // υποκλάση που να υπερκαλύπτει CreateParams.
+        private const int GCL_STYLE = -26;
+        private const int CS_DROPSHADOW = 0x00020000;
+        [DllImport("user32.dll", EntryPoint = "GetClassLongPtr")] private static extern IntPtr GetClassLongPtr64(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", EntryPoint = "GetClassLong")] private static extern uint GetClassLong32(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", EntryPoint = "SetClassLongPtr")] private static extern IntPtr SetClassLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+        [DllImport("user32.dll", EntryPoint = "SetClassLong")] private static extern uint SetClassLong32(IntPtr hWnd, int nIndex, uint dwNewLong);
+
+        // ΔΙΟΡΘΩΣΗ "το scrollbar να μην είναι λευκό σε dark mode": το native scrollbar των
+        // WinForms AutoScroll panels ακολουθεί πάντα το ΚΛΑΣΙΚΟ ανοιχτόχρωμο visual style των
+        // Windows, ανεξάρτητα από το σκούρο θέμα της ίδιας της εφαρμογής. Το SetWindowTheme
+        // (documented, public API, ΟΧΙ undocumented hack) είναι η ίδια τεχνική που χρησιμοποιεί ο
+        // ίδιος ο Explorer των Windows για το dark-mode scrollbar του: αλλάζει ΜΟΝΟ ποια οπτική
+        // κλάση χρησιμοποιεί το non-client rendering (scrollbar κ.λπ.) του συγκεκριμένου control,
+        // "DarkMode_Explorer" αντί για το προεπιλεγμένο "Explorer". Πρέπει να εφαρμοστεί ΜΕΤΑ τη
+        // δημιουργία του handle (HandleCreated), αλλιώς αποτυγχάνει σιωπηλά.
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetWindowTheme(IntPtr hWnd, string? pszSubAppName, string? pszSubIdList);
+
+        public static void ApplyScrollbarTheme(Control control, bool dark)
+        {
+            void Apply()
+            {
+                try { SetWindowTheme(control.Handle, dark ? "DarkMode_Explorer" : "Explorer", null); }
+                catch (DllNotFoundException) { } catch (EntryPointNotFoundException) { }
+            }
+            if (control.IsHandleCreated) Apply();
+            else control.HandleCreated += (_, _) => Apply();
+        }
+
+        public static void ApplyWindowDropShadow(IntPtr handle)
+        {
+            try
+            {
+                if (IntPtr.Size == 8)
+                {
+                    long style = GetClassLongPtr64(handle, GCL_STYLE).ToInt64();
+                    SetClassLongPtr64(handle, GCL_STYLE, new IntPtr(style | CS_DROPSHADOW));
+                }
+                else
+                {
+                    uint style = GetClassLong32(handle, GCL_STYLE);
+                    SetClassLong32(handle, GCL_STYLE, style | CS_DROPSHADOW);
+                }
+            }
+            catch { }
+        }
+
+        // opacityFraction: 1.0 = η προεπιλεγμένη "γυάλινη" εμφάνιση (ίδιο baseline alpha με πριν,
+        // 0x99), χαμηλότερες τιμές = πιο διάφανο φόντο. Το περιεχόμενο του παραθύρου ΔΕΝ επηρεάζεται
+        // ποτέ από αυτή την τιμή.
+        public static void Apply(IntPtr handle, Color accentColor, double opacityFraction)
+        {
+            var baseColor = Color.FromArgb(0x20, 0x20, 0x20);
+            const double t = 0.16;
+            int r = (int)(baseColor.R + (accentColor.R - baseColor.R) * t);
+            int g = (int)(baseColor.G + (accentColor.G - baseColor.G) * t);
+            int b = (int)(baseColor.B + (accentColor.B - baseColor.B) * t);
+            byte alpha = (byte)Math.Clamp(0x99 * opacityFraction, 18, 255);
+            int gradientColor = (alpha << 24) | (r << 16) | (g << 8) | b;
+
+            var accent = new ACCENT_POLICY { AccentState = 3, GradientColor = gradientColor };
+            int size = Marshal.SizeOf(accent);
+            IntPtr accentPtr = Marshal.AllocHGlobal(size);
+            try
+            {
+                Marshal.StructureToPtr(accent, accentPtr, false);
+                var data = new WINDOWCOMPOSITIONATTRIBDATA { Attribute = 19, SizeOfData = size, Data = accentPtr };
+                SetWindowCompositionAttribute(handle, ref data);
+            }
+            finally { Marshal.FreeHGlobal(accentPtr); }
         }
     }
 }
