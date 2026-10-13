@@ -181,7 +181,9 @@ namespace MotionDesk.Widgets
             // σωστός (titleBar πριν το _grid, Dock=Top/Fill, PerformLayout() αμέσως μετά) — το
             // προηγούμενο πάνω padding (12px) απλώς δεν άφηνε αρκετό οπτικό κενό σε όλες τις
             // αναλύσεις/DPI. Αυξήθηκε σε 18px για καθαρό, αδιαμφισβήτητο κενό κάτω από τη γραμμή τίτλου.
-            _grid = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, AutoScroll = true, Padding = new Padding(8, 18, 8, 8), AllowDrop = true };
+            // Ζητήθηκε ρητά (ξανά) "μετακίνησε ακόμα πιο κάτω... τα εικονίδια" — το προηγούμενο
+            // πέρασμα αυτής της συνεδρίας ανέβασε το top padding 12px -> 18px, προφανώς όχι αρκετό.
+            _grid = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, AutoScroll = true, Padding = new Padding(8, 28, 8, 8), AllowDrop = true };
             // Τα DeskContainers είναι πάντα σκούρο γυαλί (dark glass), ανεξάρτητα από το θέμα της
             // εφαρμογής — το scrollbar ακολουθεί πάντα το σκούρο στυλ.
             GlassBlur.ApplyScrollbarTheme(_grid, dark: true);
