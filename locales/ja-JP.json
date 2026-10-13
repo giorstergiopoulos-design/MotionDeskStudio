@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "天気 · アテネ (既定)",
   "WidgetText.Loading": "読み込み中…",
   "WidgetText.WeatherUnavailable": "天気を取得できません",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   風速 {1:0.#} km/h (ビューフォート {2})\n湿度 {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   風速 {1:0.#} km/h (ビューフォート {2})\n湿度 {3}",
   "WidgetText.RamFreeFormat": "{2}%  •  空き {0} / {1} MB",
   "WidgetText.GpuNA": "なし",
   "WidgetText.GpuLoading": "読み込み中…",

@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "Meteo · Atene (predefinito)",
   "WidgetText.Loading": "Caricamento…",
   "WidgetText.WeatherUnavailable": "Meteo non disponibile",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   Vento {1:0.#} km/h (Bf {2})\nUmidità {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   Vento {1:0.#} km/h (Bf {2})\nUmidità {3}",
   "WidgetText.RamFreeFormat": "{2}%  •  {0} / {1} MB liberi",
   "WidgetText.GpuNA": "n/d",
   "WidgetText.GpuLoading": "caricamento…",

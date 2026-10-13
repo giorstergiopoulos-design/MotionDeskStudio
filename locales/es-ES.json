@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "Tiempo · Atenas (predeterminado)",
   "WidgetText.Loading": "Cargando…",
   "WidgetText.WeatherUnavailable": "Tiempo no disponible",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   Viento {1:0.#} km/h (Bf {2})\nHumedad {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   Viento {1:0.#} km/h (Bf {2})\nHumedad {3}",
   "WidgetText.RamFreeFormat": "{2} %  •  {0} / {1} MB libres",
   "WidgetText.GpuNA": "n/d",
   "WidgetText.GpuLoading": "cargando…",

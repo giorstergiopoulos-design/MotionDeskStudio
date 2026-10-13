@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "الطقس · أثينا (افتراضي)",
   "WidgetText.Loading": "جارٍ التحميل…",
   "WidgetText.WeatherUnavailable": "الطقس غير متاح",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °م   ·   الرياح {1:0.#} كم/س (بوفورت {2})\nالرطوبة {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °م   ·   الرياح {1:0.#} كم/س (بوفورت {2})\nالرطوبة {3}",
   "WidgetText.RamFreeFormat": "{2}%  •  متاح {0} / {1} ميغابايت",
   "WidgetText.GpuNA": "غير متاح",
   "WidgetText.GpuLoading": "جارٍ التحميل…",

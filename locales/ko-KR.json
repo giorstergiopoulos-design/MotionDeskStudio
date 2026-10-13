@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "날씨 · 아테네(기본값)",
   "WidgetText.Loading": "로드 중…",
   "WidgetText.WeatherUnavailable": "날씨를 사용할 수 없음",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   바람 {1:0.#} km/h (Bf {2})\n습도 {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   바람 {1:0.#} km/h (Bf {2})\n습도 {3}",
   "WidgetText.RamFreeFormat": "{2}%  •  {0} / {1}MB 사용 가능",
   "WidgetText.GpuNA": "없음",
   "WidgetText.GpuLoading": "로드 중…",

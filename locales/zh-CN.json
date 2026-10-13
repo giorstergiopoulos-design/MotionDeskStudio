@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "天气 · 雅典（默认）",
   "WidgetText.Loading": "加载中…",
   "WidgetText.WeatherUnavailable": "天气不可用",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   风速 {1:0.#} km/h（蒲福风级 {2}）\n湿度 {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   风速 {1:0.#} km/h（蒲福风级 {2}）\n湿度 {3}",
   "WidgetText.RamFreeFormat": "{2}%  •  可用 {0} / {1} MB",
   "WidgetText.GpuNA": "无",
   "WidgetText.GpuLoading": "加载中…",

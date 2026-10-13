@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "Meteorologia · Atenas (predefinição)",
   "WidgetText.Loading": "A carregar…",
   "WidgetText.WeatherUnavailable": "Meteorologia indisponível",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   Vento {1:0.#} km/h (Bf {2})\nHumidade {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   Vento {1:0.#} km/h (Bf {2})\nHumidade {3}",
   "WidgetText.RamFreeFormat": "{2}%  •  {0} / {1} MB livres",
   "WidgetText.GpuNA": "n/d",
   "WidgetText.GpuLoading": "a carregar…",

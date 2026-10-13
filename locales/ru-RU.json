@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "Погода · Афины (по умолчанию)",
   "WidgetText.Loading": "Загрузка…",
   "WidgetText.WeatherUnavailable": "Погода недоступна",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   Ветер {1:0.#} км/ч (Бф {2})\nВлажность {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   Ветер {1:0.#} км/ч (Бф {2})\nВлажность {3}",
   "WidgetText.RamFreeFormat": "{2}%  •  свободно {0} из {1} МБ",
   "WidgetText.GpuNA": "н/д",
   "WidgetText.GpuLoading": "загрузка…",

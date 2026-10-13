@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "मौसम · एथेंस (डिफ़ॉल्ट)",
   "WidgetText.Loading": "लोड हो रहा है…",
   "WidgetText.WeatherUnavailable": "मौसम उपलब्ध नहीं",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   हवा {1:0.#} km/h (Bf {2})\nनमी {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   हवा {1:0.#} km/h (Bf {2})\nनमी {3}",
   "WidgetText.RamFreeFormat": "{2}%  •  {0} / {1} MB खाली",
   "WidgetText.GpuNA": "उपलब्ध नहीं",
   "WidgetText.GpuLoading": "लोड हो रहा है…",

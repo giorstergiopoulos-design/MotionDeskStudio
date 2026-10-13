@@ -323,7 +323,7 @@
   "WidgetText.WeatherDefaultTitle": "Hava Durumu · Atina (varsayılan)",
   "WidgetText.Loading": "Yükleniyor…",
   "WidgetText.WeatherUnavailable": "Hava durumu kullanılamıyor",
-  "WidgetText.WeatherLineFormat": "{0:0.#} °C   ·   Rüzgâr {1:0.#} km/sa (Bf {2})\nNem {3}",
+  "WidgetText.WeatherLineFormat": "{0:0.0} °C   ·   Rüzgâr {1:0.#} km/sa (Bf {2})\nNem {3}",
   "WidgetText.RamFreeFormat": "%{2}  •  {0} / {1} MB boş",
   "WidgetText.GpuNA": "yok",
   "WidgetText.GpuLoading": "yükleniyor…",
