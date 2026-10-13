@@ -869,24 +869,30 @@ function drawFog(ctx2, dt, graded, amb) {
 }
 
 // ---- rain on the "window glass"
+// ΔΙΟΡΘΩΣΗ "το εφέ των σταγόνων στην οθόνη δεν λειτουργεί" (2ο γύρο, μετά το reorder-fix
+// παραπάνω): οι σταγόνες ΟΝΤΩΣ ζωγραφίζονταν (επιβεβαιώθηκε live σε headless Chromium, πλάι-σε-
+// πλάι frame diff), αλλά με τόσο μικρή ακτίνα (1.6-6px) και τόσο χαμηλό alpha (0.05-0.22) που σε
+// πραγματική απόσταση θέασης desktop ήταν ουσιαστικά αόρατες — "δεν λειτουργεί" από την οπτική
+// γωνία του χρήστη, ακόμα κι αν τεχνικά ζωγραφιζόταν κάθε frame. Μεγαλύτερες σταγόνες + σαφώς
+// μεγαλύτερο alpha παντού, πιο κοντά στο πώς φαίνεται το αντίστοιχο εφέ του Lively Wallpaper.
 function updateGlass(dt) {
-    const want = cfg.glass && S.rain > 0.12 ? Math.round((24 + 110 * S.rain) * Math.min(1.4, W / 1920 + 0.2)) : 0;
+    const want = cfg.glass && S.rain > 0.12 ? Math.round((34 + 150 * S.rain) * Math.min(1.4, W / 1920 + 0.2)) : 0;
     while (glass.length < want && Math.random() < 0.6) {
-        glass.push({ x: Math.random() * W, y: Math.random() * H, r: (1.6 + Math.random() * 4.5) * K, vy: 0, trail: [], age: 0 });
+        glass.push({ x: Math.random() * W, y: Math.random() * H, r: (3 + Math.random() * 7) * K, vy: 0, trail: [], age: 0 });
     }
     for (let i = glass.length - 1; i >= 0; i--) {
         const d = glass[i];
         d.age += dt;
         if (want === 0 || glass.length > want + 6) { d.r -= dt * 2; if (d.r < 0.5) { glass.splice(i, 1); continue; } }
-        d.r = Math.min(10, d.r + dt * 0.045 * S.rain * (d.vy > 1 ? 0 : 1));
-        if (d.vy === 0 && d.r > 5 + Math.random() * 3) d.vy = 12 + Math.random() * 14;
+        d.r = Math.min(16, d.r + dt * 0.06 * S.rain * (d.vy > 1 ? 0 : 1));
+        if (d.vy === 0 && d.r > 8 + Math.random() * 4) d.vy = 12 + Math.random() * 14;
         if (d.vy > 0) {
             d.vy = Math.min(220, d.vy * (1 + dt * 1.3));
             d.y += d.vy * dt;
             d.x += Math.sin(d.y * 0.04 + i) * dt * 4;
             d.trail.push([d.x, d.y]); if (d.trail.length > 28) d.trail.shift();
             d.r -= dt * 0.55;
-            if (d.r < 1.4 || d.y > H + 20) { d.vy = 0; d.y = Math.random() * H * 0.9; d.x = Math.random() * W; d.r = 1.4 + Math.random() * 2; d.trail.length = 0; }
+            if (d.r < 2 || d.y > H + 20) { d.vy = 0; d.y = Math.random() * H * 0.9; d.x = Math.random() * W; d.r = (2.5 + Math.random() * 3) * K; d.trail.length = 0; }
         }
     }
 }
@@ -896,7 +902,7 @@ function drawGlass(ctx2, src) {
     ctx2.save();
     for (const d of glass) {
         if (d.trail.length > 1) {
-            ctx2.strokeStyle = 'rgba(255,255,255,0.07)'; ctx2.lineWidth = Math.max(1, d.r * 0.5); ctx2.lineCap = 'round';
+            ctx2.strokeStyle = 'rgba(255,255,255,0.16)'; ctx2.lineWidth = Math.max(1.2, d.r * 0.55); ctx2.lineCap = 'round';
             ctx2.beginPath(); d.trail.forEach((q, i) => i ? ctx2.lineTo(q[0], q[1]) : ctx2.moveTo(q[0], q[1])); ctx2.stroke();
         }
         const r = d.r, x = d.x, y = d.y;
@@ -912,11 +918,11 @@ function drawGlass(ctx2, src) {
         // rim + specular
         ctx2.beginPath(); ctx2.ellipse(x, y, r, r * 1.18, 0, 0, TAU);
         const rg = ctx2.createRadialGradient(x - r * 0.25, y - r * 0.3, r * 0.1, x, y, r * 1.2);
-        rg.addColorStop(0, 'rgba(255,255,255,0.05)'); rg.addColorStop(0.75, 'rgba(255,255,255,0.1)'); rg.addColorStop(1, 'rgba(10,16,30,0.35)');
+        rg.addColorStop(0, 'rgba(255,255,255,0.16)'); rg.addColorStop(0.75, 'rgba(255,255,255,0.24)'); rg.addColorStop(1, 'rgba(10,16,30,0.55)');
         ctx2.fillStyle = rg; ctx2.fill();
-        ctx2.strokeStyle = 'rgba(255,255,255,0.22)'; ctx2.lineWidth = 0.8; ctx2.stroke();
-        ctx2.fillStyle = 'rgba(255,255,255,0.75)';
-        ctx2.beginPath(); ctx2.arc(x - r * 0.35, y - r * 0.45, Math.max(0.6, r * 0.2), 0, TAU); ctx2.fill();
+        ctx2.strokeStyle = 'rgba(255,255,255,0.45)'; ctx2.lineWidth = 1.1; ctx2.stroke();
+        ctx2.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx2.beginPath(); ctx2.arc(x - r * 0.35, y - r * 0.45, Math.max(1, r * 0.28), 0, TAU); ctx2.fill();
     }
     ctx2.restore();
 }

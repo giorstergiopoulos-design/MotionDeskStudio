@@ -14,7 +14,8 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 #wxTime{font-size:calc(var(--s)*13vh);font-weight:200;line-height:1;letter-spacing:.01em;font-variant-numeric:tabular-nums}
 #wxDate{font-size:calc(var(--s)*3.2vh);font-weight:300;letter-spacing:.05em;margin-top:calc(var(--s)*1.2vh);opacity:.95;text-transform:capitalize}
 #wxTemp{font-size:calc(var(--s)*4.4vh);font-weight:300;margin-top:calc(var(--s)*1.8vh);min-height:1.25em;line-height:1.25}
-#wxWind{font-size:calc(var(--s)*2.6vh);font-weight:300;letter-spacing:.04em;margin-top:calc(var(--s)*.4vh);opacity:.85;min-height:1.25em;line-height:1.25}
+#wxWind{font-size:calc(var(--s)*2.6vh);font-weight:300;letter-spacing:.04em;margin-top:calc(var(--s)*.4vh);opacity:.85;line-height:1.25}
+#wxWind:empty{display:none}
 #wxCity{font-size:calc(var(--s)*2.4vh);font-weight:300;letter-spacing:.12em;margin-top:calc(var(--s)*.6vh);opacity:.75;text-transform:uppercase;min-height:1.25em;line-height:1.25}
 #pulse{position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.14),transparent 65%);opacity:0;transition:opacity 120ms linear}
 </style>
@@ -501,14 +502,19 @@ function updateWeatherInfo() {
         61: 'Rain', 63: 'Rain', 66: 'Rain', 67: 'Rain', 80: 'Rain', 81: 'Rain', 65: 'HeavyRain', 82: 'HeavyRain', 71: 'Snow', 73: 'Snow', 75: 'Snow', 77: 'Snow', 85: 'Snow', 86: 'Snow',
         95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm' })[i.code];
     const cond = (cfg.condLabels && condId && cfg.condLabels[condId]) || '';
+    // Ζητήθηκε ρητά "η θερμοκρασία να είναι με 1 δεκαδικό" (ήταν Math.round, π.χ. "18°C" -> "18.3°C").
     let tempText = '';
     if (typeof i.temp === 'number') {
         const v = cfg.fahrenheit ? i.temp * 9 / 5 + 32 : i.temp;
-        tempText = Math.round(v) + (cfg.fahrenheit ? '°F' : '°C');
+        tempText = v.toFixed(1) + (cfg.fahrenheit ? '°F' : '°C');
     }
-    document.getElementById('wxTemp').textContent = [tempText, cond].filter(Boolean).join('  ·  ');
-    // Ζητήθηκε ρητά "εμφάνιση ανέμου μαζί με την ώρα/ημερομηνία/θερμοκρασία" — βλ. info().windKmh/beaufort στο weather.js.
-    document.getElementById('wxWind').textContent = typeof i.windKmh === 'number' ? `${i.windKmh} km/h` : '';
+    // Ζητήθηκε ρητά "ο άνεμος δίπλα από τη θερμοκρασία" — πριν ήταν σε δική του ξεχωριστή γραμμή
+    // (#wxWind) κάτω από τη θερμοκρασία· τώρα ενώνεται στην ΙΔΙΑ γραμμή με το ίδιο "·" διαχωριστικό
+    // που ήδη ενώνει θερμοκρασία+συνθήκη. Το #wxWind element μένει στο DOM (θέση/CSS ανέγγιχτη) αλλά
+    // άδειο — κρύβεται μέσω CSS (:empty) ώστε να μη μείνει κενό διάστημα.
+    const windText = typeof i.windKmh === 'number' ? `${i.windKmh} km/h` : '';
+    document.getElementById('wxTemp').textContent = [tempText, windText, cond].filter(Boolean).join('  ·  ');
+    document.getElementById('wxWind').textContent = '';
     document.getElementById('wxCity').textContent = cfg.weatherCity || '';
     box.style.fontFamily = '"' + String(cfg.infoFont || 'Segoe UI Light').replace(/["\\]/g, '') + '", "Segoe UI", system-ui, sans-serif';
     box.style.left = (cfg.infoX ?? 50) + '%';
