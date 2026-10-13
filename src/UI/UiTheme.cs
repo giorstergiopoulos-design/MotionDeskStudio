@@ -213,5 +213,58 @@ namespace MotionDesk.UI
             }
             finally { Marshal.FreeHGlobal(accentPtr); }
         }
+
+        // Ζητήθηκε ρητά "κλωνοποίηση" του TranslucentTB (μόνο η ασφαλής εκδοχή, ΧΩΡΙΣ DLL injection
+        // σε άλλες διεργασίες — αποφασίστηκε ρητά να μείνουμε εκτός του injection/hooking engine).
+        // Το SetWindowCompositionAttribute δουλεύει σε OPOIOΔΗΠΟΤΕ hwnd, ακόμα κι αν ανήκει σε άλλη
+        // διεργασία: ο DWM compositor το χειρίζεται με βάση το ίδιο το hwnd, όχι κώδικα μέσα στη
+        // διεργασία-στόχο — ΙΔΙΑ ακριβώς τεχνική με αυτήν που χρησιμοποιεί το TranslucentTB για να
+        // κάνει blur την Taskbar του Explorer χωρίς καμία μορφή injection. Το κουμπί "Εφέ διαφάνειας
+        // (Windows)" στις Ρυθμίσεις γράφει ήδη το EnableTransparency registry key + κάνει broadcast
+        // (WindowsSystemSettings) — αυτό εδώ είναι το συμπλήρωμα: ζητά απευθείας από τον DWM να κάνει
+        // blur-behind την ίδια την Taskbar, που είναι πιο αξιόπιστα ορατό από το να περιμένουμε τον
+        // Explorer να διαβάσει μόνος του το registry/broadcast.
+        [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        private static System.Collections.Generic.List<IntPtr> FindTaskbarWindows()
+        {
+            var result = new System.Collections.Generic.List<IntPtr>();
+            try
+            {
+                EnumWindows((hWnd, _) =>
+                {
+                    var sb = new System.Text.StringBuilder(64);
+                    GetClassName(hWnd, sb, sb.Capacity);
+                    string cls = sb.ToString();
+                    if (cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd") result.Add(hWnd);
+                    return true;
+                }, IntPtr.Zero);
+            }
+            catch { }
+            return result;
+        }
+
+        public static void SetTaskbarTranslucency(bool enabled)
+        {
+            foreach (var hWnd in FindTaskbarWindows())
+            {
+                // AccentState 3 = ACCENT_ENABLE_BLURBEHIND (ζωγραφίζει ο ίδιος ο DWM πίσω από το
+                // παράθυρο, χωρίς tint — GradientColor=0), AccentState 0 = ACCENT_DISABLED
+                // (επαναφορά στην προεπιλεγμένη, αδιαφανή εμφάνιση της Taskbar).
+                var accent = new ACCENT_POLICY { AccentState = enabled ? 3 : 0, GradientColor = 0 };
+                int size = Marshal.SizeOf(accent);
+                IntPtr accentPtr = Marshal.AllocHGlobal(size);
+                try
+                {
+                    Marshal.StructureToPtr(accent, accentPtr, false);
+                    var data = new WINDOWCOMPOSITIONATTRIBDATA { Attribute = 19, SizeOfData = size, Data = accentPtr };
+                    SetWindowCompositionAttribute(hWnd, ref data);
+                }
+                catch { }
+                finally { Marshal.FreeHGlobal(accentPtr); }
+            }
+        }
     }
 }

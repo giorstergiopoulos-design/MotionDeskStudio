@@ -35,6 +35,11 @@ namespace MotionDesk.Services
                 // την τιμή μόνο όταν λάβουν το ίδιο broadcast που στέλνει το πραγματικό Windows Settings
                 // όταν αλλάζει αυτός ο διακόπτης, αλλιώς η αλλαγή "πιάνει" μόνο μετά από logoff/restart.
                 BroadcastSettingChange("ImmersiveColorSet");
+                // Συμπλήρωμα του registry+broadcast: ζητά απευθείας από τον DWM να κάνει blur-behind
+                // την ίδια την Taskbar (ίδια τεχνική με το TranslucentTB, χωρίς καμία μορφή injection —
+                // βλ. GlassBlur.SetTaskbarTranslucency) — πιο αξιόπιστα ορατό από το να περιμένουμε τον
+                // Explorer να εφαρμόσει μόνος του το registry/broadcast.
+                MotionDesk.UI.GlassBlur.SetTaskbarTranslucency(enabled);
                 return true;
             }
             catch { return false; }

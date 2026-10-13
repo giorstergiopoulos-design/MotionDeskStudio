@@ -28,6 +28,11 @@ namespace MotionDesk
             Application.ThreadException += (s, e) => ReportError(e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => ReportError(e.ExceptionObject as Exception);
 
+            // Sync η Taskbar translucency (GlassBlur.SetTaskbarTranslucency) με την τρέχουσα τιμή του
+            // Windows "Εφέ διαφάνειας" στην εκκίνηση — χωρίς αυτό, το blur της Taskbar θα εφαρμοζόταν
+            // μόνο αφού ο χρήστης σβήσει/ξανατσεκάρει το checkbox στις Ρυθμίσεις μία φορά.
+            try { MotionDesk.UI.GlassBlur.SetTaskbarTranslucency(Services.WindowsSystemSettings.GetTransparencyEffectsEnabled()); } catch (Exception) { }
+
             ApplicationConfiguration.Initialize();
             Application.Run(new TrayApplicationContext());
         }
