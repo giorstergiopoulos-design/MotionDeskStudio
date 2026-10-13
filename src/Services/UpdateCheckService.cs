@@ -6,10 +6,12 @@ using System.Threading.Tasks;
 
 namespace MotionDesk.Services
 {
-    // Checks the project's GitHub releases for a newer version (one small request, at most once a day, never blocks the UI).
+    // Checks the project's GitHub releases for a newer version (one small request, at most once a month, never blocks the UI).
     // The app never downloads or installs anything by itself: it only tells the user and opens the release page.
     public static class UpdateCheckService
     {
+        // Ζητήθηκε ρητά "οι ενημερώσεις να γίνονται αυτόματα κάθε μήνα" — ήταν ανά 24ωρο.
+        private static readonly TimeSpan CheckInterval = TimeSpan.FromDays(30);
         private const string LatestReleaseApi = "https://api.github.com/repos/giorstergiopoulos-design/Opsis/releases/latest";
         private static readonly HttpClient Http = CreateClient();
 
@@ -44,12 +46,12 @@ namespace MotionDesk.Services
             catch (Exception) { return new CheckResult(false, null); }   // offline, rate-limited, no releases yet…
         }
 
-        // Daily check used by the tray: returns the update when one is available and the daily limit allows a request
+        // Monthly check used by the tray: returns the update when one is available and the monthly limit allows a request
         public static async Task<UpdateInfo?> CheckIfDueAsync()
         {
             var settings = AppSettings.Load();
             if (!settings.UpdateCheckEnabled) return null;
-            if (DateTime.UtcNow - settings.LastUpdateCheckUtc < TimeSpan.FromHours(24)) return null;
+            if (DateTime.UtcNow - settings.LastUpdateCheckUtc < CheckInterval) return null;
             var result = await CheckAsync();
             if (result.Succeeded)
             {

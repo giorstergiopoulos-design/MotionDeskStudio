@@ -87,13 +87,24 @@ namespace MotionDesk.Widgets
 
             _trayIcon.DoubleClick += (s, e) => ShowMainWindow();
 
-            // ---- high-usage alerts + daily update check
+            // ---- high-usage alerts + monthly update check
             _uiContext = System.Threading.SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
             _alertTimer = new System.Windows.Forms.Timer { Interval = 5000 };
             _alertTimer.Tick += (_, _) => UsageAlertTick();
             _alertTimer.Start();
             _trayIcon.BalloonTipClicked += (_, _) => OpenPendingUpdate();
             _ = CheckForUpdateAsync();
+            // Ζητήθηκε ρητά "οι ενημερώσεις να γίνονται αυτόματα κάθε μήνα" — το παραπάνω
+            // CheckForUpdateAsync() τρέχει ΜΟΝΟ μία φορά, στην εκκίνηση. Το Opsis είναι tray-resident
+            // εφαρμογή που συχνά μένει ανοιχτή για πολύ καιρό χωρίς restart (ειδικά με "Εκκίνηση με τα
+            // Windows" ενεργό) — χωρίς περιοδικό επαναέλεγχο, ένας χρήστης που σπάνια κάνει restart θα
+            // μπορούσε να μείνει χωρίς έλεγχο ενημέρωσης για πολύ περισσότερο από έναν μήνα. Το
+            // UpdateCheckService.CheckIfDueAsync() είναι ήδη φθηνό όταν δεν είναι "due" (απλή σύγκριση
+            // ημερομηνιών, καμία κλήση δικτύου) — ασφαλές να ξανατρέχει περιοδικά σε κάθε μεγάλη
+            // συνεδρία, όχι μόνο στην εκκίνηση.
+            _updateCheckTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromHours(6).TotalMilliseconds };
+            _updateCheckTimer.Tick += (_, _) => { _ = CheckForUpdateAsync(); };
+            _updateCheckTimer.Start();
 
             _hotkeys.RegisterCtrlAlt('F', () => DeskFlipEngine.Show());
 
@@ -230,6 +241,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
 
         private System.Threading.SynchronizationContext _uiContext = null!;
         private System.Windows.Forms.Timer? _alertTimer;
+        private System.Windows.Forms.Timer? _updateCheckTimer;
         private int _cpuHighTicks, _ramHighTicks;
         private DateTime _lastAlertUtc = DateTime.MinValue;
         private string? _pendingUpdateUrl;
