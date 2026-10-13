@@ -1,5 +1,5 @@
 #define MyAppName "Opsis - Desktop Customization"
-#define MyAppVersion "1.9.2"
+#define MyAppVersion "1.9.3"
 #define MyAppPublisher "Opsis Team"
 #define MyAppExeName "Opsis.exe"
 
