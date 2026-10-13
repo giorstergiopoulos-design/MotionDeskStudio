@@ -17,11 +17,25 @@ namespace MotionDesk.Widgets
         public double Width { get; set; }
         public double Height { get; set; }
 
-        public Rectangle ToAbsolute(Rectangle workingArea) => new(
-            workingArea.X + (int)(X * workingArea.Width),
-            workingArea.Y + (int)(Y * workingArea.Height),
-            (int)(Width * workingArea.Width),
-            (int)(Height * workingArea.Height));
+        // ΔΙΟΡΘΩΣΗ πραγματικού bug ("Opsis zones να εφάπτονται ακριβώς... να μην υπάρχουν κενά
+        // μεταξύ τους" — εξακολουθούσε να υπάρχει κενό ΑΚΟΜΑ ΚΙ ΑΦΟΥ το gap μηδενίστηκε στο
+        // BuildTemplate): ο προηγούμενος κώδικας στρογγυλοποιούσε το Width/Height ΑΝΕΞΑΡΤΗΤΑ από
+        // το X/Y (δύο ξεχωριστές πράξεις (int) στρογγυλοποίησης) — δύο γειτονικές ζώνες με
+        // ΑΚΡΙΒΩΣ το ίδιο κοινό όριο σε κανονικοποιημένες συντεταγμένες (π.χ. ζώνη Α τελειώνει στο
+        // 1/3, ζώνη Β ξεκινά στο 1/3) μπορούσαν να καταλήξουν σε ΔΙΑΦΟΡΕΤΙΚΑ pixel όρια μόλις το
+        // workingArea.Width δεν διαιρείται ακριβώς με το count (π.χ. 1927px σε 3 στήλες) — κλασικό
+        // σφάλμα περικοπής floating-point, άσχετο με το ίδιο το gap. Η λύση: στρογγυλοποίηση των
+        // ΑΠΟΛΥΤΩΝ ΑΚΡΩΝ (left/top/right/bottom) αντί για στρογγυλοποίηση μήκους — δύο ζώνες με το
+        // ΙΔΙΟ κανονικοποιημένο κοινό όριο υπολογίζουν ΤΗΝ ΙΔΙΑ ακριβώς τιμή Math.Round(όριο*W) και
+        // άρα καταλήγουν πάντα στο ίδιο pixel, εγγυημένα, όχι απλώς "συνήθως".
+        public Rectangle ToAbsolute(Rectangle workingArea)
+        {
+            int left = workingArea.X + (int)Math.Round(X * workingArea.Width);
+            int top = workingArea.Y + (int)Math.Round(Y * workingArea.Height);
+            int right = workingArea.X + (int)Math.Round((X + Width) * workingArea.Width);
+            int bottom = workingArea.Y + (int)Math.Round((Y + Height) * workingArea.Height);
+            return new Rectangle(left, top, right - left, bottom - top);
+        }
     }
 
     public sealed class ZoneLayoutData
