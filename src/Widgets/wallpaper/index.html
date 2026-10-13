@@ -721,7 +721,18 @@ async function doRefresh() {
     clearInterval(weatherTimer);
     weatherTimer = null;
     if (cfg.mode === 'Weather' || cfg.weatherInfo) {
-        refreshWeather();   // και για την ένδειξη θερμοκρασίας πάνω από βίντεο/Waves/Particles
+        // ΔΙΟΡΘΩΣΗ "flickering στην εκκίνηση του weather wallpaper": το refreshWeather() ΔΕΝ
+        // περιμενόταν πριν το prepareFirstFrame()/signalReady() παρακάτω — το ΠΡΩΤΟ frame που
+        // "φωτογραφιζόταν" πριν αποκαλυφθεί το παράθυρο ζωγραφιζόταν με προεπιλεγμένο καιρό
+        // (καθαρός ουρανός, άπνοια — βλ. WeatherWallpaper computeTargets όταν data==null), και
+        // μόλις έφτανε ο πραγματικός καιρός λίγο αργότερα το σκηνικό "μεταπηδούσε" ορατά στη
+        // σωστή κατάσταση — ακριβώς αυτό που αναφέρθηκε ως flicker, διαλείπον γιατί εξαρτιόταν
+        // από το αν η cache ήταν ήδη ζεστή τη συγκεκριμένη στιγμή. Περιμένουμε ΤΗΝ ΠΡΩΤΗ
+        // προσπάθεια του refreshWeather() (συνήθως στιγμιαία αν η cache είναι ήδη ζεστή — βλ.
+        // pollWeatherOnce) με ανώτατο όριο 400ms ώστε να ΜΗΝ επανέλθει το παλιότερο πρόβλημα
+        // "το παράθυρο καθυστερεί να εμφανιστεί περιμένοντας δίκτυο" — αν δεν προλάβει, η σκηνή
+        // απλώς μεταβαίνει ομαλά στη σωστή κατάσταση όπως πριν, όχι χειρότερα από ό,τι ήταν.
+        await Promise.race([refreshWeather(), new Promise(res => setTimeout(res, 400))]);
         weatherTimer = setInterval(refreshWeather, 10 * 60 * 1000);
     }
 
