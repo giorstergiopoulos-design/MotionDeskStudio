@@ -4,14 +4,14 @@ using System.Text;
 
 namespace MotionDesk.Services
 {
-    // Small rolling log of the wallpaper "attach behind the desktop icons" steps (%APPDATA%\MotionDeskStudio\wallpaper-attach.log).
+    // Small rolling log of the wallpaper "attach behind the desktop icons" steps (%APPDATA%\Opsis\wallpaper-attach.log).
     // Purpose: the intermittent "wallpaper/icons not always visible right after a Windows boot" report can only be diagnosed with data —
     // each line records the screen, the result, how long the attach took and the system uptime (to correlate with slow boots).
     public static class AttachLog
     {
         private const long MaxBytes = 96 * 1024;
         private static readonly object Gate = new();
-        private static string LogPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "wallpaper-attach.log");
+        private static string LogPath => Path.Combine(AppPaths.AppDataFolder, "wallpaper-attach.log");
 
         public static void Write(string message)
         {

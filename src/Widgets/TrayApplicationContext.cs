@@ -81,7 +81,7 @@ namespace MotionDesk.Widgets
             {
                 Icon = LoadTrayIcon(),
                 ContextMenuStrip = contextMenu,
-                Text = "MotionDesk Studio",
+                Text = "Opsis",
                 Visible = true
             };
 
@@ -165,7 +165,7 @@ namespace MotionDesk.Widgets
         private void ApplyProfile(string name)
         {
             WorkspaceProfileService.Load(name);
-            _trayIcon.ShowBalloonTip(1500, "MotionDesk Studio", string.Format(LocalizationManager.T("Tray.ProfileAppliedFormat"), name), ToolTipIcon.Info);
+            _trayIcon.ShowBalloonTip(1500, "Opsis", string.Format(LocalizationManager.T("Tray.ProfileAppliedFormat"), name), ToolTipIcon.Info);
         }
 
         private void ToggleWallpaper()
@@ -296,7 +296,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
 
         private static Icon LoadTrayIcon()
         {
-            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "MotionDesk.ico");
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "Opsis.ico");
             return File.Exists(path) ? new Icon(path) : SystemIcons.Application;
         }
 

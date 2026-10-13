@@ -42,8 +42,7 @@ namespace MotionDesk.Widgets
         private Point _lastDownPos;
         private bool _hidden;
 
-        private static string StateFilePath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "desktopicons_hidden_state.json");
+        private static string StateFilePath => Path.Combine(Services.AppPaths.AppDataFolder, "desktopicons_hidden_state.json");
 
         public void Start()
         {

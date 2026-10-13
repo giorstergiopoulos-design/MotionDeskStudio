@@ -17,8 +17,7 @@ namespace MotionDesk.Services
     // με σταθερό, καλά τεκμηριωμένο command-line interface.
     public static class WmvConversionService
     {
-        private static string DefaultCacheDir => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "converted");
+        private static string DefaultCacheDir => Path.Combine(AppPaths.AppDataFolder, "converted");
 
         // Ο χρήστης μπορεί να επιλέξει δικό του φάκελο αποθήκευσης για ΟΛΑ τα μετατρεπόμενα
         // βίντεο (ζητήθηκε ρητά "να έχει επιλογή ο χρήστης το path αποθήκευσης") — προεπιλογή

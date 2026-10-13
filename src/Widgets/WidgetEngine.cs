@@ -420,8 +420,7 @@ namespace MotionDesk.Widgets
         }
 
         private string GetConfigFilePath() =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MotionDeskStudio", "widgets", $"{WidgetId}_config.json");
+            Path.Combine(AppPaths.AppDataFolder, "widgets", $"{WidgetId}_config.json");
 
         private async System.Threading.Tasks.Task InitializeWebViewAsync()
         {
@@ -439,7 +438,7 @@ namespace MotionDesk.Widgets
             }
             catch (Exception ex)
             {
-                if (!IsDisposed) Text = $"MotionDesk - {WidgetId}";
+                if (!IsDisposed) Text = $"Opsis - {WidgetId}";
                 System.Diagnostics.Debug.WriteLine($"WebView2 widget initialization failed: {ex}");
             }
         }

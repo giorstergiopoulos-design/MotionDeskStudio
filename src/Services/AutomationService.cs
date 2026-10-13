@@ -17,7 +17,7 @@ public sealed class AutomationService : IDisposable
     public static AutomationService Instance => _instance ??= new AutomationService();
     private readonly System.Windows.Forms.Timer _timer = new() { Interval = 10000 };
     private readonly Dictionary<string, DateTime> _lastApplied = new(StringComparer.OrdinalIgnoreCase);
-    private readonly string _path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "automation.json");
+    private readonly string _path = Path.Combine(AppPaths.AppDataFolder, "automation.json");
     public event EventHandler<string>? StatusChanged;
     public List<AutomationRule> Rules { get; } = new();
 

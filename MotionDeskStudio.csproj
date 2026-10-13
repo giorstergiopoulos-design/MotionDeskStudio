@@ -7,10 +7,14 @@
     <SelfContained>false</SelfContained>
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>false</UseWPF>
+    <!-- RootNamespace ΣΚΟΠΙΜΑ παραμένει "MotionDesk" στη μετονομασία σε "Opsis": καθαρά εσωτερικό
+         C# identifier, αόρατο στον χρήστη — το να το μετονομάσεις θα σήμαινε edit σε ~70+ αρχεία
+         (κάθε namespace/using) για μηδενικό ορατό όφελος. Το AssemblyName (-> exe filename) ΑΛΛΑΖΕΙ
+         γιατί αυτό ΕΙΝΑΙ ορατό (Task Manager, Program Files, συντομεύσεις). -->
     <RootNamespace>MotionDesk</RootNamespace>
-    <AssemblyName>MotionDesk</AssemblyName>
+    <AssemblyName>Opsis</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <ApplicationIcon>assets\MotionDesk.ico</ApplicationIcon>
+    <ApplicationIcon>assets\Opsis.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- .NET 10 WinForms SDK: WFO1000 ζητάει [DesignerSerializationVisibility] σε κάθε public
@@ -22,7 +26,7 @@
     <Version>1.9.2</Version>
     <AssemblyVersion>1.9.2.0</AssemblyVersion>
     <FileVersion>1.9.2.0</FileVersion>
-    <Product>MotionDesk Studio</Product>
+    <Product>Opsis - Desktop Customization</Product>
     <!-- Ζητήθηκε ρητά "η εφαρμογή να μην περνά ως false positive". Πραγματική, εγγυημένη λύση
          είναι μόνο ένα πληρωμένο code-signing certificate (βλ. PROJECT_STATE.md — παραλείφθηκε
          αυτόν τον γύρο, δεν υπάρχει certificate διαθέσιμο). Χωρίς αυτό, τα παρακάτω είναι η
@@ -31,10 +35,10 @@
          Description) — το project ήδη ΔΕΝ κάνει trimming/single-file/ReadyToRun/obfuscation
          (άλλος συνηθισμένος λόγος false positive), οπότε δεν χρειάζεται αλλαγή εκεί.
     -->
-    <Company>MotionDesk Team</Company>
-    <Authors>MotionDesk Team</Authors>
-    <Copyright>Copyright © 2026 MotionDesk Team</Copyright>
-    <Description>MotionDesk Studio — animated desktop wallpaper and workspace customization for Windows.</Description>
+    <Company>Opsis Team</Company>
+    <Authors>Opsis Team</Authors>
+    <Copyright>Copyright © 2026 Opsis Team</Copyright>
+    <Description>Opsis - Desktop Customization — animated desktop wallpaper and workspace customization for Windows.</Description>
   </PropertyGroup>
 
   <!-- Single native UI stack: WinForms. WPF was removed to reduce framework overhead and complexity. -->
@@ -73,9 +77,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>locales\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </None>
-    <None Include="assets\MotionDesk.ico">
+    <None Include="assets\Opsis.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>assets\MotionDesk.ico</Link>
+      <Link>assets\Opsis.ico</Link>
     </None>
     <None Include="assets\tray\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -41,7 +41,7 @@ namespace MotionDesk.Widgets
         private const uint EVENT_SYSTEM_MOVESIZESTART = 0x000A;
         private const uint EVENT_SYSTEM_MOVESIZEEND = 0x000B;
         private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
-        // ΠΡΙΝ χρησιμοποιούσαμε WINEVENT_SKIPOWNPROCESS και έτσι το ίδιο το παράθυρο του MotionDesk δεν κούμπωνε ποτέ σε ζώνη
+        // ΠΡΙΝ χρησιμοποιούσαμε WINEVENT_SKIPOWNPROCESS και έτσι το ίδιο το παράθυρο του Opsis δεν κούμπωνε ποτέ σε ζώνη
         // (ενώ τα παράθυρα όλων των άλλων εφαρμογών κούμπωναν). Τώρα τα events της δικής μας διεργασίας φτάνουν εδώ και τα
         // φιλτράρει το IsCandidateWindow: επιτρέπεται ΜΟΝΟ το κύριο παράθυρο (AllowOwnWindow), όχι widgets/containers/overlays.
         private const uint SWP_NOZORDER = 0x0004;

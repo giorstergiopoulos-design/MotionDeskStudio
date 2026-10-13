@@ -156,9 +156,7 @@ namespace MotionDesk.Widgets
             e.Graphics.DrawPath(pen, path);
         }
 
-        private static string ConfigPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MotionDeskStudio", "deskstrip", "config.json");
+        private static string ConfigPath => Path.Combine(AppPaths.AppDataFolder, "deskstrip", "config.json");
 
         private sealed class DeskStripState { public List<string> Paths { get; set; } = new(); }
 

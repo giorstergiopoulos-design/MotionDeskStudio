@@ -25,8 +25,14 @@ namespace MotionDesk.Services
     {
         private static string ConfigDir => @"C:\Program Files\EqualizerAPO\config";
         private static string ConfigFile => Path.Combine(ConfigDir, "config.txt");
-        private static string MotionDeskIncludeFile => Path.Combine(ConfigDir, "MotionDesk.txt");
-        private const string IncludeLine = "Include: MotionDesk.txt";
+        private static string MotionDeskIncludeFile => Path.Combine(ConfigDir, "Opsis.txt");
+        private const string IncludeLine = "Include: Opsis.txt";
+        // Από τη μετονομασία "MotionDesk" -> "Opsis": ο παλιός include-γραμμή/αρχείο καθαρίζονται
+        // στο επόμενο ApplyPreset ώστε να μη μείνει ένα "ορφανό" παλιό preset ενεργό στο σύστημα
+        // του χρήστη για πάντα (το config.txt του EqualizerAPO είναι εξωτερικό, κοινόχρηστο αρχείο —
+        // δεν το διαβάζει κανείς άλλος μέσα στην εφαρμογή για να το μεταναστεύσει αλλού).
+        private static string LegacyIncludeFile => Path.Combine(ConfigDir, "MotionDesk.txt");
+        private const string LegacyIncludeLine = "Include: MotionDesk.txt";
 
         public static bool IsInstalled => Directory.Exists(ConfigDir) && File.Exists(ConfigFile);
 
@@ -37,7 +43,7 @@ namespace MotionDesk.Services
         }
 
         // Γράφει το preset ως πραγματικά parametric EQ filters (Equalizer APO syntax) στο δικό
-        // μας MotionDesk.txt, και εγγυάται ότι το config.txt το συμπεριλαμβάνει (Include) — δεν
+        // μας Opsis.txt, και εγγυάται ότι το config.txt το συμπεριλαμβάνει (Include) — δεν
         // πειράζει τίποτα άλλο που έχει ήδη ο χρήστης στο config.txt του.
         public static (bool Success, string Message) ApplyPreset(string presetName)
         {
@@ -55,13 +61,26 @@ namespace MotionDesk.Services
             try
             {
                 File.WriteAllText(MotionDeskIncludeFile,
-                    "// Δημιουργήθηκε από το MotionDesk Studio (Audio Enhancement) — μη το επεξεργάζεστε χειροκίνητα, αντικαθίσταται σε κάθε αλλαγή preset.\n" + filters);
+                    "// Δημιουργήθηκε από το Opsis (Audio Enhancement) — μη το επεξεργάζεστε χειροκίνητα, αντικαθίσταται σε κάθε αλλαγή preset.\n" + filters);
 
                 string existing = File.ReadAllText(ConfigFile);
-                if (!existing.Split('\n').Select(l => l.Trim()).Contains(IncludeLine))
+                var rawLines = existing.Split('\n').ToList();
+                // Αφαιρεί ΜΟΝΟ τη γραμμή include του παλιού ονόματος (ακριβές trimmed match), αφήνει
+                // οτιδήποτε άλλο του χρήστη στο config.txt ανέγγιχτο — ίδια πειθαρχία με το αρχικό
+                // "δεν πειράζουμε τίποτα άλλο" πριν τη μετονομασία.
+                int removed = rawLines.RemoveAll(l => l.Trim() == LegacyIncludeLine);
+                try { File.Delete(LegacyIncludeFile); } catch (Exception) { }
+
+                bool hasNewInclude = rawLines.Any(l => l.Trim() == IncludeLine);
+                if (removed > 0 || !hasNewInclude)
                 {
-                    string sep = existing.Length > 0 && !existing.EndsWith("\n") ? "\n" : "";
-                    File.AppendAllText(ConfigFile, sep + IncludeLine + "\n");
+                    existing = string.Join("\n", rawLines);
+                    if (!hasNewInclude)
+                    {
+                        string sep = existing.Length > 0 && !existing.EndsWith("\n") ? "\n" : "";
+                        existing += sep + IncludeLine + "\n";
+                    }
+                    File.WriteAllText(ConfigFile, existing);
                 }
                 return (true, "OK");
             }

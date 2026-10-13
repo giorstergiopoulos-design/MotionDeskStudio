@@ -3,7 +3,7 @@ using Microsoft.Win32;
 namespace MotionDesk.Services
 {
     // Ανιχνεύει το τρέχον Windows Light/Dark app theme (Settings > Personalization > Colors)
-    // ώστε η MotionDesk να μπορεί να ακολουθεί αυτόματα το θέμα των Windows ("Follow Windows").
+    // ώστε το Opsis να μπορεί να ακολουθεί αυτόματα το θέμα των Windows ("Follow Windows").
     public static class ThemeService
     {
         private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";

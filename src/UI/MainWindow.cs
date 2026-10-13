@@ -37,7 +37,7 @@ namespace MotionDesk.UI
         private Panel _content = null!;
         private Label _pageTitle = null!;
         private StatusStrip _status = null!;
-        private readonly ToolStripStatusLabel _statusLabel = new("MotionDesk ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+        private readonly ToolStripStatusLabel _statusLabel = new("Opsis ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
         private readonly System.Windows.Forms.Timer _statusTimer;
         private readonly System.Windows.Forms.Timer _brandPulseTimer;
         private double _brandPulseT;
@@ -84,7 +84,7 @@ namespace MotionDesk.UI
             WidgetSnapEngine.EnableGridSnap = appSettings.GridSnap;
             WidgetSnapEngine.SnapThreshold = Math.Clamp(appSettings.SnapThreshold, 5, 50);
             WidgetSnapEngine.GridSize = Math.Clamp(appSettings.GridSize, 5, 100);
-            Text = "MotionDesk Studio";
+            Text = "Opsis";
             Icon = LoadApplicationIcon();
             StartPosition = FormStartPosition.CenterScreen;
             // Μεγαλύτερο προεπιλεγμένο μέγεθος — ζητήθηκε ρητά ώστε να χωράει άνετα η νέα σελίδα
@@ -271,7 +271,7 @@ namespace MotionDesk.UI
             _sidebar.Controls.Add(_sidebarLayout);
 
             _brandPanel = new Panel { Dock = DockStyle.Fill };
-            // Το ίδιο σχέδιο με το MotionDesk.ico (τετράγωνο, στρογγυλεμένο, gradient, δύο
+            // Το ίδιο σχέδιο με το Opsis.ico (τετράγωνο, στρογγυλεμένο, gradient, δύο
             // κυματιστές γραμμές) αντί για απλό κύκλο. Οι γραμμές μετατοπίζουν φάση με τον
             // χρόνο (πραγματική κίνηση κύματος) — το halo έχει ΣΤΑΘΕΡΟ μέγεθος (μόνο η
             // διαφάνειά του παλλεται) ώστε να μη δίνει εντύπωση "μεγέθυνσης/σμίκρυνσης".
@@ -324,10 +324,10 @@ namespace MotionDesk.UI
             };
             _brandPanel.Controls.Add(_brandDot);
             const int brandTextX = logoSize + 10;
-            _brandLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 3), Text = "MotionDesk", Font = new Font("Segoe UI", 15.5f, FontStyle.Bold), AutoEllipsis = true };
+            _brandLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 3), Text = "Opsis", Font = new Font("Segoe UI", 15.5f, FontStyle.Bold), AutoEllipsis = true };
             _brandPanel.Controls.Add(_brandLabel);
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            _brandSubLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 32), Text = $"STUDIO   v{version?.ToString(3) ?? "1.0.0"}", Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
+            _brandSubLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 32), Text = $"DESKTOP CUSTOMIZATION   v{version?.ToString(3) ?? "1.0.0"}", Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
             _brandPanel.Controls.Add(_brandSubLabel);
             _sidebarLayout.Controls.Add(_brandPanel, 0, 0);
 
@@ -869,7 +869,7 @@ namespace MotionDesk.UI
         {
             _currentPageKey = "Dashboard";
             var panel = CreatePagePanel();
-            AddHeading(panel, "MotionDesk Studio");
+            AddHeading(panel, "Opsis — Desktop Customization");
             AddText(panel, LocalizationManager.T("Dashboard.Intro"));
 
             var metrics = SystemMonitorService.Instance.GetSnapshot();
@@ -1252,7 +1252,7 @@ namespace MotionDesk.UI
 
             // Πραγματικό DSP (bass/mid/treble/volume) πάνω στον ΔΙΚΟ ΜΑΣ ήχο του wallpaper video,
             // μέσω Web Audio API στο wallpaper/index.html (ensureAudioGraph/applyAudioConfig) — όχι
-            // system-wide, μόνο η αναπαραγωγή του MotionDesk. Προεπιλογή ΚΛΕΙΣΤΟ (AudioEnabled
+            // system-wide, μόνο η αναπαραγωγή του Opsis. Προεπιλογή ΚΛΕΙΣΤΟ (AudioEnabled
             // false): το wallpaper ήταν πάντα σιωπηλό πριν, δεν αλλάζει συμπεριφορά χωρίς ρητή
             // ενεργοποίηση από τον χρήστη.
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionAudio"));
@@ -2023,7 +2023,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             AddButtonGrid(panel, (LocalizationManager.T("Personalization.SaveCurrentTheme"), (_, _) =>
             {
                 using var dialog = new Form { Text = LocalizationManager.T("Personalization.ThemeNamePrompt"), StartPosition = FormStartPosition.CenterParent, Size = new Size(420, 150), FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
-                var box = new TextBox { Text = "MotionDesk Custom", Dock = DockStyle.Top, Margin = new Padding(12) };
+                var box = new TextBox { Text = "Opsis Custom", Dock = DockStyle.Top, Margin = new Padding(12) };
                 var ok = new Button { Text = LocalizationManager.T("Common.OK"), DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 34 };
                 dialog.Controls.Add(box);
                 dialog.Controls.Add(ok);
@@ -2042,7 +2042,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             (LocalizationManager.T("Personalization.CreateTechGridTheme"), (_, _) =>
             {
                 string png = ThemePackageEngine.GenerateTechWallpaperPng();
-                ThemePackageEngine.SaveCurrentAsTheme("MotionDesk Tech Grid", png);
+                ThemePackageEngine.SaveCurrentAsTheme("Opsis Tech Grid", png);
                 RefreshThemeList();
                 _statusLabel.Text = LocalizationManager.T("Personalization.TechGridThemeCreatedStatus");
             }));
@@ -3518,7 +3518,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                         installBtn.Text = LocalizationManager.T(nowInstalled ? "Settings.DependencyReinstall" : "Settings.DependencyInstall");
                         installBtn.Enabled = true;
                         if (!success && !nowInstalled)
-                            MessageBox.Show(string.Format(LocalizationManager.T("Settings.DependencyInstallFailedFormat"), dep.Name, output), "MotionDesk", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            MessageBox.Show(string.Format(LocalizationManager.T("Settings.DependencyInstallFailedFormat"), dep.Name, output), "Opsis", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     };
                     row.Controls.Add(installBtn);
                 }
@@ -3693,7 +3693,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
 
         private static Icon LoadApplicationIcon()
         {
-            var path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "MotionDesk.ico");
+            var path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "Opsis.ico");
             return File.Exists(path) ? new Icon(path) : SystemIcons.Application;
         }
     }

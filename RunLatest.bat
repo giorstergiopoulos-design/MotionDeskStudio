@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 > nul
-title MotionDesk Studio - Run Latest (no install)
+title Opsis - Run Latest (no install)
 
 :: Μετακίνηση στον φάκελο όπου βρίσκεται αυτό το .bat, ανεξάρτητα από πού εκτελείται.
 cd /d "%~dp0"
@@ -14,5 +14,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [2/2] Εκκίνηση MotionDesk Studio...
-start "" "%~dp0bin\Release\net10.0-windows10.0.19041.0\win-x64\MotionDesk.exe"
+echo [2/2] Εκκίνηση Opsis...
+start "" "%~dp0bin\Release\net10.0-windows10.0.19041.0\win-x64\Opsis.exe"

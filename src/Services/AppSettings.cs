@@ -57,7 +57,7 @@ namespace MotionDesk.Services
         // συμπεριφορά να ΜΗΝ αλλάζει για όσους το χρησιμοποιούσαν ήδη χωρίς να το ξέρουν.
         public bool QuickHideDoubleClickEnabled { get; set; } = true;
 
-        private static string ConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "settings.json");
+        private static string ConfigPath => Path.Combine(AppPaths.AppDataFolder, "settings.json");
         public static AppSettings Load()
         {
             try { if (File.Exists(ConfigPath)) return JsonSerializer.Deserialize<AppSettings>(MotionDesk.Services.AtomicFile.ReadAllText(ConfigPath)) ?? new AppSettings(); }

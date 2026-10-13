@@ -21,7 +21,7 @@ public sealed class WallpaperSettingsSnapshot
 
 public static class WorkspaceProfileService
 {
-    private static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "profiles");
+    private static string Root => Path.Combine(AppPaths.AppDataFolder, "profiles");
 
     public static IReadOnlyList<string> ListProfiles()
     {

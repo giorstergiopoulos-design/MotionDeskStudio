@@ -1000,16 +1000,16 @@ Always verify before declaring success.
 
 ---
 
-## Project-specific notes (MotionDesk Studio)
+## Project-specific notes (Opsis, formerly "MotionDesk Studio")
 
 Carried over from the previous project-specific CLAUDE.md, corrected against actual source (rule 1: source code overrides stale docs):
 
-- **Application name:** MotionDesk Studio
+- **Application name:** Opsis - Desktop Customization (renamed 2026-10-13 from "MotionDesk Studio" — see the v2.0 rename entry in `PROJECT_STATE.md` for what did/didn't change: exe is now `Opsis.exe`, AppData folder is `%AppData%\Opsis` with automatic one-time migration from the old `%AppData%\MotionDeskStudio`, GitHub repo is now `giorstergiopoulos-design/Opsis`. The `.csproj` **file itself** is still named `MotionDeskStudio.csproj` and the C# `RootNamespace`/`namespace MotionDesk.*` are still `MotionDesk` — both deliberately left alone as invisible-to-the-user, high-churn-for-no-benefit renames).
 - **Target platform:** Windows 10 / Windows 11
-- **Framework:** .NET 8.0 — **WinForms** (not WPF as the old file said; verify against `System.Windows.Forms` usage throughout `src/`), with Win32 interop (P/Invoke) for the WorkerW/DWM wallpaper engine and WebView2 for HTML-based wallpaper/widget content.
+- **Framework:** .NET 10.0 (upgraded from .NET 8 — see v1.9.0 in `PROJECT_STATE.md`) — **WinForms** (not WPF as a much older version of this file said; verify against `System.Windows.Forms` usage throughout `src/`), with Win32 interop (P/Invoke) for the WorkerW/DWM wallpaper engine and WebView2 for HTML-based wallpaper/widget content.
 - **Build:** `dotnet build MotionDeskStudio.csproj -c Release`
 - **Run:** `RunLatest.bat`, or `dotnet run --project MotionDeskStudio.csproj`
 - **Publish for installer:** `dotnet publish MotionDeskStudio.csproj -c Release -r win-x64 --self-contained false`
-- **Installer:** `installer.iss`, compiled via `"C:\Users\gstrj\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer.iss` → `Output\MotionDeskStudioSetup.exe`
+- **Installer:** `installer.iss`, compiled via `"C:\Users\gstrj\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer.iss` → `Output\OpsisSetup.exe`
 - The WorkerW/Progman desktop-injection engine, fullscreen-pause, and DWM Mica/Acrylic/DPI items from the old file's "Primary Priority Task" are already implemented — see `PROJECT_STATE.md` for current status instead of treating them as pending.
 - **Standing rule (user-requested 2026-10-01): before every major build/installer, do an in-depth, click-through live test of every control on any page touched this session** — not just a clean `dotnet build`. This is how the wallpaper-playlist stuck-bug, the WMV/multi-video-import false-negative, the flag-icon rendering bug, and the Ctrl+Alt+Arrow hotkey conflict were actually found; a clean build alone would have shipped all four silently. When verifying via synthetic input automation: (1) always confirm window identity (exact title + pid) before clicking — never click blind coordinates on an assumed-foregrounded window; (2) for file dialogs, prefer genuine Ctrl+Click multi-select over typing multiple quoted paths — the latter is unreliable with Windows' common dialog and produces false bug reports; (3) check the actual settings JSON on disk as ground truth when the UI's own feedback is ambiguous; (4) revert/clean up any test data written into the user's real config files afterward.

@@ -1,7 +1,7 @@
-#define MyAppName "MotionDesk Studio"
+#define MyAppName "Opsis - Desktop Customization"
 #define MyAppVersion "1.9.2"
-#define MyAppPublisher "MotionDesk Team"
-#define MyAppExeName "MotionDesk.exe"
+#define MyAppPublisher "Opsis Team"
+#define MyAppExeName "Opsis.exe"
 
 [Setup]
 ; Μοναδικό GUID για την εφαρμογή (μην το αλλάξεις σε μελλοντικές εκδόσεις)
@@ -12,18 +12,18 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=Output
-OutputBaseFilename=MotionDeskStudioSetup
+OutputBaseFilename=OpsisSetup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-AppMutex=MotionDeskStudio.SingleInstance
+AppMutex=Opsis.SingleInstance
 ; Η εφαρμογή είναι win-x64 (framework-dependent, native WebView2Loader.dll x64) — ο installer
 ; πρέπει να τρέχει ΜΟΝΟ σε 64-bit-ικανά συστήματα, όχι σε καθαρό x86. Το "x64compatible" είναι
 ; το σύγχρονο identifier (το απλό "x64" είναι πλέον deprecated στο Inno Setup 6.7+).
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-SetupIconFile=assets\MotionDesk.ico
+SetupIconFile=assets\Opsis.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 DisableWelcomePage=no
 
@@ -301,22 +301,29 @@ begin
     WizardForm.WelcomeLabel2.Caption := FmtMessage(CustomMessage('UpdateDetected'), [sPrevVersion]);
 end;
 
-// Καθαρισμός %AppData%\MotionDeskStudio στην απεγκατάσταση (ρυθμίσεις, wallpaper.json,
+// Καθαρισμός %AppData%\Opsis στην απεγκατάσταση (ρυθμίσεις, wallpaper.json,
 // αποθηκευμένα profiles/DeskZones/DeskContainers) — ζητήθηκε ρητά, αλλά με ερώτηση επιβεβαίωσης
 // πριν διαγραφούν πιθανά δεδομένα που ο χρήστης θέλει να κρατήσει. Το prompt χρησιμοποιεί πλέον
 // CustomMessage (EL/EN) αντί για hardcoded ελληνικό κείμενο, ώστε να εμφανίζεται στη γλώσσα που
-// επέλεξε ο χρήστης κατά την εγκατάσταση.
+// επέλεξε ο χρήστης κατά την εγκατάσταση. Ελέγχει ΚΑΙ το παλιό %AppData%\MotionDeskStudio (από τη
+// μετονομασία "MotionDesk Studio" -> "Opsis") — η εφαρμογή το μεταφέρει αυτόματα στο νέο όνομα στην
+// πρώτη εκκίνηση, αλλά αν ο χρήστης κάνει uninstall ΠΡΙΝ ποτέ ξανατρέξει τη νέα έκδοση, ο παλιός
+// φάκελος θα υπάρχει ακόμα με το παλιό όνομα.
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  AppDataPath: String;
+  AppDataPath, LegacyAppDataPath: String;
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    AppDataPath := ExpandConstant('{userappdata}\MotionDeskStudio');
-    if DirExists(AppDataPath) then
+    AppDataPath := ExpandConstant('{userappdata}\Opsis');
+    LegacyAppDataPath := ExpandConstant('{userappdata}\MotionDeskStudio');
+    if DirExists(AppDataPath) or DirExists(LegacyAppDataPath) then
     begin
       if MsgBox(CustomMessage('KeepDataPromptText') + #13#10 + #13#10 + AppDataPath, mbConfirmation, MB_YESNO) = IDYES then
-        DelTree(AppDataPath, True, True, True);
+      begin
+        if DirExists(AppDataPath) then DelTree(AppDataPath, True, True, True);
+        if DirExists(LegacyAppDataPath) then DelTree(LegacyAppDataPath, True, True, True);
+      end;
     end;
   end;
 end;

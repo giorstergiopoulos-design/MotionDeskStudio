@@ -10,7 +10,7 @@ namespace MotionDesk.Services
     // The app never downloads or installs anything by itself: it only tells the user and opens the release page.
     public static class UpdateCheckService
     {
-        private const string LatestReleaseApi = "https://api.github.com/repos/giorstergiopoulos-design/MotionDeskStudio/releases/latest";
+        private const string LatestReleaseApi = "https://api.github.com/repos/giorstergiopoulos-design/Opsis/releases/latest";
         private static readonly HttpClient Http = CreateClient();
 
         public sealed record UpdateInfo(Version Latest, string Tag, string Url);
@@ -19,7 +19,7 @@ namespace MotionDesk.Services
         private static HttpClient CreateClient()
         {
             var c = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
-            c.DefaultRequestHeaders.UserAgent.ParseAdd("MotionDeskStudio-UpdateCheck");
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("Opsis-UpdateCheck");
             c.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
             return c;
         }

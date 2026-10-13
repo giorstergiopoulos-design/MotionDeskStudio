@@ -1,4 +1,4 @@
-// MotionDesk Studio — "Weather" wallpaper: a procedural scene driven by the real time of day (sun/moon/stars,
+// Opsis — "Weather" wallpaper: a procedural scene driven by the real time of day (sun/moon/stars,
 // sunrise & sunset computed from the location) and the live weather (clouds, rain, snow, fog, thunderstorms).
 // Everything is drawn with Canvas 2D — no external assets, no network access from this file (the C# bridge supplies the weather).
 // Public API (used by index.html): WeatherWallpaper.setConfig(cfg), .setWeather(data), .resize(w, h, dpr), .draw(dtSeconds, profile).

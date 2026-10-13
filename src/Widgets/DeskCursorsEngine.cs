@@ -37,7 +37,7 @@ namespace MotionDesk.Widgets
             else key.SetValue(registryName, path, RegistryValueKind.ExpandString);
         }
 
-        public static void ApplyNow(string schemeName = "MotionDesk Custom")
+        public static void ApplyNow(string schemeName = "Opsis Custom")
         {
             using (var key = Registry.CurrentUser.OpenSubKey(CursorsKeyPath, true))
                 key?.SetValue(string.Empty, schemeName, RegistryValueKind.String);

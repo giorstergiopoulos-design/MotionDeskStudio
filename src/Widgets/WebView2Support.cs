@@ -34,9 +34,12 @@ namespace MotionDesk.Widgets
 
         private static async Task<CoreWebView2Environment> CreateEnvironmentAsyncCore()
         {
+            // (LocalApplicationData, όχι ApplicationData/AppPaths.AppDataFolder: cache δεδομένα του
+            // WebView2 runtime, όχι ρυθμίσεις χρήστη — σωστά τοπικό/μη-roaming, ξαναδημιουργείται
+            // αβλαβώς αν χαθεί, οπότε δεν χρειάζεται μετάβαση από το παλιό όνομα.)
             string userDataFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "MotionDeskStudio", "WebView2");
+                "Opsis", "WebView2");
             Directory.CreateDirectory(userDataFolder);
             return await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder).ConfigureAwait(true);
         }

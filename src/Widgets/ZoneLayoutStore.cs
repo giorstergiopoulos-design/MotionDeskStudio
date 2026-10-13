@@ -39,9 +39,7 @@ namespace MotionDesk.Widgets
     // (ZoneOverlayWindow) εμφανίζεται ΜΟΝΟ όσο κρατάς Shift ενώ σέρνεις ένα παράθυρο.
     public static class ZoneLayoutStore
     {
-        private static string ConfigPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MotionDeskStudio", "zonelayouts.json");
+        private static string ConfigPath => Path.Combine(Services.AppPaths.AppDataFolder, "zonelayouts.json");
 
         private static Dictionary<string, ZoneLayoutData>? _cache;
 

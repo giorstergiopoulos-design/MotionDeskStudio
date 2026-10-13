@@ -51,7 +51,7 @@ namespace MotionDesk.Services
         // ΔΙΟΡΘΩΣΗ πραγματικού bug ("κολλάει η εφαρμογή όταν κάνω κλικ στο checkbox διαφάνειας"):
         // το SendMessageTimeout μπλοκάρει το thread του καλούντος μέχρι ΚΑΘΕ top-level παράθυρο στο
         // σύστημα να απαντήσει ή να λήξει το timeout (ήταν 2000ms/παράθυρο) — με δεκάδες ανοιχτά
-        // παράθυρα (browser, IDE, κ.λπ.) αυτό μπλόκαρε ορατά το UI thread της MotionDesk για
+        // παράθυρα (browser, IDE, κ.λπ.) αυτό μπλόκαρε ορατά το UI thread του Opsis για
         // δευτερόλεπτα. Το SendNotifyMessage στέλνει το ίδιο broadcast αλλά επιστρέφει αμέσως χωρίς
         // να περιμένει απάντηση — ο ενδεδειγμένος, μη-μπλοκαριστικός τρόπος για broadcast ρυθμίσεων.
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

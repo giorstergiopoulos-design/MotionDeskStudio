@@ -16,8 +16,7 @@ namespace MotionDesk.Services
     {
         public static readonly string[] SupportedArchiveExtensions = { ".zip", ".7z" };
 
-        private static string ExtractRootDir => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "extracted_playlists");
+        private static string ExtractRootDir => Path.Combine(AppPaths.AppDataFolder, "extracted_playlists");
 
         public static bool IsArchive(string path) =>
             SupportedArchiveExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);

@@ -21,7 +21,7 @@ namespace MotionDesk
 
             // Single-instance: δύο ταυτόχρονες εκτελέσεις θα πάλευαν για τα ίδια global hotkeys,
             // θα έφτιαχναν διπλά wallpaper windows/tray icons και θα έγραφαν τα ίδια config αρχεία.
-            using var singleInstance = new System.Threading.Mutex(true, @"Local\MotionDeskStudio.SingleInstance", out bool isFirst);
+            using var singleInstance = new System.Threading.Mutex(true, @"Local\Opsis.SingleInstance", out bool isFirst);
             if (!isFirst) return;
 
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
@@ -44,9 +44,7 @@ namespace MotionDesk
             if (ex == null) return;
             try
             {
-                var logPath = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "MotionDeskStudio", "crash.log");
+                var logPath = System.IO.Path.Combine(Services.AppPaths.AppDataFolder, "crash.log");
                 System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(logPath)!);
                 System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:O}] {ex}\n\n");
             }
@@ -57,7 +55,7 @@ namespace MotionDesk
             if ((DateTime.Now - _lastErrorDialog).TotalSeconds < 30) return;
             _lastErrorDialog = DateTime.Now;
 
-            MessageBox.Show(string.Format(MotionDesk.Services.LocalizationManager.T("Dialog.UnhandledErrorFormat"), ex.Message), "MotionDesk Studio",
+            MessageBox.Show(string.Format(MotionDesk.Services.LocalizationManager.T("Dialog.UnhandledErrorFormat"), ex.Message), "Opsis",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }

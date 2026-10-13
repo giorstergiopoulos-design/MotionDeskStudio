@@ -314,9 +314,7 @@ namespace MotionDesk.Widgets
             ".avi", ".mkv", ".wmv", ".mpeg", ".mpg", ".m2ts", ".ts"
         };
 
-        private static string ConfigPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MotionDeskStudio", "wallpaper.json");
+        private static string ConfigPath => Path.Combine(AppPaths.AppDataFolder, "wallpaper.json");
 
         public static WallpaperSettings Load()
         {
@@ -461,7 +459,7 @@ namespace MotionDesk.Widgets
     }
 
     // Ζωντανή επιφάνεια εργασίας πίσω από τα εικονίδια: είτε ένα βίντεο (ή playlist βίντεο)
-    // είτε τα procedural, theme-aware "MotionDesk Waves" — ένα ΚΑΙ ΜΟΝΟ engine (WebView2/Canvas)
+    // είτε τα procedural, theme-aware "Opsis Waves" — ένα ΚΑΙ ΜΟΝΟ engine (WebView2/Canvas)
     // χειρίζεται και τις δύο περιπτώσεις, ώστε να μην υπάρχουν πολλαπλά ασύνδετα rendering paths.
     public sealed class WallpaperWindow : Form
     {

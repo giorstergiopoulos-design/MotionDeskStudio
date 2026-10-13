@@ -718,8 +718,7 @@ namespace MotionDesk.Widgets
         private void ApplyGlassBlur() => GlassBlur.Apply(Handle, AccentColor, _backgroundOpacity);
 
         private string GetConfigFilePath() =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MotionDeskStudio", "deskcontainers", $"{_containerId}_config.json");
+            Path.Combine(AppPaths.AppDataFolder, "deskcontainers", $"{_containerId}_config.json");
 
         private void SaveState()
         {
