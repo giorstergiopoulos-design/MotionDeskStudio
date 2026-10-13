@@ -1,4 +1,4 @@
-MotionDesk Studio
+Opsis - Desktop Customization
 
 A free, open-source desktop customization and workspace shell for Windows 10/11 - live animated
 wallpapers, floating desktop widgets, snap-to-zone window layouts, and safe system-icon

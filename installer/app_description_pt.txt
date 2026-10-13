@@ -1,4 +1,4 @@
-﻿MotionDesk Studio
+﻿Opsis - Desktop Customization
 
 Uma shell gratuita e de código aberto de personalização do ambiente de trabalho e da área de trabalho para
 Windows 10/11: fundos animados em direto, widgets flutuantes, disposições de janelas com alinhamento a zonas

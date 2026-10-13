@@ -1,4 +1,4 @@
-﻿MotionDesk Studio
+﻿Opsis - Desktop Customization
 
 Eine kostenlose, quelloffene Desktop-Anpassungs- und Arbeitsbereichs-Shell für Windows 10/11 - animierte
 Live-Hintergründe, schwebende Desktop-Widgets, Fensterlayouts mit Einrasten in Zonen und sichere

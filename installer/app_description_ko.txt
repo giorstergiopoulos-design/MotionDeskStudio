@@ -1,4 +1,4 @@
-﻿MotionDesk Studio
+﻿Opsis - Desktop Customization
 
 Windows 10/11용 무료 오픈 소스 바탕 화면 사용자 지정 및 작업 영역 셸입니다. 라이브 애니메이션 배경 화면,
 떠 있는 바탕 화면 위젯, 영역 맞춤 창 레이아웃, 안전한 시스템 아이콘 개인 설정을 가벼운 앱 하나에

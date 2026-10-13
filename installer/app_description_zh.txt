@@ -1,4 +1,4 @@
-﻿MotionDesk Studio
+﻿Opsis - Desktop Customization
 
 适用于 Windows 10/11 的免费开源桌面自定义与工作区外壳——动态壁纸、悬浮桌面小组件、区域吸附窗口布局以及
 安全的系统图标个性化，全部集成在一个轻量应用中。

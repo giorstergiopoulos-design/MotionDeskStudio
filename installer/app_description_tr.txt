@@ -1,4 +1,4 @@
-﻿MotionDesk Studio
+﻿Opsis - Desktop Customization
 
 Windows 10/11 için ücretsiz, açık kaynaklı bir masaüstü özelleştirme ve çalışma alanı kabuğu - canlı
 animasyonlu duvar kâğıtları, yüzen masaüstü pencere öğeleri, bölgelere yaslanan pencere düzenleri ve güvenli
