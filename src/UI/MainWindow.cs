@@ -327,7 +327,21 @@ namespace MotionDesk.UI
             _brandLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 3), Text = "Opsis", Font = new Font("Segoe UI", 15.5f, FontStyle.Bold), AutoEllipsis = true };
             _brandPanel.Controls.Add(_brandLabel);
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            _brandSubLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 32), Text = $"DESKTOP CUSTOMIZATION   v{version?.ToString(3) ?? "1.0.0"}", Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
+            // Ζητήθηκε ρητά "κάνε το όπως στο GearWin" (δείχτηκε screenshot: "GearWin" bold + κάτω από
+            // αυτό, μικρότερο/πιο αχνό, "Complete PC Care  ·  v6.3.5" σε μία γραμμή) — ίδιο μοτίβο εδώ:
+            // "Desktop Customization  ·  v1.9.2". Σταθερό πλάτος (όχι AutoSize) + AutoEllipsis ως δίχτυ
+            // ασφαλείας — το sidebar έχει μόνο ~142px διαθέσιμα εδώ, οπότε αν ποτέ δεν χωρέσει
+            // ολόκληρο (π.χ. μελλοντική μετάφραση longer από τα αγγλικά) κόβεται με "…" αντί να
+            // ξεχειλίσει έξω από το sidebar όπως έγινε πριν με το "DESKTOP CUSTOMIZATION" μόνο του.
+            _brandSubLabel = new Label
+            {
+                AutoSize = false,
+                AutoEllipsis = true,
+                Location = new Point(brandTextX, 32),
+                Size = new Size(SidebarExpandedWidth - brandTextX - _sidebar.Padding.Horizontal, 16),
+                Text = $"Desktop Customization  ·  v{version?.ToString(3) ?? "1.0.0"}",
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular)
+            };
             _brandPanel.Controls.Add(_brandSubLabel);
             _sidebarLayout.Controls.Add(_brandPanel, 0, 0);
 
@@ -2609,6 +2623,14 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             SetPage("Page.About.Title", panel);
         }
 
+        // Ζητήθηκε ρητά "βελτίωσε το κείμενο και την εμφάνιση του παραθύρου άδειας χρήσης" — πριν
+        // ήταν ένα flat TextBox με το LICENSE file χυμένο μέσα ως ένα αδιαφοροποίητο μπλοκ μονοσπέικ
+        // κειμένου (χωρίς ιεραρχία ανάμεσα στην περίληψη, τη νομική ρήτρα και τα third-party
+        // components). Τώρα: επικεφαλίδα με εικονίδιο+τίτλο, RichTextBox που ξεχωρίζει οπτικά τις 4
+        // ενότητες του LICENSE (διαχωρισμένες ήδη με "----" γραμμές στο ίδιο το αρχείο) — επικεφαλίδα
+        // κάθε ενότητας σε accent χρώμα/bold, το ίδιο το νομικό κείμενο MIT σε μικρότερη γραμματοσειρά
+        // (είναι το λιγότερο σημαντικό για τον μέσο χρήστη να διαβάσει προσεκτικά) — plus pill κουμπί
+        // συνεπές με το υπόλοιπο MediaPlayerPro-style πέρασμα της εφαρμογής.
         private void ShowLicenseDialog()
         {
             var licensePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LICENSE");
@@ -2620,7 +2642,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             {
                 Text = LocalizationManager.T("About.LicenseButton"),
                 StartPosition = FormStartPosition.CenterParent,
-                Size = new Size(620, 560),
+                Size = new Size(640, 600),
                 BackColor = UiTheme.Background,
                 ForeColor = UiTheme.TextPrimary,
                 FormBorderStyle = FormBorderStyle.FixedDialog,
@@ -2630,26 +2652,72 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch (DllNotFoundException) { } };
             dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
 
-            var textBox = new TextBox
+            var header = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = UiTheme.Surface, Padding = new Padding(20, 0, 20, 0) };
+            var headerIcon = new Label { Text = "⚖", Font = new Font("Segoe UI", 20f), ForeColor = UiTheme.AccentCyan, AutoSize = true, Location = new Point(20, 14) };
+            var headerTitle = new Label { Text = "MIT License", Font = new Font("Segoe UI Semibold", 13f, FontStyle.Bold), ForeColor = UiTheme.TextPrimary, AutoSize = true, Location = new Point(54, 10) };
+            var headerSub = new Label { Text = "Opsis — free, open-source, no warranty", Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, AutoSize = true, Location = new Point(54, 34) };
+            header.Controls.Add(headerIcon); header.Controls.Add(headerTitle); header.Controls.Add(headerSub);
+
+            var rtb = new RichTextBox
             {
                 Dock = DockStyle.Fill,
-                Multiline = true,
                 ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
-                Font = new Font("Consolas", 9.5f),
-                BackColor = UiTheme.Surface,
-                ForeColor = UiTheme.TextPrimary,
                 BorderStyle = BorderStyle.None,
-                Text = text.Replace("\n", "\r\n").Replace("\r\r\n", "\r\n")
+                BackColor = UiTheme.Background,
+                ForeColor = UiTheme.TextPrimary,
+                Margin = new Padding(20),
+                DetectUrls = false
             };
-            var closeBtn = new Button { Text = "OK", Dock = DockStyle.Bottom, Height = 36, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat, BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary };
-            closeBtn.FlatAppearance.BorderSize = 0;
+            rtb.HandleCreated += (_, _) => GlassBlur.ApplyScrollbarTheme(rtb, UiTheme.Background.GetBrightness() < 0.5f);
+            PopulateLicenseRichText(rtb, text);
 
-            dialog.Controls.Add(textBox);
-            dialog.Controls.Add(closeBtn);
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 60, BackColor = UiTheme.Background, Padding = new Padding(20, 0, 20, 14) };
+            var closeBtn = new HoverButton { Text = "OK", Width = 110, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = UiTheme.AccentCyan, ForeColor = Color.White, Cursor = Cursors.Hand, DialogResult = DialogResult.OK, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Location = new Point(footer.ClientSize.Width - closeBtn.Width - 20, 12);
+            closeBtn.HandleCreated += (_, _) => UiTheme.ApplyRoundedRegion(closeBtn, closeBtn.Height / 2);
+            footer.Resize += (_, _) => closeBtn.Location = new Point(footer.ClientSize.Width - closeBtn.Width - 20, 12);
+            footer.Controls.Add(closeBtn);
+
+            var bodyWrap = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20, 12, 20, 0) };
+            bodyWrap.Controls.Add(rtb);
+
+            dialog.Controls.Add(bodyWrap);
+            dialog.Controls.Add(footer);
+            dialog.Controls.Add(header);
             dialog.AcceptButton = closeBtn;
             dialog.CancelButton = closeBtn;
             dialog.ShowDialog(this);
+        }
+
+        private void PopulateLicenseRichText(RichTextBox rtb, string text)
+        {
+            rtb.Clear();
+            var headingFont = new Font("Segoe UI Semibold", 11f, FontStyle.Bold);
+            var bodyFont = UiTheme.FontBody;
+            var legalFont = new Font("Consolas", 8.5f);
+            // Το ίδιο το LICENSE αρχείο χωρίζεται ήδη σε 4 ενότητες με γραμμές "----" — η πρώτη
+            // (περίληψη/αποποίηση ευθύνης) μένει στη βασική γραμματοσειρά, η 2η (το ίδιο το νομικό
+            // κείμενο MIT) μικραίνει (μονοσπέικ, λιγότερο σημαντικό να διαβαστεί λέξη-λέξη), οι
+            // επόμενες (Third-Party Components, Weather data) ξαναγυρνούν στη βασική γραμματοσειρά.
+            var sections = text.Replace("\r\n", "\n").Split(new[] { "----------------------------------------------------------------------" }, StringSplitOptions.None);
+            for (int i = 0; i < sections.Length; i++)
+            {
+                string section = sections[i].Trim('\n');
+                if (section.Length == 0) continue;
+                var lines = section.Split('\n');
+                bool isLegalBlock = i == 1; // the raw MIT boilerplate block
+                for (int li = 0; li < lines.Length; li++)
+                {
+                    string line = lines[li];
+                    bool looksLikeHeading = li == 0 && !isLegalBlock && line.Length < 40 && !line.Contains('.');
+                    rtb.SelectionFont = looksLikeHeading ? headingFont : (isLegalBlock ? legalFont : bodyFont);
+                    rtb.SelectionColor = looksLikeHeading ? UiTheme.AccentCyan : (isLegalBlock ? UiTheme.TextSecondary : UiTheme.TextPrimary);
+                    rtb.AppendText(line + "\n");
+                }
+                if (i < sections.Length - 1) rtb.AppendText("\n");
+            }
+            rtb.SelectionStart = 0;
         }
 
         private void ShowChangelogAfterUpdate()
