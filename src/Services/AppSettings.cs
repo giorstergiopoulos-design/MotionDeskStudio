@@ -51,6 +51,12 @@ namespace MotionDesk.Services
         // πλωτό widget και στη σελίδα "Audio Enhancement" της εφαρμογής, ώστε να δείχνουν το ίδιο.
         public string AudioEnhancementPreset { get; set; } = "Flat";
 
+        // Fences-style διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας για απόκρυψη/επαναφορά
+        // εικονιδίων (DesktopIconVisibilityEngine) — υπήρχε ήδη ο μηχανισμός αλλά ήταν πάντα
+        // ενεργός χωρίς καμία ρύθμιση ορατή στο χρήστη· προεπιλογή true ώστε η υπάρχουσα
+        // συμπεριφορά να ΜΗΝ αλλάζει για όσους το χρησιμοποιούσαν ήδη χωρίς να το ξέρουν.
+        public bool QuickHideDoubleClickEnabled { get; set; } = true;
+
         private static string ConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "settings.json");
         public static AppSettings Load()
         {

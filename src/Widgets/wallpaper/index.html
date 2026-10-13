@@ -14,6 +14,7 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 #wxTime{font-size:calc(var(--s)*13vh);font-weight:200;line-height:1;letter-spacing:.01em;font-variant-numeric:tabular-nums}
 #wxDate{font-size:calc(var(--s)*3.2vh);font-weight:300;letter-spacing:.05em;margin-top:calc(var(--s)*1.2vh);opacity:.95;text-transform:capitalize}
 #wxTemp{font-size:calc(var(--s)*4.4vh);font-weight:300;margin-top:calc(var(--s)*1.8vh);min-height:1.25em;line-height:1.25}
+#wxWind{font-size:calc(var(--s)*2.6vh);font-weight:300;letter-spacing:.04em;margin-top:calc(var(--s)*.4vh);opacity:.85;min-height:1.25em;line-height:1.25}
 #wxCity{font-size:calc(var(--s)*2.4vh);font-weight:300;letter-spacing:.12em;margin-top:calc(var(--s)*.6vh);opacity:.75;text-transform:uppercase;min-height:1.25em;line-height:1.25}
 #pulse{position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.14),transparent 65%);opacity:0;transition:opacity 120ms linear}
 </style>
@@ -23,7 +24,7 @@ html,body{margin:0;padding:0;width:100vw;height:100vh;overflow:hidden;background
 <video id="videoA" class="videoLayer" muted playsinline></video>
 <video id="videoB" class="videoLayer" muted playsinline></video>
 <div id="desk"></div>
-<div id="wxInfo"><div id="wxTime"></div><div id="wxDate"></div><div id="wxTemp"></div><div id="wxCity"></div></div>
+<div id="wxInfo"><div id="wxTime"></div><div id="wxDate"></div><div id="wxTemp"></div><div id="wxWind"></div><div id="wxCity"></div></div>
 <div id="pulse"></div>
 <script src="weather.js"></script>
 <script>
@@ -506,6 +507,8 @@ function updateWeatherInfo() {
         tempText = Math.round(v) + (cfg.fahrenheit ? '°F' : '°C');
     }
     document.getElementById('wxTemp').textContent = [tempText, cond].filter(Boolean).join('  ·  ');
+    // Ζητήθηκε ρητά "εμφάνιση ανέμου μαζί με την ώρα/ημερομηνία/θερμοκρασία" — βλ. info().windKmh/beaufort στο weather.js.
+    document.getElementById('wxWind').textContent = typeof i.windKmh === 'number' ? `${i.windKmh} km/h` : '';
     document.getElementById('wxCity').textContent = cfg.weatherCity || '';
     box.style.fontFamily = '"' + String(cfg.infoFont || 'Segoe UI Light').replace(/["\\]/g, '') + '", "Segoe UI", system-ui, sans-serif';
     box.style.left = (cfg.infoX ?? 50) + '%';

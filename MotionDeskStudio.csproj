@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <UseWindowsForms>true</UseWindowsForms>
@@ -13,9 +13,15 @@
     <ApplicationIcon>assets\MotionDesk.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.7.8</Version>
-    <AssemblyVersion>1.7.8.0</AssemblyVersion>
-    <FileVersion>1.7.8.0</FileVersion>
+    <!-- .NET 10 WinForms SDK: WFO1000 ζητάει [DesignerSerializationVisibility] σε κάθε public
+         property custom Control για τον Designer serializer. Αυτό το project ΔΕΝ χρησιμοποιεί ΠΟΤΕ
+         τον WinForms Visual Designer (όλα τα controls χτίζονται με κώδικα) — το attribute δεν θα
+         είχε κανένα πρακτικό αποτέλεσμα, μόνο θα πρόσθετε ~35+ άσχετα attributes σε custom controls.
+         Βλ. https://aka.ms/winforms-warnings/wfo1000 -->
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
+    <Version>1.9.1</Version>
+    <AssemblyVersion>1.9.1.0</AssemblyVersion>
+    <FileVersion>1.9.1.0</FileVersion>
     <Product>MotionDesk Studio</Product>
     <!-- Ζητήθηκε ρητά "η εφαρμογή να μην περνά ως false positive". Πραγματική, εγγυημένη λύση
          είναι μόνο ένα πληρωμένο code-signing certificate (βλ. PROJECT_STATE.md — παραλείφθηκε
