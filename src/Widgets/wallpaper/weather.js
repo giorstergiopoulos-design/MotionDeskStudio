@@ -618,6 +618,56 @@ function buildWaterAssets() {
     glints = Array.from({ length: 70 }, () => ({ u: rnd(), x: rnd(), len: 0.04 + rnd() * 0.12, sp: 0.4 + rnd() * 1.4, a: 0.35 + rnd() * 0.65 }));
 }
 
+// Ζητήθηκε ρητά "εφάρμοσε διάφορους κυματισμούς, αποχρώσεις και εφέ στις γραμμές" (βελτίωση
+// κυμάτων) — έρευνα σε αντίστοιχες canvas-based τεχνικές (layered sine waves, γεμισμένες -όχι
+// μόνο γραμμές- ώστε η μία λωρίδα να καλύπτει την επόμενη, gradient ανά λωρίδα, άθροισμα δύο
+// συχνοτήτων για πιο οργανικό σχήμα) έδειξε ότι η προηγούμενη υλοποίηση είχε ΜΟΝΟ texture
+// (glints/whitecaps) χωρίς καθόλου πραγματικό ΣΧΗΜΑ κύματος. Σε πραγματική ανοιχτή θάλασσα από
+// απόσταση τα μακρινά κύματα "συμπιέζονται" από την προοπτική σε ορατές, επαναλαμβανόμενες
+// φωτεινές/σκοτεινές λωρίδες κοντά στον ορίζοντα (το κοντινό νερό παραμένει σωστά texture-based
+// — αυτό καλύπτεται ήδη από τα glints/whitecaps πιο κάτω, δεν αγγίζεται).
+function drawHorizonSwell(ctx2, sky, graded) {
+    if (S.snowCover > 0.5) return;
+    const hz = HORIZON, wh = H - hz;
+    const bands = 3 + Math.round(clamp(BFN / 2.5, 0, 1) * 3);   // 3..6 λωρίδες ανάλογα τον άνεμο
+    const bandH = Math.min(26, wh * 0.11) * K;
+    const amp = (1.2 + BFN * 0.9) * K;
+    const speed = 0.5 + BFN * 0.1;
+    const crest = mix(graded.hor, [255, 255, 255], 0.35);
+    const trough = mix(scaleCol(graded.top, 0.45), [2, 5, 11], 0.5);
+    ctx2.save();
+    ctx2.beginPath(); ctx2.rect(0, hz, W, Math.min(wh, bandH * bands * 1.6)); ctx2.clip();
+    for (let i = 0; i < bands; i++) {
+        const k = i / Math.max(1, bands - 1);     // 0 = πιο κοντά στον ορίζοντα, 1 = πιο κοντά στον θεατή
+        const y0 = hz + i * bandH * (0.78 + k * 0.5);
+        const ph = i * 1.7;
+        const crestLine = [];
+        ctx2.beginPath();
+        ctx2.moveTo(0, y0 + bandH);
+        for (let x = 0; x <= W; x += 14) {
+            const w1 = Math.sin(x * 0.012 + animTime * speed + ph) * amp;
+            const w2 = Math.sin(x * 0.027 - animTime * speed * 0.6 + ph * 1.3) * amp * 0.5;
+            const cy = y0 + w1 + w2;
+            ctx2.lineTo(x, cy);
+            crestLine.push([x, cy]);
+        }
+        ctx2.lineTo(W, y0 + bandH); ctx2.closePath();
+        const g = ctx2.createLinearGradient(0, y0 - bandH * 0.5, 0, y0 + bandH * 0.5);
+        g.addColorStop(0, rgba(crest, 0.5 * (1 - k * 0.3)));
+        g.addColorStop(0.4, rgba(mix(crest, trough, 0.5), 0.3 * (1 - k * 0.25)));
+        g.addColorStop(1, rgba(trough, 0));
+        ctx2.fillStyle = g;
+        ctx2.fill();
+        // αχνή φωτεινή "κορυφογραμμή" πάνω στην ίδια κυματιστή γραμμή — το κλασικό catch-light effect
+        ctx2.beginPath();
+        crestLine.forEach((p, pi) => pi ? ctx2.lineTo(p[0], p[1]) : ctx2.moveTo(p[0], p[1]));
+        ctx2.strokeStyle = rgba(crest, 0.4 * (1 - k * 0.3));
+        ctx2.lineWidth = Math.max(1, 1.4 * K);
+        ctx2.stroke();
+    }
+    ctx2.restore();
+}
+
 function drawWater(ctx2, sky, graded) {
     const hz = HORIZON, wh = H - hz;
     const amb = clamp(sky.amb, 0, 1);
@@ -627,6 +677,7 @@ function drawWater(ctx2, sky, graded) {
     const wg = ctx2.createLinearGradient(0, hz, 0, H);
     wg.addColorStop(0, rgba(shore, 1)); wg.addColorStop(0.45, rgba(mix(shore, deep, 0.6), 1)); wg.addColorStop(1, rgba(deep, 1));
     ctx2.fillStyle = wg; ctx2.fillRect(0, hz, W, wh);
+    drawHorizonSwell(ctx2, sky, graded);
 
     // sea state follows the wind (Beaufort): 0-2 mirror-like, 3-4 gentle ripples, 5-6 choppy with whitecaps, 7+ rough
     const bfk = clamp(BFN / 10, 0, 1);
