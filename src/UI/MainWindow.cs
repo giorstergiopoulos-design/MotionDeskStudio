@@ -25,6 +25,7 @@ namespace MotionDesk.UI
         private PulsingLogoPanel _brandDot = null!;
         private Label _brandLabel = null!;
         private Label _brandSubLabel = null!;
+        private Label _brandVersionLabel = null!;
         private SidebarToggleButton _collapseToggle = null!;
         private System.Windows.Forms.Timer? _sidebarAnimTimer;
         private bool _sidebarCollapsed;
@@ -275,10 +276,11 @@ namespace MotionDesk.UI
             // κυματιστές γραμμές) αντί για απλό κύκλο. Οι γραμμές μετατοπίζουν φάση με τον
             // χρόνο (πραγματική κίνηση κύματος) — το halo έχει ΣΤΑΘΕΡΟ μέγεθος (μόνο η
             // διαφάνειά του παλλεται) ώστε να μη δίνει εντύπωση "μεγέθυνσης/σμίκρυνσης".
-            // Μεγαλύτερο λογότυπο + τίτλος (ζητήθηκε ρητά) — όλες οι συντεταγμένες σχεδίασης
-            // παραμένουν στο αρχικό 36x36 grid και κλιμακώνονται μέσω ScaleTransform, ώστε το
-            // μέγεθος να ρυθμίζεται μόνο αλλάζοντας το Size παρακάτω.
-            const int logoSize = 48;
+            // Μεγαλύτερο λογότυπο + τίτλος (ζητήθηκε ρητά, ξανά μεγαλύτερο για να ισορροπεί με
+            // τις 3 γραμμές κειμένου παρακάτω) — όλες οι συντεταγμένες σχεδίασης παραμένουν στο
+            // αρχικό 36x36 grid και κλιμακώνονται μέσω ScaleTransform, ώστε το μέγεθος να
+            // ρυθμίζεται μόνο αλλάζοντας το Size παρακάτω.
+            const int logoSize = 56;
             _brandDot = new PulsingLogoPanel { Size = new Size(logoSize, logoSize), Location = new Point(0, 2) };
             _brandDot.Paint += (s, e) =>
             {
@@ -324,25 +326,35 @@ namespace MotionDesk.UI
             };
             _brandPanel.Controls.Add(_brandDot);
             const int brandTextX = logoSize + 10;
-            _brandLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 3), Text = "Opsis", Font = new Font("Segoe UI", 15.5f, FontStyle.Bold), AutoEllipsis = true };
+            int brandLabelWidth = SidebarExpandedWidth - brandTextX - _sidebar.Padding.Horizontal;
+            _brandLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 2), Text = "Opsis", Font = new Font("Segoe UI", 16f, FontStyle.Bold), AutoEllipsis = true };
             _brandPanel.Controls.Add(_brandLabel);
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            // Ζητήθηκε ρητά "κάνε το όπως στο GearWin" (δείχτηκε screenshot: "GearWin" bold + κάτω από
-            // αυτό, μικρότερο/πιο αχνό, "Complete PC Care  ·  v6.3.5" σε μία γραμμή) — ίδιο μοτίβο εδώ:
-            // "Desktop Customization  ·  v1.9.2". Σταθερό πλάτος (όχι AutoSize) + AutoEllipsis ως δίχτυ
-            // ασφαλείας — το sidebar έχει μόνο ~142px διαθέσιμα εδώ, οπότε αν ποτέ δεν χωρέσει
-            // ολόκληρο (π.χ. μελλοντική μετάφραση longer από τα αγγλικά) κόβεται με "…" αντί να
-            // ξεχειλίσει έξω από το sidebar όπως έγινε πριν με το "DESKTOP CUSTOMIZATION" μόνο του.
+            // Ζητήθηκε ρητά "εφόσον στον τίτλο η έκδοση δεν φαίνεται, βάλε την σε τρίτη γραμμή από
+            // κάτω" — στο προηγούμενο πέρασμα η έκδοση ήταν στην ΙΔΙΑ γραμμή με το tagline
+            // ("Desktop Customization  ·  vX.X.X"), και το AutoEllipsis έκοβε το κείμενο πριν καν
+            // φτάσει στην έκδοση (το σύνολο δεν χωρούσε στα ~142px). Τώρα 3 ξεχωριστές γραμμές:
+            // τίτλος / tagline / έκδοση — η καθεμία χωράει πλέον άνετα μόνη της.
             _brandSubLabel = new Label
             {
                 AutoSize = false,
                 AutoEllipsis = true,
-                Location = new Point(brandTextX, 32),
-                Size = new Size(SidebarExpandedWidth - brandTextX - _sidebar.Padding.Horizontal, 16),
-                Text = $"Desktop Customization  ·  v{version?.ToString(3) ?? "1.0.0"}",
+                Location = new Point(brandTextX, 30),
+                Size = new Size(brandLabelWidth, 16),
+                Text = "Desktop Customization",
                 Font = new Font("Segoe UI", 8.5f, FontStyle.Regular)
             };
             _brandPanel.Controls.Add(_brandSubLabel);
+            _brandVersionLabel = new Label
+            {
+                AutoSize = false,
+                AutoEllipsis = true,
+                Location = new Point(brandTextX, 46),
+                Size = new Size(brandLabelWidth, 16),
+                Text = $"v{version?.ToString(3) ?? "1.0.0"}",
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular)
+            };
+            _brandPanel.Controls.Add(_brandVersionLabel);
             _sidebarLayout.Controls.Add(_brandPanel, 0, 0);
 
             // ΟΧΙ AutoScroll: μια κάθετη scrollbar (όταν τα 9 nav items δεν χωρούν καθ' ύψος)
@@ -472,6 +484,7 @@ namespace MotionDesk.UI
             _statusLabel.ForeColor = UiTheme.TextSecondary;
             _brandLabel.ForeColor = UiTheme.TextPrimary;
             _brandSubLabel.ForeColor = UiTheme.TextMuted;
+            _brandVersionLabel.ForeColor = UiTheme.TextMuted;
 
             int useDark = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0;
             try { if (IsHandleCreated) DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDark, sizeof(int)); }
@@ -737,23 +750,29 @@ namespace MotionDesk.UI
         {
             _sidebar.Padding = collapsed ? new Padding(8, 20, 8, 12) : new Padding(16, 20, 16, 12);
 
-            const int expandedLogoSize = 48;
-            const int collapsedLogoSize = 40;
-            int usableWidth = (collapsed ? SidebarCollapsedWidth : SidebarExpandedWidth) - _sidebar.Padding.Horizontal;
+            // Ζητήθηκε ρητά "όταν το πλευρικό μενού γίνεται μόνο εικονίδια να μην μικραίνει το
+            // εικονίδιο της εφαρμογής & να είναι aligned με εκείνα του πλευρικού μενού" — πριν
+            // μίκραινε (48->40) και κεντραριζόταν ανεξάρτητα μέσα στο usableWidth, όχι στο ίδιο
+            // σημείο με τα τετράγωνα πλακίδια (42px) των NavButton, που κεντράρονται μέσα στο δικό
+            // τους πλάτος 56px (δηλ. κέντρο στο x=28 μέσα στο padded περιεχόμενο). Το λογότυπο
+            // μένει πλέον στο ΙΔΙΟ μέγεθος (48) και στο ίδιο κέντρο (x=28) με τα nav εικονίδια.
+            const int logoSizeFixed = 48;
+            const int navTileCenterX = 28;
             if (collapsed)
             {
-                _brandDot.Size = new Size(collapsedLogoSize, collapsedLogoSize);
-                _brandDot.Location = new Point(Math.Max(0, (usableWidth - collapsedLogoSize) / 2), 6);
+                _brandDot.Size = new Size(logoSizeFixed, logoSizeFixed);
+                _brandDot.Location = new Point(navTileCenterX - logoSizeFixed / 2, 6);
             }
             else
             {
-                _brandDot.Size = new Size(expandedLogoSize, expandedLogoSize);
+                _brandDot.Size = new Size(logoSizeFixed, logoSizeFixed);
                 _brandDot.Location = new Point(0, 2);
             }
 
             _collapseToggle.Collapsed = collapsed;
             _brandLabel.Visible = !collapsed;
             _brandSubLabel.Visible = !collapsed;
+            _brandVersionLabel.Visible = !collapsed;
             foreach (var btn in _navButtons.Values) { btn.Collapsed = collapsed; btn.Refresh(); }
             _nav.Refresh();
         }
