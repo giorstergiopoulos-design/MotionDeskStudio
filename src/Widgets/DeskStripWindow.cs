@@ -66,6 +66,21 @@ namespace MotionDesk.Widgets
             LoadState();
             RebuildTray();
             RepositionToBottomCenter();
+
+            // Η περιοχή εργασίας αλλάζει όταν μια άλλη εφαρμογή δεσμεύει χώρο (π.χ. η μπάρα του News Crawler ως AppBar)
+            // ή αλλάζουν οι οθόνες — ξανατοποθετούμαστε ώστε να μην πέφτουμε πάνω της.
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnWorkAreaMayHaveChanged;
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnWorkAreaMayHaveChanged;
+            Disposed += (_, _) =>
+            {
+                Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnWorkAreaMayHaveChanged;
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnWorkAreaMayHaveChanged;
+            };
+        }
+
+        private void OnWorkAreaMayHaveChanged(object? sender, EventArgs e)
+        {
+            if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(RepositionToBottomCenter));
         }
 
         private void RepositionToBottomCenter()

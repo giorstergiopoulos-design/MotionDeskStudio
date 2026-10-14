@@ -94,17 +94,17 @@ namespace MotionDesk.UI
             Size = new Size(1280, 800);
             Opacity = Math.Clamp(appSettings.WindowOpacity, 0.6, 1.0);
 
-            _pageBuilders["Dashboard"] = ShowDashboard;
-            _pageBuilders["Widgets"] = ShowWidgets;
-            _pageBuilders["DeskZones"] = ShowDeskZones;
-            _pageBuilders["Wallpaper"] = ShowWallpaper;
-            _pageBuilders["Settings"] = ShowSettings;
-            _pageBuilders["Profiles"] = ShowProfiles;
-            _pageBuilders["Performance"] = ShowPerformance;
-            _pageBuilders["Automation"] = ShowAutomation;
-            _pageBuilders["Personalization"] = ShowPersonalization;
-            _pageBuilders["About"] = ShowAbout;
-            _pageBuilders["AudioEnhancement"] = ShowAudioEnhancement;
+            _pageBuilders["Dashboard"] = () => SafeBuildPage("Dashboard", ShowDashboard);
+            _pageBuilders["Widgets"] = () => SafeBuildPage("Widgets", ShowWidgets);
+            _pageBuilders["DeskZones"] = () => SafeBuildPage("DeskZones", ShowDeskZones);
+            _pageBuilders["Wallpaper"] = () => SafeBuildPage("Wallpaper", ShowWallpaper);
+            _pageBuilders["Settings"] = () => SafeBuildPage("Settings", ShowSettings);
+            _pageBuilders["Profiles"] = () => SafeBuildPage("Profiles", ShowProfiles);
+            _pageBuilders["Performance"] = () => SafeBuildPage("Performance", ShowPerformance);
+            _pageBuilders["Automation"] = () => SafeBuildPage("Automation", ShowAutomation);
+            _pageBuilders["Personalization"] = () => SafeBuildPage("Personalization", ShowPersonalization);
+            _pageBuilders["About"] = () => SafeBuildPage("About", ShowAbout);
+            _pageBuilders["AudioEnhancement"] = () => SafeBuildPage("AudioEnhancement", ShowAudioEnhancement);
 
             BuildChrome();
             ApplyChromeColors();
@@ -460,6 +460,12 @@ namespace MotionDesk.UI
             // Ζητήθηκε ρητά: αντί για απλό "Audio Visualizer", νέα καρτέλα "Διαχείριση Ήχου" με
             // presets ενίσχυσης + ζωντανό visualizer, εμπνευσμένη από τη λογική του FXSound.
             AddNavButton(_nav, LocalizationManager.T("Nav.AudioEnhancement"), "AudioEnhancement", ShowAudioEnhancement, (string?)null);
+            // Σελίδες των plugin (π.χ. News Crawler) — μπαίνουν πριν το "Σχετικά" που μένει τελευταίο.
+            foreach (var pluginItem in Services.PluginHost.Instance.GetNavigationItems())
+            {
+                var captured = pluginItem;
+                AddNavButton(_nav, Services.PluginHost.TitleOf(captured), "plugin:" + captured.Key, () => ShowPluginPage(captured), (string?)null);
+            }
             // "Σχετικά" ζητήθηκε ρητά να είναι το ΤΕΛΕΥΤΑΙΟ στοιχείο του nav, κάτω από τη
             // "Διαχείριση Ήχου" (πριν ήταν ανάποδα).
             AddNavButton(_nav, LocalizationManager.T("Nav.About"), "About", ShowAbout, 9);
@@ -499,7 +505,7 @@ namespace MotionDesk.UI
         private NavButton AddNavButton(Control parent, string text, string key, Action action, string? shortcutLabel)
         {
             var button = new NavButton(key, text, shortcutLabel) { Width = 184 };
-            button.Click += (_, _) => { _currentPageKey = key; action(); };
+            button.Click += (_, _) => { _currentPageKey = key; SafeBuildPage(key, action); };
             button.Click += (_, _) => SetActiveButton(button);
             button.Click += (_, _) => Services.UiSounds.PlayClick();
             parent.Controls.Add(button);
@@ -554,8 +560,7 @@ namespace MotionDesk.UI
                 base.OnPaint(e);
                 var g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                using (var bg = new SolidBrush(UiTheme.Background))
-                    g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Background); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
 
                 double t = _getT();
                 var colors = new[] { UiTheme.AccentCyan, UiTheme.AccentBlue, UiTheme.AccentCyan };
@@ -643,15 +648,19 @@ namespace MotionDesk.UI
                 // "τετράγωνα κουμπιά" + μεγαλύτερα εικονίδια στη σύμπτυξη.
                 if (_collapsed)
                 {
-                    const int tile = 42;
-                    var tileRect = new Rectangle((Width - tile) / 2, (Height - tile) / 2, tile, tile);
+                    // Το πλακίδιο ήταν 42 px μέσα σε κουμπί ύψους 42 px: το κάτω περίγραμμα κοβόταν και το πάνω έβγαινε παχύτερο.
+                    // Τώρα 40 px με 1 px περιθώριο, και το περίγραμμα πέφτει ακριβώς πάνω σε pixel (offset 0,5), ίδιο πάχος σε όλες τις πλευρές.
+                    const int tile = 40;
+                    var tileRect = new Rectangle((Width - tile) / 2, (Height - tile) / 2, tile - 1, tile - 1);
                     var bg = IsActive ? UiTheme.SurfaceHover : (_hover ? UiTheme.Surface : UiTheme.Sidebar);
+                    g.TranslateTransform(0.5f, 0.5f);
                     using (var bgBrush = new SolidBrush(bg))
                     using (var path = UiTheme.RoundedPath(tileRect, 6))
                         g.FillPath(bgBrush, path);
                     using (var borderPen = new Pen(IsActive ? UiTheme.AccentCyan : UiTheme.Border, IsActive ? 1.6f : 1f))
                     using (var path = UiTheme.RoundedPath(tileRect, 6))
                         g.DrawPath(borderPen, path);
+                    g.ResetTransform();
 
                     const int iconSize = 26;
                     IconRenderer.Draw(g, _iconKey, new RectangleF(tileRect.X + (tile - iconSize) / 2f, tileRect.Y + (tile - iconSize) / 2f, iconSize, iconSize), iconColor);
@@ -818,6 +827,44 @@ namespace MotionDesk.UI
                 }
             };
             _sidebarAnimTimer.Start();
+        }
+
+        // Σελίδα που παρέχεται από plugin. Αν το plugin αποτύχει να φτιάξει τη σελίδα, δείχνουμε μήνυμα αντί να ρίξουμε το Opsis.
+        private void ShowPluginPage(OpsisNewsCrawler.Plugin.Abstractions.PluginNavigationItem item)
+        {
+            Control page;
+            try { page = item.CreatePage(); }
+            catch (Exception ex)
+            {
+                page = new Label { Text = "Plugin error: " + ex.Message, ForeColor = UiTheme.TextSecondary, AutoSize = true, Padding = new Padding(24) };
+            }
+            SetPage(Services.PluginHost.TitleOf(item), page); // ένα κλειδί που λείπει από τα locale files εμφανίζεται ως το ίδιο το κείμενο
+        }
+
+        // Ίδια λογική με το ShowPluginPage παρακάτω, εφαρμοσμένη ΚΑΙ στις ενσωματωμένες σελίδες:
+        // αν ένας page builder ρίξει exception στα μισά του χτισίματος, δείχνουμε μήνυμα σφάλματος
+        // αντί για μισοχτισμένη/κενή σελίδα, και το καταγράφουμε ώστε να μην εξαφανίζεται σιωπηλά
+        // (ζητήθηκε ρητά μετά από αναφορά χρήστη για κενή σελίδα Wallpaper χωρίς καταγεγραμμένο σφάλμα).
+        private void SafeBuildPage(string key, Action builder)
+        {
+            try { builder(); }
+            catch (Exception ex)
+            {
+                LogPageError(key, ex);
+                _currentPageKey = key;
+                var errorPage = new Label { Text = "Page error: " + ex.Message, ForeColor = UiTheme.TextSecondary, AutoSize = true, Padding = new Padding(24) };
+                SetPage(key, errorPage);
+            }
+        }
+
+        private static void LogPageError(string key, Exception ex)
+        {
+            try
+            {
+                var path = Path.Combine(AppPaths.AppDataFolder, "ui-errors.log");
+                File.AppendAllText(path, $"[{DateTime.Now:O}] Page '{key}' failed to build: {ex}\n");
+            }
+            catch (Exception) { /* logging must never itself throw */ }
         }
 
         private void SetPage(string titleKey, Control control)
@@ -2187,8 +2234,12 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 ("GamingProfile", string.Format(profileFmt, "Gaming")),
                 ("FocusProfile", string.Format(profileFmt, "Focus")),
             };
-            var idByLabel = commandDefs.ToDictionary(c => c.Label, c => c.Id, StringComparer.OrdinalIgnoreCase);
-            var allLabels = commandDefs.Select(c => c.Label).ToArray();
+            // Οι σελίδες των plugin (π.χ. News Crawler) εμφανίζονται κι εδώ.
+            var commandList = commandDefs.ToList();
+            foreach (var pluginPage in Services.PluginHost.Instance.GetNavigationItems())
+                commandList.Add(("plugin:" + pluginPage.Key, Services.PluginHost.TitleOf(pluginPage)));
+            var idByLabel = commandList.GroupBy(c => c.Label, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+            var allLabels = commandList.Select(c => c.Label).ToArray();
             list.Items.AddRange(allLabels);
             if (list.Items.Count > 0) list.SelectedIndex = 0;
 
@@ -2202,6 +2253,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                     case "Personalization": NavigateTo("Personalization"); break; case "Settings": NavigateTo("Settings"); break;
                     case "About": NavigateTo("About"); break;
                     case "AudioEnhancement": NavigateTo("AudioEnhancement"); break;
+                    case string pluginId when pluginId.StartsWith("plugin:", StringComparison.Ordinal): NavigateTo(pluginId); break;
                     case "EnableWallpaper": WallpaperHostEngine.Instance.Enable(); break;
                     case "DisableWallpaper": WallpaperHostEngine.Instance.Disable(); break; case "WorkProfile": LoadProfileFromQuickButton("Work"); break;
                     case "GamingProfile": LoadProfileFromQuickButton("Gaming"); break; case "FocusProfile": LoadProfileFromQuickButton("Focus"); break;
@@ -2428,7 +2480,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         // έπιασε ζωντανά ("το ιστορικό μένει στην 1.9.0"). Πρόσθεσε ΚΑΙ εδώ τη νέα έκδοση.
         private static readonly (string Version, string Date)[] VersionHistory =
         {
-            ("1.9.3", "2026-10"), ("1.9.2", "2026-10"), ("1.9.1", "2026-10"), ("1.9.0", "2026-10"), ("1.8.9", "2026-10"), ("1.8.8", "2026-10"), ("1.8.7", "2026-10"), ("1.8.6", "2026-10"), ("1.8.5", "2026-10"), ("1.7.8", "2026-10"), ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
+            ("1.9.4", "2026-10"), ("1.9.3", "2026-10"), ("1.9.2", "2026-10"), ("1.9.1", "2026-10"), ("1.9.0", "2026-10"), ("1.8.9", "2026-10"), ("1.8.8", "2026-10"), ("1.8.7", "2026-10"), ("1.8.6", "2026-10"), ("1.8.5", "2026-10"), ("1.7.8", "2026-10"), ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
         };
 
 
@@ -2568,6 +2620,27 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             AddText(panel, string.Format(LocalizationManager.T("About.RuntimeLine"), WidgetHostEngine.Instance.GetActiveWidgets().Count));
             AddButton(panel, LocalizationManager.T("VersionHistory.Button"), (_, _) => ShowVersionHistory());
 
+            // ---- plugins (π.χ. News Crawler): ιδιότητες, βοήθεια, οδηγίες, ιστορικό και άδεια ζουν ΕΔΩ, όχι στη σελίδα του plugin
+            var pluginInfos = Services.PluginHost.Instance.GetAboutInfos();
+            if (pluginInfos.Count > 0)
+            {
+                AddSection(panel, LocalizationManager.T("About.SectionPlugins"));
+                bool greek = LocalizationManager.CurrentLanguage == "el";
+                foreach (var info in pluginInfos)
+                {
+                    var captured = info;
+                    AddText(panel, $"{captured.Name}  v{captured.Version}\n{(greek ? captured.DescriptionEl : captured.DescriptionEn)}\n{captured.Author} · {captured.License}");
+                    var row = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(740, 0), Margin = new Padding(0, 0, 0, 12) };
+                    foreach (var section in captured.Sections)
+                    {
+                        var s = section;
+                        var title = greek ? s.TitleEl : s.TitleEn;
+                        row.Controls.Add(NewHoverButton(title, () => ShowTextDialog(captured.Name + " — " + title, captured.Name + " v" + captured.Version, s.Text)));
+                    }
+                    panel.Controls.Add(row);
+                }
+            }
+
             // ---- updates (GitHub releases; nothing is downloaded automatically)
             AddSection(panel, LocalizationManager.T("About.UpdateHeading"));
             var updateStatus = new Label { Text = "", AutoSize = true, MaximumSize = new Size(740, 0), Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 0, 0, 6) };
@@ -2656,6 +2729,42 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         // κάθε ενότητας σε accent χρώμα/bold, το ίδιο το νομικό κείμενο MIT σε μικρότερη γραμματοσειρά
         // (είναι το λιγότερο σημαντικό για τον μέσο χρήστη να διαβάσει προσεκτικά) — plus pill κουμπί
         // συνεπές με το υπόλοιπο MediaPlayerPro-style πέρασμα της εφαρμογής.
+        // Γενικό themed παράθυρο κειμένου (βοήθεια/οδηγίες/ιστορικό/άδεια plugin). Ίδια αισθητική με το παράθυρο άδειας.
+        private void ShowTextDialog(string title, string subtitle, string text)
+        {
+            using var dialog = new Form
+            {
+                Text = title,
+                StartPosition = FormStartPosition.CenterParent,
+                Size = new Size(720, 640),
+                BackColor = UiTheme.Background,
+                ForeColor = UiTheme.TextPrimary,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false
+            };
+            dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch (DllNotFoundException) { } };
+
+            var header = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = UiTheme.Surface };
+            header.Controls.Add(new Label { Text = title, Font = new Font("Segoe UI Semibold", 13f, FontStyle.Bold), ForeColor = UiTheme.TextPrimary, AutoSize = true, Location = new Point(20, 8) });
+            header.Controls.Add(new Label { Text = subtitle, Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, AutoSize = true, Location = new Point(20, 34) });
+
+            var box = new RichTextBox
+            {
+                Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = UiTheme.Background,
+                ForeColor = UiTheme.TextPrimary, Font = new Font("Segoe UI", 10f), DetectUrls = false, Text = text.Replace("\r\n", "\n")
+            };
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 56, BackColor = UiTheme.Background };
+            var ok = new HoverButton { Text = "OK", Width = 110, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = UiTheme.AccentCyan, ForeColor = Color.White, Cursor = Cursors.Hand, DialogResult = DialogResult.OK, Location = new Point(590, 10) };
+            ok.FlatAppearance.BorderSize = 0;
+            footer.Controls.Add(ok);
+            dialog.Controls.Add(box);
+            dialog.Controls.Add(footer);
+            dialog.Controls.Add(header);
+            dialog.AcceptButton = ok;
+            dialog.ShowDialog(this);
+        }
+
         private void ShowLicenseDialog()
         {
             var licensePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LICENSE");
@@ -3001,7 +3110,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 var g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-                using (var bg = new SolidBrush(UiTheme.Surface)) g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
 
                 using var headerFont = new Font("Segoe UI", 8.5f, FontStyle.Bold);
                 using var keyFont = new Font("Segoe UI Semibold", 9f);
@@ -3076,8 +3185,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-                using (var bg = new SolidBrush(UiTheme.Surface))
-                    g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
 
                 using (var accent = new SolidBrush(UiTheme.AccentCyan))
                     g.FillRectangle(accent, 0, 0, 3, Height);
@@ -3133,8 +3241,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             {
                 var g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                using (var bg = new SolidBrush(UiTheme.Surface))
-                    g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
                 using (var accent = new SolidBrush(UiTheme.AccentCyan))
                     g.FillRectangle(accent, 0, 0, 3, Height);
 
@@ -3227,8 +3334,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-                using (var bg = new SolidBrush(UiTheme.Surface))
-                    g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
                 using (var accent = new SolidBrush(UiTheme.AccentCyan))
                     g.FillRectangle(accent, 0, 0, 3, Height);
 
@@ -3539,6 +3645,9 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                     v => { var a = AppSettings.Load(); a.EnableAnimations = v; a.Save(); AnimationsSettingChanged?.Invoke(); }));
                 stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.MinimizeToTray"), AppSettings.Load().MinimizeToTray,
                     v => { var a = AppSettings.Load(); a.MinimizeToTray = v; a.Save(); }));
+                // Plugins (π.χ. News Crawler): ισχύει στην επόμενη εκκίνηση.
+                stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.PluginsEnabled"), AppSettings.Load().PluginsEnabled,
+                    v => { var a = AppSettings.Load(); a.PluginsEnabled = v; a.Save(); }));
 
                 // Ζητήθηκε ρητά "ρύθμιση για διαφάνεια παραθύρων των Windows και γρήγορη εκκίνηση
                 // στον πίνακα ελέγχου" — πραγματικές ρυθμίσεις των ίδιων των Windows (μητρώο),

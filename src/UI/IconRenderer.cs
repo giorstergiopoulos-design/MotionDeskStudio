@@ -24,6 +24,7 @@ namespace MotionDesk.UI
             switch (key)
             {
                 case "Dashboard": DrawHome(g, pen); break;
+                case string pluginKey when pluginKey.StartsWith("plugin:", StringComparison.Ordinal): DrawNews(g, pen); break; // σελίδες plugin
                 case "Widgets": DrawGrid(g, pen); break;
                 case "DeskZones": DrawZones(g, pen); break;
                 case "Wallpaper": DrawImage(g, pen, brush); break;
@@ -64,6 +65,14 @@ namespace MotionDesk.UI
             g.DrawLine(pen, 8.3f, 17, 8.3f, 12.5f);
             g.DrawLine(pen, 11.7f, 17, 11.7f, 12.5f);
             g.DrawLine(pen, 8.3f, 12.5f, 11.7f, 12.5f);
+        }
+
+        // Εικονίδιο "εφημερίδα/ticker" για τις σελίδες plugin (π.χ. News Crawler).
+        private static void DrawNews(Graphics g, Pen pen)
+        {
+            DrawRounded(g, pen, 2.5f, 4f, 15, 12, 2);
+            g.DrawLine(pen, 5.5f, 8f, 14.5f, 8f);
+            g.DrawLine(pen, 5.5f, 11f, 11f, 11f);
         }
 
         private static void DrawGrid(Graphics g, Pen pen)

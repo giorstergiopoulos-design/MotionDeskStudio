@@ -1,7 +1,12 @@
 #define MyAppName "Opsis - Desktop Customization"
-#define MyAppVersion "1.9.3"
+#define MyAppVersion "1.9.4"
 #define MyAppPublisher "Opsis Team"
 #define MyAppExeName "Opsis.exe"
+; Πού βρίσκεται ο installer του News Crawler (δημοσιεύεται ως GitHub release του αντίστοιχου repo).
+; ΠΡΟΣΟΧΗ: το URL είναι η υπόθεση για το repo του crawler — άλλαξέ το αν ο installer ανέβει αλλού.
+#ifndef CrawlerSetupUrl
+  #define CrawlerSetupUrl "https://github.com/giorstergiopoulos-design/OpsisNewsCrawler/releases/latest/download/OpsisNewsCrawler-Setup.exe"
+#endif
 
 [Setup]
 ; Μοναδικό GUID για την εφαρμογή (μην το αλλάξεις σε μελλοντικές εκδόσεις)
@@ -177,6 +182,79 @@ Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"; LicenseFile: "i
 Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"; LicenseFile: "installer\license_ar.txt"; InfoBeforeFile: "installer\app_description_ar.txt"
 Name: "hindi"; MessagesFile: "installer\Hindi.isl"; LicenseFile: "installer\license_hi.txt"; InfoBeforeFile: "installer\app_description_hi.txt"
 
+; News Crawler (plugin): λήψη και εγκατάσταση ταυτόχρονα με το Opsis — ο crawler ΔΕΝ περιλαμβάνεται στο παρόν installer.
+[CustomMessages]
+greek.CrawlerTask=Λήψη και εγκατάσταση του News Crawler (μπάρα ειδήσεων και τιμών, plugin του Opsis)
+english.CrawlerTask=Download and install News Crawler (news and price bar, a plugin of Opsis)
+german.CrawlerTask=News Crawler herunterladen und installieren (Nachrichten- und Kursleiste, ein Plugin von Opsis)
+french.CrawlerTask=Télécharger et installer News Crawler (barre d'actualités et de cours, plugin d'Opsis)
+spanish.CrawlerTask=Descargar e instalar News Crawler (barra de noticias y precios, un plugin de Opsis)
+korean.CrawlerTask=News Crawler 다운로드 및 설치(뉴스·시세 바, Opsis 플러그인)
+chinese.CrawlerTask=下载并安装 News Crawler（新闻和行情栏，Opsis 插件）
+italian.CrawlerTask=Scarica e installa News Crawler (barra di notizie e quotazioni, plugin di Opsis)
+russian.CrawlerTask=Скачать и установить News Crawler (панель новостей и котировок, плагин Opsis)
+japanese.CrawlerTask=News Crawler をダウンロードしてインストール (ニュースと相場のバー、Opsis のプラグイン)
+portuguese.CrawlerTask=Transferir e instalar o News Crawler (barra de notícias e cotações, plugin do Opsis)
+turkish.CrawlerTask=News Crawler'ı indir ve yükle (haber ve fiyat çubuğu, Opsis eklentisi)
+arabic.CrawlerTask=تنزيل News Crawler وتثبيته (شريط الأخبار والأسعار، إضافة لـ Opsis)
+hindi.CrawlerTask=News Crawler डाउनलोड और इंस्टॉल करें (समाचार और भाव पट्टी, Opsis का प्लगइन)
+greek.CrawlerDownloadTitle=Λήψη του News Crawler
+english.CrawlerDownloadTitle=Downloading News Crawler
+german.CrawlerDownloadTitle=News Crawler wird heruntergeladen
+french.CrawlerDownloadTitle=Téléchargement de News Crawler
+spanish.CrawlerDownloadTitle=Descargando News Crawler
+korean.CrawlerDownloadTitle=News Crawler 다운로드 중
+chinese.CrawlerDownloadTitle=正在下载 News Crawler
+italian.CrawlerDownloadTitle=Download di News Crawler
+russian.CrawlerDownloadTitle=Загрузка News Crawler
+japanese.CrawlerDownloadTitle=News Crawler をダウンロードしています
+portuguese.CrawlerDownloadTitle=A transferir o News Crawler
+turkish.CrawlerDownloadTitle=News Crawler indiriliyor
+arabic.CrawlerDownloadTitle=جارٍ تنزيل News Crawler
+hindi.CrawlerDownloadTitle=News Crawler डाउनलोड हो रहा है
+greek.CrawlerDownloadDesc=Περιμένετε όσο κατεβαίνει ο installer του News Crawler.
+english.CrawlerDownloadDesc=Please wait while the News Crawler installer is downloaded.
+german.CrawlerDownloadDesc=Bitte warten Sie, während das News-Crawler-Installationsprogramm heruntergeladen wird.
+french.CrawlerDownloadDesc=Veuillez patienter pendant le téléchargement du programme d'installation de News Crawler.
+spanish.CrawlerDownloadDesc=Espere mientras se descarga el instalador de News Crawler.
+korean.CrawlerDownloadDesc=News Crawler 설치 프로그램을 다운로드하는 동안 기다려 주세요.
+chinese.CrawlerDownloadDesc=请稍候，正在下载 News Crawler 安装程序。
+italian.CrawlerDownloadDesc=Attendere il download del programma di installazione di News Crawler.
+russian.CrawlerDownloadDesc=Подождите, пока загружается установщик News Crawler.
+japanese.CrawlerDownloadDesc=News Crawler のインストーラーをダウンロードしています。しばらくお待ちください。
+portuguese.CrawlerDownloadDesc=Aguarde enquanto o instalador do News Crawler é transferido.
+turkish.CrawlerDownloadDesc=News Crawler yükleyicisi indirilirken lütfen bekleyin.
+arabic.CrawlerDownloadDesc=يرجى الانتظار أثناء تنزيل برنامج تثبيت News Crawler.
+hindi.CrawlerDownloadDesc=News Crawler इंस्टॉलर डाउनलोड होने तक प्रतीक्षा करें।
+greek.CrawlerInstalling=Εγκατάσταση του News Crawler...
+english.CrawlerInstalling=Installing News Crawler...
+german.CrawlerInstalling=News Crawler wird installiert...
+french.CrawlerInstalling=Installation de News Crawler...
+spanish.CrawlerInstalling=Instalando News Crawler...
+korean.CrawlerInstalling=News Crawler 설치 중...
+chinese.CrawlerInstalling=正在安装 News Crawler...
+italian.CrawlerInstalling=Installazione di News Crawler...
+russian.CrawlerInstalling=Установка News Crawler...
+japanese.CrawlerInstalling=News Crawler をインストールしています...
+portuguese.CrawlerInstalling=A instalar o News Crawler...
+turkish.CrawlerInstalling=News Crawler yükleniyor...
+arabic.CrawlerInstalling=جارٍ تثبيت News Crawler...
+hindi.CrawlerInstalling=News Crawler इंस्टॉल हो रहा है...
+greek.CrawlerFailed=Δεν ήταν δυνατή η λήψη του News Crawler (%1).%n%nΤο Opsis εγκαταστάθηκε κανονικά. Μπορείτε να εγκαταστήσετε το News Crawler αργότερα από:%n%2
+english.CrawlerFailed=News Crawler could not be downloaded (%1).%n%nOpsis was installed normally. You can install News Crawler later from:%n%2
+german.CrawlerFailed=News Crawler konnte nicht heruntergeladen werden (%1).%n%nOpsis wurde normal installiert. Sie können News Crawler später installieren von:%n%2
+french.CrawlerFailed=News Crawler n'a pas pu être téléchargé (%1).%n%nOpsis a été installé normalement. Vous pourrez installer News Crawler plus tard depuis :%n%2
+spanish.CrawlerFailed=No se pudo descargar News Crawler (%1).%n%nOpsis se instaló con normalidad. Puede instalar News Crawler más tarde desde:%n%2
+korean.CrawlerFailed=News Crawler를 다운로드할 수 없습니다(%1).%n%nOpsis는 정상적으로 설치되었습니다. 나중에 다음 위치에서 News Crawler를 설치할 수 있습니다:%n%2
+chinese.CrawlerFailed=无法下载 News Crawler（%1）。%n%nOpsis 已正常安装。您可以稍后从以下位置安装 News Crawler：%n%2
+italian.CrawlerFailed=Impossibile scaricare News Crawler (%1).%n%nOpsis è stato installato normalmente. Puoi installare News Crawler più tardi da:%n%2
+russian.CrawlerFailed=Не удалось загрузить News Crawler (%1).%n%nOpsis установлен в обычном порядке. Вы можете установить News Crawler позже отсюда:%n%2
+japanese.CrawlerFailed=News Crawler をダウンロードできませんでした (%1)。%n%nOpsis は通常どおりインストールされました。News Crawler は後で次の場所からインストールできます:%n%2
+portuguese.CrawlerFailed=Não foi possível transferir o News Crawler (%1).%n%nO Opsis foi instalado normalmente. Pode instalar o News Crawler mais tarde a partir de:%n%2
+turkish.CrawlerFailed=News Crawler indirilemedi (%1).%n%nOpsis normal şekilde yüklendi. News Crawler'ı daha sonra şuradan yükleyebilirsiniz:%n%2
+arabic.CrawlerFailed=تعذّر تنزيل News Crawler (%1).%n%nتم تثبيت Opsis بشكل طبيعي. يمكنك تثبيت News Crawler لاحقًا من:%n%2
+hindi.CrawlerFailed=News Crawler डाउनलोड नहीं हो सका (%1)।%n%nOpsis सामान्य रूप से इंस्टॉल हो गया। आप News Crawler बाद में यहाँ से इंस्टॉल कर सकते हैं:%n%2
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 Name: "autostart"; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:StartupGroup}"
@@ -185,6 +263,7 @@ Name: "autostart"; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:Sta
 ; wallpaper (WmvConversionService) — δεν είναι απαραίτητο για την υπόλοιπη εφαρμογή, γι' αυτό
 ; είναι tickbox και όχι υποχρεωτικό όπως το WebView2/.NET Runtime. Εγκαθίσταται μέσω winget (ίδιο
 ; πακέτο, Gyan.FFmpeg, με αυτό που ήδη ψάχνει το WmvConversionService.FindFfmpeg()).
+Name: "installcrawler"; Description: "{cm:CrawlerTask}"; GroupDescription: "{cm:ExtraDepsGroup}"; Flags: unchecked
 Name: "installffmpeg"; Description: "{cm:FfmpegTask}"; GroupDescription: "{cm:ExtraDepsGroup}"; Flags: unchecked; Check: IsWingetAvailable and not IsFfmpegInstalled
 
 [Files]
@@ -292,6 +371,10 @@ begin
   Result := sVersion;
 end;
 
+var
+  CrawlerDownload: TDownloadWizardPage;
+  CrawlerDownloaded: Boolean;
+
 procedure InitializeWizard();
 var
   sPrevVersion: String;
@@ -299,6 +382,52 @@ begin
   sPrevVersion := GetInstalledVersion();
   if sPrevVersion <> '' then
     WizardForm.WelcomeLabel2.Caption := FmtMessage(CustomMessage('UpdateDetected'), [sPrevVersion]);
+  CrawlerDownload := CreateDownloadPage(CustomMessage('CrawlerDownloadTitle'), CustomMessage('CrawlerDownloadDesc'), nil);
+end;
+
+// Λήψη του installer του News Crawler πριν ξεκινήσει η εγκατάσταση (αν επιλέχθηκε). Αν αποτύχει, το Opsis εγκαθίσταται κανονικά.
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (CurPageID = wpReady) and WizardIsTaskSelected('installcrawler') then
+  begin
+    CrawlerDownloaded := False;
+    CrawlerDownload.Clear;
+    CrawlerDownload.Add('{#CrawlerSetupUrl}', 'OpsisNewsCrawler-Setup.exe', '');
+    CrawlerDownload.Show;
+    try
+      try
+        CrawlerDownload.Download;
+        CrawlerDownloaded := True;
+      except
+        if CrawlerDownload.AbortedByUser then
+          Log('News Crawler download aborted by the user')
+        else
+          SuppressibleMsgBox(FmtMessage(CustomMessage('CrawlerFailed'), [GetExceptionMessage, '{#CrawlerSetupUrl}']), mbError, MB_OK, IDOK);
+      end;
+    finally
+      CrawlerDownload.Hide;
+    end;
+  end;
+end;
+
+// Μετά την εγκατάσταση του Opsis: σιωπηλή ενσωματωμένη εγκατάσταση του crawler (ως ο χρήστης που τρέχει το setup,
+// γιατί ο installer του crawler είναι per-user και γράφει στο %AppData%\Opsis\plugins).
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+  SetupFile: String;
+begin
+  if (CurStep = ssPostInstall) and CrawlerDownloaded then
+  begin
+    SetupFile := ExpandConstant('{tmp}\OpsisNewsCrawler-Setup.exe');
+    if FileExists(SetupFile) then
+    begin
+      WizardForm.StatusLabel.Caption := CustomMessage('CrawlerInstalling');
+      if not ExecAsOriginalUser(SetupFile, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MODE=integrated', '', SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode) then
+        Log('Could not start the News Crawler installer');
+    end;
+  end;
 end;
 
 // Καθαρισμός %AppData%\Opsis στην απεγκατάσταση (ρυθμίσεις, wallpaper.json,

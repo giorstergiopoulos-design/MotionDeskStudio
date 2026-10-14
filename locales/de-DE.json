@@ -504,7 +504,7 @@
   "Update.Available": "Version {0} ist verfügbar. Klicken, um die Downloadseite zu öffnen.",
   "Update.Title": "Opsis – Update",
   "About.UpdateHeading": "Updates",
-  "About.UpdateAuto": "Einmal täglich nach Updates suchen",
+  "About.UpdateAuto": "Einmal im Monat nach Updates suchen",
   "About.UpdateCheckNow": "Jetzt prüfen",
   "About.UpdateChecking": "Wird geprüft…",
   "About.UpdateUpToDate": "Sie haben die neueste Version ({0}).",

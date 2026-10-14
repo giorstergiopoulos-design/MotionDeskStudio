@@ -384,6 +384,8 @@ namespace MotionDesk.Widgets
         private static bool IsCandidateWindow(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd)) return false;
+            // Παράθυρα που ζητούν ρητά να μην κουμπώνουν (π.χ. η μπάρα του News Crawler όταν τη μετακινεί ο χρήστης).
+            if (GetProp(hwnd, "Opsis.NoSnap") != IntPtr.Zero) return false;
 
             GetWindowThreadProcessId(hwnd, out uint pid);
             if (pid == (uint)Environment.ProcessId && AllowOwnWindow?.Invoke(hwnd) != true) return false;
@@ -414,6 +416,7 @@ namespace MotionDesk.Widgets
         [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetProp(IntPtr hWnd, string name);
         [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern int GetClassName(IntPtr hwnd, StringBuilder lpClassName, int nMaxCount);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
         [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);

@@ -504,7 +504,7 @@
   "Update.Available": "版本 {0} 可用。点击打开下载页面。",
   "Update.Title": "Opsis 更新",
   "About.UpdateHeading": "更新",
-  "About.UpdateAuto": "每天检查一次更新",
+  "About.UpdateAuto": "每月检查一次更新",
   "About.UpdateCheckNow": "立即检查",
   "About.UpdateChecking": "正在检查…",
   "About.UpdateUpToDate": "您使用的是最新版本（{0}）。",

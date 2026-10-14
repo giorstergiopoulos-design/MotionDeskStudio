@@ -504,7 +504,7 @@
   "Update.Available": "{0} sürümü mevcut. İndirme sayfasını açmak için tıklayın.",
   "Update.Title": "Opsis güncellemesi",
   "About.UpdateHeading": "Güncellemeler",
-  "About.UpdateAuto": "Günde bir kez güncellemeleri denetle",
+  "About.UpdateAuto": "Ayda bir kez güncellemeleri denetle",
   "About.UpdateCheckNow": "Şimdi denetle",
   "About.UpdateChecking": "Denetleniyor…",
   "About.UpdateUpToDate": "En son sürüme sahipsiniz ({0}).",

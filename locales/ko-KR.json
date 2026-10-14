@@ -504,7 +504,7 @@
   "Update.Available": "버전 {0}을(를) 사용할 수 있습니다. 클릭하면 다운로드 페이지가 열립니다.",
   "Update.Title": "Opsis 업데이트",
   "About.UpdateHeading": "업데이트",
-  "About.UpdateAuto": "하루에 한 번 업데이트 확인",
+  "About.UpdateAuto": "한 달에 한 번 업데이트 확인",
   "About.UpdateCheckNow": "지금 확인",
   "About.UpdateChecking": "확인 중…",
   "About.UpdateUpToDate": "최신 버전({0})을 사용 중입니다.",

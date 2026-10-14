@@ -45,7 +45,7 @@ namespace MotionDesk.UI
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            using (var bg = new SolidBrush(BackColor)) g.FillRectangle(bg, ClientRectangle);
+            g.Clear(BackColor); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
 
             var boxRect = new Rectangle(0, (Height - BoxSize) / 2, BoxSize, BoxSize);
             using var path = UiTheme.RoundedPath(boxRect, 5);

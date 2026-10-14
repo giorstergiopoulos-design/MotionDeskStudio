@@ -32,6 +32,9 @@ namespace MotionDesk.Services
         public bool UiSoundsEnabled { get; set; }
         public bool SidebarCollapsed { get; set; }
 
+        // Μηχανισμός plugin (φάκελος "plugins"): false = κανένα plugin δεν φορτώνεται (π.χ. για διάγνωση προβλήματος).
+        public bool PluginsEnabled { get; set; } = true;
+
         // Φάκελος όπου αποθηκεύονται τα μετατρεπόμενα .wmv->.mp4 (κενό = προεπιλογή στο AppData).
         public string? WmvConversionOutputDir { get; set; }
 

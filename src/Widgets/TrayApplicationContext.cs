@@ -19,6 +19,10 @@ namespace MotionDesk.Widgets
 
         public TrayApplicationContext()
         {
+            // Plugin (π.χ. News Crawler): ξεκινούν πριν χτιστεί το μενού ώστε να προσθέσουν τα δικά τους στοιχεία.
+            PluginHost.Instance.NavigationRequested += key => ShowMainWindow("plugin:" + key);
+            PluginHost.Instance.StartAll();
+
             // Δημιουργία Context Menu για το Tray Icon — ομαδοποιημένο σε: παράθυρο, DeskZones,
             // wallpaper, γρήγορα προφίλ, γρήγορες ρυθμίσεις, έξοδος.
             ContextMenuStrip contextMenu = new ContextMenuStrip();
@@ -66,9 +70,17 @@ namespace MotionDesk.Widgets
             };
             contextMenu.Items.Add(startupItem);
 
+            foreach (var pluginMenu in PluginHost.Instance.GetTrayMenuItems())
+            {
+                if (pluginMenu.IsSeparator) { contextMenu.Items.Add(new ToolStripSeparator()); continue; }
+                var invoke = pluginMenu.Invoke;
+                contextMenu.Items.Add(LocalizationManager.CurrentLanguage == "el" ? pluginMenu.TitleEl : pluginMenu.TitleEn, null, (s, e) => { try { invoke(); } catch (Exception) { } });
+            }
+
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add(LocalizationManager.T("Common.Exit"), null, (s, e) => {
                 try { WorkspaceProfileService.Save("Last Session"); WorkspaceProfileService.ExitSaveDone = true; } catch { }
+                PluginHost.Instance.StopAll();
                 _hotkeys.Dispose();
                 DesktopIconVisibilityEngine.Instance.Stop();
                 _trayIcon.Visible = false;
@@ -148,7 +160,10 @@ namespace MotionDesk.Widgets
             }
             else
             {
-                ShowMainWindow();
+                // "--page <key>": ανοίγει κατευθείαν σε μια σελίδα (χρήσιμο για δοκιμές και συντομεύσεις), π.χ. --page plugin:OpsisNewsCrawler
+                var cmd = Environment.GetCommandLineArgs();
+                int pageArg = Array.FindIndex(cmd, a => a.Equals("--page", StringComparison.OrdinalIgnoreCase));
+                ShowMainWindow(pageArg >= 0 && pageArg + 1 < cmd.Length ? cmd[pageArg + 1] : null);
             }
         }
 

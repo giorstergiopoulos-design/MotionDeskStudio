@@ -504,7 +504,7 @@
   "Update.Available": "バージョン {0} が利用可能です。クリックするとダウンロード ページが開きます。",
   "Update.Title": "Opsis の更新",
   "About.UpdateHeading": "更新",
-  "About.UpdateAuto": "1 日 1 回更新を確認",
+  "About.UpdateAuto": "1 か月に 1 回更新を確認",
   "About.UpdateCheckNow": "今すぐ確認",
   "About.UpdateChecking": "確認中…",
   "About.UpdateUpToDate": "最新バージョン ({0}) をお使いです。",

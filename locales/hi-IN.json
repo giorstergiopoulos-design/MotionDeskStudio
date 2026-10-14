@@ -504,7 +504,7 @@
   "Update.Available": "संस्करण {0} उपलब्ध है। डाउनलोड पेज खोलने के लिए क्लिक करें।",
   "Update.Title": "Opsis अपडेट",
   "About.UpdateHeading": "अपडेट",
-  "About.UpdateAuto": "दिन में एक बार अपडेट जाँचें",
+  "About.UpdateAuto": "महीने में एक बार अपडेट जाँचें",
   "About.UpdateCheckNow": "अभी जाँचें",
   "About.UpdateChecking": "जाँच हो रही है…",
   "About.UpdateUpToDate": "आपके पास नवीनतम संस्करण ({0}) है।",

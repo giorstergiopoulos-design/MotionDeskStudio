@@ -104,7 +104,7 @@ namespace MotionDesk.UI
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            using (var bg = new SolidBrush(Parent?.BackColor ?? UiTheme.Surface)) g.FillRectangle(bg, ClientRectangle);
+            g.Clear(Parent?.BackColor ?? UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
 
             float midY = Height / 2f;
             var trackRect = new RectangleF(ThumbRadius, midY - TrackHeight / 2f, Math.Max(0, Width - ThumbRadius * 2), TrackHeight);
