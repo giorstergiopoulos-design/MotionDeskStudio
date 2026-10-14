@@ -385,6 +385,19 @@ begin
   CrawlerDownload := CreateDownloadPage(CustomMessage('CrawlerDownloadTitle'), CustomMessage('CrawlerDownloadDesc'), nil);
 end;
 
+function CrawlerChecksumMatches: Boolean;
+var
+  Lines: TArrayOfString;
+  Expected, Actual: String;
+begin
+  Result := False;
+  if not LoadStringsFromFile(ExpandConstant('{tmp}\OpsisNewsCrawler-Setup.exe.sha256'), Lines) then Exit;
+  if GetArrayLength(Lines) = 0 then Exit;
+  Expected := Lowercase(Copy(Trim(Lines[0]), 1, 64));
+  Actual := Lowercase(GetSHA256OfFile(ExpandConstant('{tmp}\OpsisNewsCrawler-Setup.exe')));
+  Result := (Length(Expected) = 64) and (Expected = Actual);
+end;
+
 // Λήψη του installer του News Crawler πριν ξεκινήσει η εγκατάσταση (αν επιλέχθηκε). Αν αποτύχει, το Opsis εγκαθίσταται κανονικά.
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
@@ -394,10 +407,14 @@ begin
     CrawlerDownloaded := False;
     CrawlerDownload.Clear;
     CrawlerDownload.Add('{#CrawlerSetupUrl}', 'OpsisNewsCrawler-Setup.exe', '');
+    CrawlerDownload.Add('{#CrawlerSetupUrl}.sha256', 'OpsisNewsCrawler-Setup.exe.sha256', '');
     CrawlerDownload.Show;
     try
       try
         CrawlerDownload.Download;
+        // The release publishes the SHA-256 of the setup next to it: refuse a file that does not match (damaged or replaced download).
+        if not CrawlerChecksumMatches then
+          RaiseException('the checksum of the downloaded file does not match');
         CrawlerDownloaded := True;
       except
         if CrawlerDownload.AbortedByUser then
