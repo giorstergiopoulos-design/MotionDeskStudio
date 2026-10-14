@@ -255,6 +255,10 @@ namespace MotionDesk.Widgets
         public string WeatherCity { get; set; } = string.Empty;
         public double WeatherLat { get; set; } = 37.9838;
         public double WeatherLon { get; set; } = 23.7275;
+        // Ζητήθηκε ρητά: αν ο χρήστης δεν έχει ορίσει ποτέ πόλη, ο καιρός δείχνει σιωπηλά τον
+        // προεπιλεγμένο (Αθήνα) χωρίς καμία ένδειξη ότι δεν είναι η πραγματική του τοποθεσία —
+        // ρωτάμε μία φορά, όχι σε κάθε επίσκεψη της σελίδας.
+        public bool WeatherLocationPrompted { get; set; } = false;
         // "Auto" = live. Otherwise a fixed scene (handy for previews/offline): Clear|PartlyCloudy|Cloudy|Drizzle|Rain|HeavyRain|Thunderstorm|Snow|Fog
         public string WeatherSimulation { get; set; } = "Auto";
         // "Auto" = live. Otherwise Dawn|Day|Dusk|Night
@@ -1106,6 +1110,14 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Count);
             settings.WeatherCity = city; settings.WeatherLat = lat; settings.WeatherLon = lon;
             settings.Save();
             _ = RefreshAllAsync();
+        }
+
+        public void MarkWeatherLocationPrompted()
+        {
+            var settings = WallpaperSettings.Load();
+            if (settings.WeatherLocationPrompted) return;
+            settings.WeatherLocationPrompted = true;
+            settings.Save();
         }
 
         public void SetWeatherSimulation(string sim)

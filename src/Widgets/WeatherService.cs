@@ -221,23 +221,73 @@ namespace MotionDesk.Services
         // στο widget να έχει πραγματική επιλογή τοποθεσίας αντί για μόνιμα κλειδωμένη Αθήνα.
         public static async Task<(double Lat, double Lon, string Name)?> GeocodeAsync(string cityName)
         {
+            var list = await GeocodeMultipleAsync(cityName, 1);
+            if (list.Count == 0) return null;
+            return (list[0].Lat, list[0].Lon, list[0].Name);
+        }
+
+        public sealed class GeocodeMatch
+        {
+            public double Lat { get; set; }
+            public double Lon { get; set; }
+            public string Name { get; set; } = "";
+            public string Country { get; set; } = "";
+        }
+
+        // Ζητήθηκε ρητά μετά από αναφορά χρήστη: η αναζήτηση έβγαζε "δεν βρέθηκε" για "Αθηνα" στα
+        // ελληνικά. Αιτία: το Open-Meteo geocoding API ψάχνει με βάση το δικό του "language" παράμετρο
+        // ΚΑΙ στο ποια γλώσσα/γραφή ταιριάζει το όνομα, όχι μόνο στο πώς εμφανίζεται το αποτέλεσμα —
+        // με hardcoded "en" ένα ελληνικό όνομα απλά δεν έβρισκε τίποτα. Επιβεβαιώθηκε ζωντανά:
+        // name=Αθηνα&language=en -> 0 αποτελέσματα, name=Αθηνα&language=el -> βρίσκει Αθήνα.
+        // Τώρα στέλνουμε τη γλώσσα της εφαρμογής. Επίσης ζητήθηκε να εμφανίζονται επιλογές όταν
+        // υπάρχουν πολλές πόλεις με το ίδιο όνομα (π.χ. "Αθήνα, Ελλάδα" vs "Αθήνα, Ουκρανία") αντί να
+        // παίρνουμε σιωπηλά την πρώτη — γι' αυτό η πολλαπλή εκδοχή επιστρέφει έως `count` αποτελέσματα.
+        public static async Task<System.Collections.Generic.List<GeocodeMatch>> GeocodeMultipleAsync(string cityName, int count = 5)
+        {
+            var matches = new System.Collections.Generic.List<GeocodeMatch>();
             try
             {
-                string url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(cityName)}&count=1&language=en&format=json";
+                string lang = string.IsNullOrWhiteSpace(LocalizationManager.CurrentLanguage) ? "en" : LocalizationManager.CurrentLanguage;
+                string url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(cityName)}&count={count}&language={lang}&format=json";
                 string json = await _httpClient.GetStringAsync(url);
                 using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
+                if (doc.RootElement.TryGetProperty("results", out var results))
                 {
-                    var first = results[0];
-                    double lat = first.GetProperty("latitude").GetDouble();
-                    double lon = first.GetProperty("longitude").GetDouble();
-                    // Μόνο το όνομα πόλης (όχι + χώρα) — ζητήθηκε να μη κόβεται ο τίτλος του widget.
-                    string name = first.GetProperty("name").GetString() ?? cityName;
-                    return (lat, lon, name);
+                    foreach (var r in results.EnumerateArray())
+                    {
+                        matches.Add(new GeocodeMatch
+                        {
+                            Lat = r.GetProperty("latitude").GetDouble(),
+                            Lon = r.GetProperty("longitude").GetDouble(),
+                            Name = r.GetProperty("name").GetString() ?? cityName,
+                            Country = r.TryGetProperty("country", out var c) ? (c.GetString() ?? "") : "",
+                        });
+                    }
+                }
+                // Μία επαναπροσπάθεια με "en" αν η τοπική γλώσσα δεν βρήκε τίποτα — κάποια ονόματα
+                // (ειδικά μικρών πόλεων) υπάρχουν στη βάση μόνο στα αγγλικά.
+                if (matches.Count == 0 && lang != "en")
+                {
+                    string fallbackUrl = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(cityName)}&count={count}&language=en&format=json";
+                    string fallbackJson = await _httpClient.GetStringAsync(fallbackUrl);
+                    using var fallbackDoc = JsonDocument.Parse(fallbackJson);
+                    if (fallbackDoc.RootElement.TryGetProperty("results", out var fallbackResults))
+                    {
+                        foreach (var r in fallbackResults.EnumerateArray())
+                        {
+                            matches.Add(new GeocodeMatch
+                            {
+                                Lat = r.GetProperty("latitude").GetDouble(),
+                                Lon = r.GetProperty("longitude").GetDouble(),
+                                Name = r.GetProperty("name").GetString() ?? cityName,
+                                Country = r.TryGetProperty("country", out var c) ? (c.GetString() ?? "") : "",
+                            });
+                        }
+                    }
                 }
             }
             catch (Exception) { }
-            return null;
+            return matches;
         }
 
         // WMO weather codes (Open-Meteo current_weather.weathercode) -> ομαδοποιημένη συνθήκη.

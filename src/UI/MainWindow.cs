@@ -1516,20 +1516,56 @@ namespace MotionDesk.UI
             var cityBox = new TextBox { Width = 240, Text = settings.WeatherCity, BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary, BorderStyle = BorderStyle.FixedSingle, Font = UiTheme.FontBody, Margin = new Padding(0, 5, 10, 0) };
             var setBtn = new HoverButton { Text = LocalizationManager.T("Wallpaper.WeatherLocationSet"), AutoSize = true, Padding = new Padding(16, 6, 16, 6), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = UiTheme.AccentBlue, BaseColor = UiTheme.AccentBlue, HoverBackColor = ControlPaint.Light(UiTheme.AccentBlue, 0.15f), TabStop = false, Cursor = Cursors.Hand, Margin = new Padding(0, 2, 0, 0) };
             setBtn.FlatAppearance.BorderSize = 0;
+
+            // Ζητήθηκε ρητά μετά από αναφορά χρήστη ότι η αναζήτηση "δεν βγάζει επιλογές πόλεων" όταν
+            // υπάρχουν πολλές πόλεις με το ίδιο όνομα (π.χ. "Αθήνα, Ελλάδα" vs "Αθήνα, Ουκρανία") — πριν
+            // επιλεγόταν σιωπηλά η πρώτη. Τώρα, όταν το GeocodeMultipleAsync βρει περισσότερα από ένα
+            // αποτελέσματα, εμφανίζονται ως κλικαρίσμενες κάρτες εδώ αντί να μαντεύουμε.
+            var choicesPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0, 0, 0, 10), BackColor = Color.Transparent, Visible = false };
+
+            void ApplyMatch(WeatherService.GeocodeMatch m)
+            {
+                WallpaperHostEngine.Instance.SetWeatherLocation(m.Name, m.Lat, m.Lon);
+                locLabel.Text = string.Format(LocalizationManager.T("Wallpaper.WeatherLocationCurrent"), m.Name);
+                cityBox.Text = m.Name;
+                choicesPanel.Controls.Clear();
+                choicesPanel.Visible = false;
+                _ = RefreshLiveWeatherLabelAsync(liveLabel, m.Lat, m.Lon);
+            }
+
             async void ApplyCity()
             {
                 var name = cityBox.Text.Trim();
                 if (name.Length == 0) return;
                 setBtn.Enabled = false;
+                choicesPanel.Controls.Clear();
+                choicesPanel.Visible = false;
                 try
                 {
-                    var found = await WeatherService.GeocodeAsync(name);
-                    if (found.HasValue)
+                    var found = await WeatherService.GeocodeMultipleAsync(name, 5);
+                    if (found.Count == 1)
                     {
-                        WallpaperHostEngine.Instance.SetWeatherLocation(found.Value.Name, found.Value.Lat, found.Value.Lon);
-                        locLabel.Text = string.Format(LocalizationManager.T("Wallpaper.WeatherLocationCurrent"), found.Value.Name);
-                        cityBox.Text = found.Value.Name;
-                        _ = RefreshLiveWeatherLabelAsync(liveLabel, found.Value.Lat, found.Value.Lon);
+                        ApplyMatch(found[0]);
+                    }
+                    else if (found.Count > 1)
+                    {
+                        locLabel.Text = LocalizationManager.T("Wallpaper.WeatherLocationChoose");
+                        foreach (var m in found)
+                        {
+                            var choiceBtn = new HoverButton
+                            {
+                                Text = string.IsNullOrEmpty(m.Country) ? m.Name : $"{m.Name}, {m.Country}",
+                                AutoSize = true, Padding = new Padding(10, 5, 10, 5), FlatStyle = FlatStyle.Flat,
+                                ForeColor = UiTheme.TextPrimary, BackColor = UiTheme.Surface, BaseColor = UiTheme.Surface,
+                                HoverBackColor = ControlPaint.Light(UiTheme.Surface, 0.15f), TabStop = false, Cursor = Cursors.Hand,
+                                Margin = new Padding(0, 0, 0, 4), TextAlign = ContentAlignment.MiddleLeft,
+                            };
+                            choiceBtn.FlatAppearance.BorderSize = 1;
+                            choiceBtn.FlatAppearance.BorderColor = UiTheme.Border;
+                            choiceBtn.Click += (_, _) => ApplyMatch(m);
+                            choicesPanel.Controls.Add(choiceBtn);
+                        }
+                        choicesPanel.Visible = true;
                     }
                     else locLabel.Text = LocalizationManager.T("Wallpaper.WeatherLocationNotFound");
                 }
@@ -1541,6 +1577,24 @@ namespace MotionDesk.UI
             locRow.Controls.Add(cityBox);
             locRow.Controls.Add(setBtn);
             panel.Controls.Add(locRow);
+            panel.Controls.Add(choicesPanel);
+
+            // Ζητήθηκε ρητά: ρώτα μία φορά αν δεν έχει οριστεί ποτέ πόλη, αντί να δείχνουμε σιωπηλά
+            // τον καιρό της Αθήνας χωρίς ο χρήστης να το καταλάβει (έτσι βρέθηκε μια αναφορά "δείχνει
+            // συννεφιά ενώ βρέχει" που ήταν απλά λάθος τοποθεσία, όχι bug). BeginInvoke ώστε η σελίδα
+            // να έχει προλάβει να ζωγραφιστεί πριν εμφανιστεί το MessageBox.
+            if (string.IsNullOrWhiteSpace(settings.WeatherCity) && !settings.WeatherLocationPrompted)
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    WallpaperHostEngine.Instance.MarkWeatherLocationPrompted();
+                    var result = MessageBox.Show(this,
+                        LocalizationManager.T("Wallpaper.WeatherLocationPromptBody"),
+                        LocalizationManager.T("Wallpaper.WeatherLocationPromptTitle"),
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (result == DialogResult.Yes && !cityBox.IsDisposed) cityBox.Focus();
+                }));
+            }
 
             // ---- clock / date / temperature overlay + its position (centre of the block, % of the screen)
             FlatSlider? infoX = null, infoY = null, infoScale = null;
