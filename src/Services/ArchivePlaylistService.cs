@@ -96,8 +96,13 @@ namespace MotionDesk.Services
             if (sevenZip == null) return false;
             try
             {
-                var psi = new ProcessStartInfo(sevenZip, $"x \"{archivePath}\" -o\"{destDir}\" -y")
-                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                // ArgumentList (όχι interpolated Arguments string) — μια διαδρομή που περιέχει " θα έσπαγε
+                // το parsing της γραμμής εντολών (ή, χειρότερα, θα μπορούσε να εισάγει επιπλέον ορίσματα).
+                var psi = new ProcessStartInfo(sevenZip) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                psi.ArgumentList.Add("x");
+                psi.ArgumentList.Add(archivePath);
+                psi.ArgumentList.Add("-o" + destDir);
+                psi.ArgumentList.Add("-y");
                 using var proc = Process.Start(psi);
                 if (proc == null) return false;
                 // Το 7z γράφει συνεχώς λίστα αρχείων στο stdout — αν το pipe δεν διαβάζεται γεμίζει και

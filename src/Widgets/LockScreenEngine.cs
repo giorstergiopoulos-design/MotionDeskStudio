@@ -58,11 +58,16 @@ namespace MotionDesk.Widgets
             try
             {
                 string exePath = Environment.ProcessPath!;
-                var psi = new ProcessStartInfo(exePath, $"--set-lockscreen \"{imagePath}\"")
+                // ArgumentList, όχι interpolated string — ειδικά εδώ που η επανεκκίνηση γίνεται elevated
+                // (Verb=runas): μια διαδρομή με " θα μπορούσε αλλιώς να σπάσει/αλλάξει τα ορίσματα της
+                // ανυψωμένης διεργασίας.
+                var psi = new ProcessStartInfo(exePath)
                 {
                     UseShellExecute = true,
                     Verb = "runas"
                 };
+                psi.ArgumentList.Add("--set-lockscreen");
+                psi.ArgumentList.Add(imagePath);
                 using var proc = Process.Start(psi);
                 proc?.WaitForExit(15000);
             }

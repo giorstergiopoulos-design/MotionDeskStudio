@@ -129,15 +129,18 @@ namespace MotionDesk.Services
             // ως "έτοιμο". Το -pix_fmt yuv420p και το scale σε ζυγές διαστάσεις είναι απαραίτητα
             // για libx264 (αλλιώς αποτυγχάνει σε WMV με περιττό πλάτος/ύψος ή μη-4:2:0 pixel format).
             string tempPath = outputPath + ".partial.mp4";
-            var psi = new ProcessStartInfo(ffmpeg,
-                $"-y -i \"{wmvPath}\" -vf \"scale=trunc(iw/2)*2:trunc(ih/2)*2\" -pix_fmt yuv420p " +
-                $"-c:v libx264 -preset veryfast -crf 23 -c:a aac -movflags +faststart \"{tempPath}\"")
+            // ArgumentList, όχι interpolated string — ένα " στο όνομα του αρχείου (έγκυρο σε NTFS)
+            // θα έσπαγε το parsing των ορισμάτων του ffmpeg.
+            var psi = new ProcessStartInfo(ffmpeg)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true
             };
+            foreach (var a in new[] { "-y", "-i", wmvPath, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-pix_fmt", "yuv420p",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", tempPath })
+                psi.ArgumentList.Add(a);
 
             try
             {

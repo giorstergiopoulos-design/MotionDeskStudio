@@ -1523,13 +1523,22 @@ namespace MotionDesk.UI
             // αποτελέσματα, εμφανίζονται ως κλικαρίσμενες κάρτες εδώ αντί να μαντεύουμε.
             var choicesPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0, 0, 0, 10), BackColor = Color.Transparent, Visible = false };
 
+            // Controls.Clear() αφαιρεί τα child controls από τη συλλογή αλλά ΔΕΝ τα κάνει Dispose —
+            // ίδιο bug class με το SetPage() παραπάνω (βλ. σχόλιο εκεί). Χωρίς αυτό, κάθε νέα αναζήτηση
+            // τοποθεσίας θα άφηνε πίσω της ορφανά HoverButton handles.
+            void ClearChoices()
+            {
+                foreach (Control c in choicesPanel.Controls) c.Dispose();
+                choicesPanel.Controls.Clear();
+                choicesPanel.Visible = false;
+            }
+
             void ApplyMatch(WeatherService.GeocodeMatch m)
             {
                 WallpaperHostEngine.Instance.SetWeatherLocation(m.Name, m.Lat, m.Lon);
                 locLabel.Text = string.Format(LocalizationManager.T("Wallpaper.WeatherLocationCurrent"), m.Name);
                 cityBox.Text = m.Name;
-                choicesPanel.Controls.Clear();
-                choicesPanel.Visible = false;
+                ClearChoices();
                 _ = RefreshLiveWeatherLabelAsync(liveLabel, m.Lat, m.Lon);
             }
 
@@ -1538,8 +1547,7 @@ namespace MotionDesk.UI
                 var name = cityBox.Text.Trim();
                 if (name.Length == 0) return;
                 setBtn.Enabled = false;
-                choicesPanel.Controls.Clear();
-                choicesPanel.Visible = false;
+                ClearChoices();
                 try
                 {
                     var found = await WeatherService.GeocodeMultipleAsync(name, 5);

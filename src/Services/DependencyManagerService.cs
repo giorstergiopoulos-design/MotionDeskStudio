@@ -87,14 +87,15 @@ namespace MotionDesk.Services
             if (!IsWingetAvailable())
                 return (false, LocalizationManager.T("Dependency.WingetMissing"));
 
-            var psi = new ProcessStartInfo("winget",
-                $"install --id {wingetId} -e --silent --accept-package-agreements --accept-source-agreements")
+            var psi = new ProcessStartInfo("winget")
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             };
+            foreach (var a in new[] { "install", "--id", wingetId, "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements" })
+                psi.ArgumentList.Add(a);
 
             try
             {
