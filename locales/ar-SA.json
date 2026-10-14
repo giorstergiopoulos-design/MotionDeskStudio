@@ -77,6 +77,7 @@
   "Settings.WmvOutputFolderPrompt": "مجلد حفظ الفيديوهات المحوّلة (.wmv→.mp4)",
   "Settings.Appearance": "المظهر",
   "Settings.Theme": "السمة",
+  "Settings.FollowWindowsAccent": "اتّباع لون التمييز في Windows",
   "Settings.ThemeFollow": "اتباع Windows",
   "Settings.ThemeLight": "فاتح",
   "Settings.ThemeDark": "داكن",

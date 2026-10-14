@@ -77,6 +77,7 @@
   "Settings.WmvOutputFolderPrompt": "Папка для сохранения конвертированных видео (.wmv→.mp4)",
   "Settings.Appearance": "Внешний вид",
   "Settings.Theme": "Тема",
+  "Settings.FollowWindowsAccent": "Использовать цвет акцента Windows",
   "Settings.ThemeFollow": "Как в Windows",
   "Settings.ThemeLight": "Светлая",
   "Settings.ThemeDark": "Тёмная",

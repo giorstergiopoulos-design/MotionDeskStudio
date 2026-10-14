@@ -26,6 +26,9 @@ namespace MotionDesk.Services
         public bool StartWallpaperWithWindows { get; set; }
         public bool EnableAnimations { get; set; } = true;
         public string ThemeMode { get; set; } = "Follow"; // Follow | Light | Dark
+        // Seelen UI-inspired: αντί για σταθερή παλέτα accent χρωμάτων, ακολούθησε το πραγματικό
+        // accent color που έχει επιλέξει ο χρήστης στα Windows (Ρυθμίσεις > Εξατομίκευση > Χρώματα).
+        public bool FollowWindowsAccent { get; set; } = false;
         public string Language { get; set; } = "Follow";  // Follow | el | en
         public double WindowOpacity { get; set; } = 1.0;  // 0.6 - 1.0, εφαρμόζεται στο κύριο παράθυρο
         public double DarkIntensity { get; set; } = 0.5;  // 0 (πιο ανοιχτό σκούρο) - 1 (σχεδόν μαύρο), 0.5 = η αρχική βάση

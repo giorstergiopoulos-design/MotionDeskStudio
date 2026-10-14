@@ -77,6 +77,7 @@
   "Settings.WmvOutputFolderPrompt": "Dossier d'enregistrement des vidéos converties (.wmv→.mp4)",
   "Settings.Appearance": "Apparence",
   "Settings.Theme": "Thème",
+  "Settings.FollowWindowsAccent": "Suivre la couleur d'accentuation de Windows",
   "Settings.ThemeFollow": "Suivre Windows",
   "Settings.ThemeLight": "Clair",
   "Settings.ThemeDark": "Sombre",

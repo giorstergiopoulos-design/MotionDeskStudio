@@ -26,9 +26,14 @@ namespace MotionDesk.UI
         public static Color AccentBlue => ThemeManager.Current.AccentBlue;
         public static Color AccentSoft => Color.FromArgb(40, AccentCyan.R, AccentCyan.G, AccentCyan.B);
 
-        public static readonly Font FontHeading = new("Segoe UI", 20f, FontStyle.Bold);
-        public static readonly Font FontSubheading = new("Segoe UI", 12f, FontStyle.Bold);
-        public static readonly Font FontBody = new("Segoe UI", 10f);
+        // "Segoe UI Variable" (Display για τίτλους, Text για το υπόλοιπο) είναι η γραμματοσειρά
+        // συστήματος των Windows 11 (πιο σύγχρονες αναλογίες από το παλιό "Segoe UI") — ζητήθηκε
+        // ρητά SeelenUI-inspired βελτίωση γραμματοσειρών. Σε Windows 10, όπου δεν υπάρχει
+        // εγκατεστημένη, το GDI+ κάνει σιωπηλά fallback (δεν πετάει exception) σε προεπιλεγμένη
+        // γραμματοσειρά — ασφαλές και στις δύο εκδόσεις των Windows.
+        public static readonly Font FontHeading = new("Segoe UI Variable Display", 20f, FontStyle.Bold);
+        public static readonly Font FontSubheading = new("Segoe UI Variable Display", 12f, FontStyle.Bold);
+        public static readonly Font FontBody = new("Segoe UI Variable Text", 10f);
         public static readonly Font FontIcon16 = new("Segoe Fluent Icons", 15f);
 
         public static GraphicsPath RoundedPath(Rectangle bounds, int radius)

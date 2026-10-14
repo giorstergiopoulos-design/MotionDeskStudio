@@ -77,6 +77,7 @@
   "Settings.WmvOutputFolderPrompt": "변환된 동영상(.wmv→.mp4)을 저장할 폴더",
   "Settings.Appearance": "모양",
   "Settings.Theme": "테마",
+  "Settings.FollowWindowsAccent": "Windows 강조 색 따르기",
   "Settings.ThemeFollow": "Windows 따르기",
   "Settings.ThemeLight": "밝게",
   "Settings.ThemeDark": "어둡게",

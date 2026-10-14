@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using MotionDesk.Services;
 
@@ -112,13 +113,39 @@ namespace MotionDesk.UI
 
         private static UiPalette Resolve(string mode)
         {
-            double intensity = AppSettings.Load().DarkIntensity;
-            return mode switch
+            var settings = AppSettings.Load();
+            var p = mode switch
             {
                 "Light" => UiPalette.Light(),
-                "Dark" => UiPalette.Dark(intensity),
-                _ => IsWindowsLightTheme() ? UiPalette.Light() : UiPalette.Dark(intensity),
+                "Dark" => UiPalette.Dark(settings.DarkIntensity),
+                _ => IsWindowsLightTheme() ? UiPalette.Light() : UiPalette.Dark(settings.DarkIntensity),
             };
+            if (settings.FollowWindowsAccent && GetWindowsAccentColor() is Color accent)
+            {
+                p.AccentCyan = accent;
+                // Δεν υπάρχει ένα "δεύτερο" accent χρώμα στα Windows — παράγουμε το AccentBlue
+                // σκουραίνοντάς το ελαφρώς, ώστε τα ήδη υπάρχοντα διαγώνια gradients (λογότυπο,
+                // tiles κ.λπ.) να συνεχίσουν να δουλεύουν με δύο αποχρώσεις αντί για ένα flat χρώμα.
+                p.AccentBlue = Color.FromArgb(255, (int)(accent.R * 0.65), (int)(accent.G * 0.65), (int)(accent.B * 0.65));
+            }
+            return p;
+        }
+
+        // Εμπνευσμένο από το Seelen UI (SeelenUI-inspired pass, ζητήθηκε ρητά): εκεί κάθε widget
+        // παίρνει έτοιμα --system-accent-color CSS variables από το πραγματικό accent color των
+        // Windows. Εδώ δεν υπάρχει CSS, οπότε διαβάζουμε το ΙΔΙΟ χρώμα απευθείας με το επίσημο,
+        // τεκμηριωμένο DwmGetColorizationColor (ίδια τιμή που χρησιμοποιεί η ίδια η γραμμή τίτλου
+        // των Windows όταν είναι ενεργό το "Εμφάνιση χρώματος στη γραμμή τίτλου").
+        [DllImport("dwmapi.dll")] private static extern int DwmGetColorizationColor(out uint colorizationColor, out bool opaqueBlend);
+
+        public static Color? GetWindowsAccentColor()
+        {
+            try
+            {
+                if (DwmGetColorizationColor(out uint argb, out _) != 0) return null;
+                return Color.FromArgb(255, (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+            }
+            catch (Exception) { return null; }
         }
 
         public static bool IsWindowsLightTheme()
@@ -137,6 +164,15 @@ namespace MotionDesk.UI
             settings.ThemeMode = mode;
             settings.Save();
             Current = Resolve(mode);
+            Changed?.Invoke();
+        }
+
+        public static void SetFollowWindowsAccent(bool follow)
+        {
+            var settings = AppSettings.Load();
+            settings.FollowWindowsAccent = follow;
+            settings.Save();
+            Current = Resolve(settings.ThemeMode);
             Changed?.Invoke();
         }
 

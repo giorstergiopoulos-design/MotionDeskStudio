@@ -77,6 +77,7 @@
   "Settings.WmvOutputFolderPrompt": "Dönüştürülen videoların (.wmv→.mp4) kaydedileceği klasör",
   "Settings.Appearance": "Görünüm",
   "Settings.Theme": "Tema",
+  "Settings.FollowWindowsAccent": "Windows vurgu rengini kullan",
   "Settings.ThemeFollow": "Windows'u izle",
   "Settings.ThemeLight": "Açık",
   "Settings.ThemeDark": "Koyu",
