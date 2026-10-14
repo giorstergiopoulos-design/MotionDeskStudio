@@ -515,6 +515,7 @@
   "About.UpdateNewer": "Доступна версия {0}.",
   "About.UpdateOpen": "Открыть страницу загрузки",
   "About.UpdateFailed": "Не удалось проверить (нет сети или ещё не опубликован ни один релиз).",
+  "About.UpdateDependenciesMissing": "Отсутствует: {0}. Установите их в Настройки → Системные зависимости.",
   "Wallpaper.WeatherInfo": "Показывать время, дату и температуру на обоях",
   "Wallpaper.Fahrenheit": "Температура в °F",
   "Wallpaper.InfoX": "Положение по горизонтали",

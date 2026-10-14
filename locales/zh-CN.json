@@ -515,6 +515,7 @@
   "About.UpdateNewer": "版本 {0} 可用。",
   "About.UpdateOpen": "打开下载页面",
   "About.UpdateFailed": "无法检查（离线，或尚未发布任何版本）。",
+  "About.UpdateDependenciesMissing": "缺少：{0}。请在 设置 → 系统依赖项 中安装。",
   "Wallpaper.WeatherInfo": "在壁纸上显示时间、日期和温度",
   "Wallpaper.Fahrenheit": "温度单位 °F",
   "Wallpaper.InfoX": "水平位置",

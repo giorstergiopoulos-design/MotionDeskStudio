@@ -34,6 +34,9 @@ namespace MotionDesk.Services
 
         // Μηχανισμός plugin (φάκελος "plugins"): false = κανένα plugin δεν φορτώνεται (π.χ. για διάγνωση προβλήματος).
         public bool PluginsEnabled { get; set; } = true;
+        // Ζητήθηκε ρητά: ξεχωριστό ενεργό/ανενεργό ΑΝΑ plugin (π.χ. το News Crawler), πέρα από τον
+        // γενικό διακόπτη PluginsEnabled παραπάνω. Αποθηκεύει το Id όσων ο χρήστης έχει απενεργοποιήσει.
+        public HashSet<string> DisabledPluginIds { get; set; } = new();
 
         // Φάκελος όπου αποθηκεύονται τα μετατρεπόμενα .wmv->.mp4 (κενό = προεπιλογή στο AppData).
         public string? WmvConversionOutputDir { get; set; }

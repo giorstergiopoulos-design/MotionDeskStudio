@@ -515,6 +515,7 @@
   "About.UpdateNewer": "الإصدار {0} متاح.",
   "About.UpdateOpen": "فتح صفحة التنزيل",
   "About.UpdateFailed": "تعذّر التحقق (غير متصل، أو لم يُنشر أي إصدار بعد).",
+  "About.UpdateDependenciesMissing": "مفقود: {0}. ثبّتها من الإعدادات ← تبعيات النظام.",
   "Wallpaper.WeatherInfo": "إظهار الوقت والتاريخ ودرجة الحرارة على الخلفية",
   "Wallpaper.Fahrenheit": "درجة الحرارة بـ °F",
   "Wallpaper.InfoX": "الموضع الأفقي",

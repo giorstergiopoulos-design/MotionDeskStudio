@@ -515,6 +515,7 @@
   "About.UpdateNewer": "バージョン {0} が利用可能です。",
   "About.UpdateOpen": "ダウンロード ページを開く",
   "About.UpdateFailed": "確認できませんでした（オフライン、またはリリースがまだ公開されていません）。",
+  "About.UpdateDependenciesMissing": "不足: {0}。設定 → システムの依存関係からインストールしてください。",
   "Wallpaper.WeatherInfo": "壁紙に時刻、日付、気温を表示",
   "Wallpaper.Fahrenheit": "気温を °F で表示",
   "Wallpaper.InfoX": "水平位置",

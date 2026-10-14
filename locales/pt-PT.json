@@ -515,6 +515,7 @@
   "About.UpdateNewer": "A versão {0} está disponível.",
   "About.UpdateOpen": "Abrir página de transferência",
   "About.UpdateFailed": "Não foi possível verificar (sem ligação, ou ainda não há nenhuma versão publicada).",
+  "About.UpdateDependenciesMissing": "Em falta: {0}. Instala-as em Definições → Dependências do sistema.",
   "Wallpaper.WeatherInfo": "Mostrar hora, data e temperatura no fundo",
   "Wallpaper.Fahrenheit": "Temperatura em °F",
   "Wallpaper.InfoX": "Posição horizontal",

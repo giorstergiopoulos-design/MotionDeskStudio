@@ -515,6 +515,7 @@
   "About.UpdateNewer": "संस्करण {0} उपलब्ध है।",
   "About.UpdateOpen": "डाउनलोड पेज खोलें",
   "About.UpdateFailed": "जाँच नहीं हो सकी (ऑफ़लाइन, या अभी तक कोई रिलीज़ प्रकाशित नहीं हुई)।",
+  "About.UpdateDependenciesMissing": "अनुपलब्ध: {0}। इन्हें सेटिंग्स → सिस्टम डिपेंडेंसी से इंस्टॉल करें।",
   "Wallpaper.WeatherInfo": "वॉलपेपर पर समय, तारीख और तापमान दिखाएँ",
   "Wallpaper.Fahrenheit": "तापमान °F में",
   "Wallpaper.InfoX": "क्षैतिज स्थिति",

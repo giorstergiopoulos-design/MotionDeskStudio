@@ -515,6 +515,7 @@
   "About.UpdateNewer": "{0} sürümü mevcut.",
   "About.UpdateOpen": "İndirme sayfasını aç",
   "About.UpdateFailed": "Denetlenemedi (çevrimdışı veya henüz yayımlanmış bir sürüm yok).",
+  "About.UpdateDependenciesMissing": "Eksik: {0}. Ayarlar → Sistem bağımlılıkları bölümünden yükleyin.",
   "Wallpaper.WeatherInfo": "Duvar kâğıdında saat, tarih ve sıcaklığı göster",
   "Wallpaper.Fahrenheit": "Sıcaklık °F olarak",
   "Wallpaper.InfoX": "Yatay konum",

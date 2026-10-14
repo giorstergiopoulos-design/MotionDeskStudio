@@ -2695,10 +2695,26 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             {
                 AddSection(panel, LocalizationManager.T("About.SectionPlugins"));
                 bool greek = LocalizationManager.CurrentLanguage == "el";
-                foreach (var info in pluginInfos)
+                foreach (var (id, info) in pluginInfos)
                 {
                     var captured = info;
+                    var capturedId = id;
                     AddText(panel, $"{captured.Name}  v{captured.Version}\n{(greek ? captured.DescriptionEl : captured.DescriptionEn)}\n{captured.Author} · {captured.License}");
+
+                    // Ζητήθηκε ρητά: ξεχωριστό κουμπί ενεργοποίησης/απενεργοποίησης ΓΙΑ ΑΥΤΟ το plugin
+                    // (όχι μόνο ο γενικός διακόπτης "Φόρτωση plugins" στις Ρυθμίσεις). Αλλαγές στα
+                    // στοιχεία πλοήγησης/tray χρειάζονται επανεκκίνηση· το ίδιο το plugin σταματά/ξεκινά αμέσως.
+                    var enableToggle = new FlatCheckBox
+                    {
+                        Text = LocalizationManager.T("About.PluginEnabled"),
+                        AutoSize = true,
+                        Checked = Services.PluginHost.Instance.IsPluginEnabled(capturedId),
+                        BackColor = UiTheme.Background,
+                        Margin = new Padding(0, 0, 0, 6)
+                    };
+                    enableToggle.CheckedChanged += (_, _) => Services.PluginHost.Instance.SetPluginEnabled(capturedId, enableToggle.Checked);
+                    panel.Controls.Add(enableToggle);
+
                     var row = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(740, 0), Margin = new Padding(0, 0, 0, 12) };
                     foreach (var section in captured.Sections)
                     {
@@ -2737,6 +2753,13 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                     openUpdate.Visible = true;
                 }
                 else updateStatus.Text = string.Format(LocalizationManager.T("About.UpdateUpToDate"), UpdateCheckService.CurrentVersion.ToString(3));
+
+                // Ζητήθηκε ρητά: ο έλεγχος ενημερώσεων του Opsis να ελέγχει ΚΑΙ τα dependencies
+                // (FFmpeg/WebView2) στο ίδιο πέρασμα, αντί ο χρήστης να πρέπει να θυμάται να πάει
+                // ξεχωριστά στις Ρυθμίσεις. Δεν κατεβάζει τίποτα αυτόματα εδώ — μόνο ενημερώνει.
+                var missing = DependencyManagerService.All.Where(d => !d.IsInstalled()).Select(d => d.Name).ToList();
+                if (missing.Count > 0 && !updateStatus.IsDisposed)
+                    updateStatus.Text += "\n" + string.Format(LocalizationManager.T("About.UpdateDependenciesMissing"), string.Join(", ", missing));
             });
             updateRow.Controls.Add(checkNow);
             updateRow.Controls.Add(openUpdate);

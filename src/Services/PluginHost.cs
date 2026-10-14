@@ -30,12 +30,40 @@ namespace MotionDesk.Services
         {
             public IOpsisNewsCrawlerPlugin Plugin = null!;
             public string Folder = "";
+            public bool Started;
         }
 
         private readonly List<Loaded> _plugins = new();
         private bool _started;
 
         public IReadOnlyList<IOpsisNewsCrawlerPlugin> Plugins => _plugins.Select(p => p.Plugin).ToList();
+
+        // Ζητήθηκε ρητά: ξεχωριστό κουμπί ενεργοποίησης/απενεργοποίησης ΓΙΑ ΚΑΘΕ plugin (π.χ. το
+        // News Crawler), όχι μόνο ο γενικός διακόπτης "Φόρτωση plugins" (AppSettings.PluginsEnabled)
+        // που τα αφορά όλα μαζί. Ένα απενεργοποιημένο plugin παραμένει φορτωμένο (ώστε να φαίνεται
+        // στη σελίδα About με το δικό του κουμπί) αλλά ΔΕΝ τρέχει (Start/Stop) και δεν συνεισφέρει
+        // στοιχεία πλοήγησης/tray όσο είναι απενεργοποιημένο.
+        public bool IsPluginEnabled(string id) => !AppSettings.Load().DisabledPluginIds.Contains(id);
+
+        public void SetPluginEnabled(string id, bool enabled)
+        {
+            var settings = AppSettings.Load();
+            if (enabled) settings.DisabledPluginIds.Remove(id);
+            else if (!settings.DisabledPluginIds.Contains(id)) settings.DisabledPluginIds.Add(id);
+            settings.Save();
+
+            var p = _plugins.FirstOrDefault(x => x.Plugin.Id == id);
+            if (p != null)
+            {
+                try
+                {
+                    if (enabled && !p.Started) { PushLanguage(p.Plugin); PushTheme(p.Plugin); p.Plugin.Start(); p.Started = true; }
+                    else if (!enabled && p.Started) { p.Plugin.Stop(); p.Started = false; }
+                }
+                catch (Exception ex) { Log($"Plugin '{p.Plugin.Name}' failed to {(enabled ? "start" : "stop")} after toggle: {ex.Message}"); }
+            }
+            Changed?.Invoke();
+        }
 
         /// <summary>Ένα plugin ζήτησε να εμφανιστεί μία από τις σελίδες του (π.χ. δεξί κλικ στη μπάρα ειδήσεων).</summary>
         public event Action<string>? NavigationRequested;
@@ -56,6 +84,7 @@ namespace MotionDesk.Services
                 catch (Exception ex) { Log($"Failed to load '{folder}': {ex}"); }
             }
 
+            var disabled = AppSettings.Load().DisabledPluginIds;
             foreach (var p in _plugins.ToList())
             {
                 try
@@ -63,7 +92,7 @@ namespace MotionDesk.Services
                     p.Plugin.NavigationRequested += key => NavigationRequested?.Invoke(key);
                     PushLanguage(p.Plugin);
                     PushTheme(p.Plugin);
-                    p.Plugin.Start();
+                    if (!disabled.Contains(p.Plugin.Id)) { p.Plugin.Start(); p.Started = true; }
                 }
                 catch (Exception ex)
                 {
@@ -87,11 +116,11 @@ namespace MotionDesk.Services
             }
         }
 
-        /// <summary>Σελίδες των plugin για το sidebar, ταξινομημένες κατά Order.</summary>
+        /// <summary>Σελίδες των plugin για το sidebar, ταξινομημένες κατά Order. Ένα απενεργοποιημένο plugin δεν συνεισφέρει.</summary>
         public IReadOnlyList<PluginNavigationItem> GetNavigationItems()
         {
             var items = new List<PluginNavigationItem>();
-            foreach (var p in _plugins)
+            foreach (var p in _plugins.Where(p => p.Started))
             {
                 try { items.AddRange(p.Plugin.GetNavigationItems()); }
                 catch (Exception ex) { Log($"Plugin '{p.Plugin.Name}' navigation failed: {ex.Message}"); }
@@ -102,7 +131,7 @@ namespace MotionDesk.Services
         public IReadOnlyList<PluginMenuItem> GetTrayMenuItems()
         {
             var items = new List<PluginMenuItem>();
-            foreach (var p in _plugins)
+            foreach (var p in _plugins.Where(p => p.Started))
             {
                 try { items.AddRange(p.Plugin.GetTrayMenuItems()); }
                 catch (Exception ex) { Log($"Plugin '{p.Plugin.Name}' tray items failed: {ex.Message}"); }
@@ -110,13 +139,15 @@ namespace MotionDesk.Services
             return items;
         }
 
-        /// <summary>Πληροφορίες "Σχετικά" όλων των plugin (ιδιότητες, βοήθεια, οδηγίες, ιστορικό, άδεια) για τη σελίδα About.</summary>
-        public IReadOnlyList<PluginAboutInfo> GetAboutInfos()
+        /// <summary>Πληροφορίες "Σχετικά" όλων των plugin (ιδιότητες, βοήθεια, οδηγίες, ιστορικό, άδεια) για τη σελίδα About,
+        /// μαζί με το Id τους (ώστε η σελίδα About να μπορεί να βάλει το σωστό κουμπί ενεργό/ανενεργό δίπλα στο καθένα).
+        /// Τα δείχνει ΟΛΑ, ακόμη και τα απενεργοποιημένα — αλλιώς δεν θα υπήρχε πώς να τα ξανα-ενεργοποιήσεις.</summary>
+        public IReadOnlyList<(string Id, PluginAboutInfo Info)> GetAboutInfos()
         {
-            var infos = new List<PluginAboutInfo>();
+            var infos = new List<(string, PluginAboutInfo)>();
             foreach (var p in _plugins)
             {
-                try { infos.Add(p.Plugin.GetAboutInfo()); }
+                try { infos.Add((p.Plugin.Id, p.Plugin.GetAboutInfo())); }
                 catch (Exception ex) { Log($"Plugin '{p.Plugin.Name}' about info failed: {ex.Message}"); }
             }
             return infos;
@@ -178,10 +209,27 @@ namespace MotionDesk.Services
                 {
                     if (type.IsAbstract || !typeof(IOpsisNewsCrawlerPlugin).IsAssignableFrom(type)) continue;
                     if (Activator.CreateInstance(type) is not IOpsisNewsCrawlerPlugin plugin) continue;
-                    if (_plugins.Any(p => p.Plugin.Id == plugin.Id)) continue; // ίδιο plugin από δύο φακέλους
+
+                    // Το ίδιο plugin μπορεί να βρεθεί σε δύο φακέλους (π.χ. η παλιά έκδοση που ήρθε
+                    // bundled με τον installer του Opsis στο <app>\plugins, ΚΑΙ μια νεότερη που έγραψε
+                    // ο δικός του αυτόματος updater στο %AppData%\Opsis\plugins). Ζητήθηκε ρητά να μην
+                    // μένει "κολλημένη" η παλιά — κρατάμε πάντα τη ΝΕΟΤΕΡΗ έκδοση, όχι αυτή που απλά
+                    // βρέθηκε πρώτη (ο παλιός κώδικας έκανε ακριβώς αυτό το λάθος: "first wins").
+                    var existing = _plugins.FirstOrDefault(p => p.Plugin.Id == plugin.Id);
+                    if (existing != null)
+                    {
+                        if (!IsNewerVersion(plugin.Version, existing.Plugin.Version)) continue;
+                        _plugins.Remove(existing);
+                    }
                     _plugins.Add(new Loaded { Plugin = plugin, Folder = folder });
                 }
             }
+        }
+
+        private static bool IsNewerVersion(string candidate, string current)
+        {
+            if (System.Version.TryParse(candidate, out var c) && System.Version.TryParse(current, out var u)) return c > u;
+            return string.CompareOrdinal(candidate, current) > 0; // fallback: ασυνήθιστη μορφή έκδοσης, τουλάχιστον σταθερή σύγκριση
         }
 
         private sealed class PluginLoadContext : AssemblyLoadContext

@@ -515,6 +515,7 @@
   "About.UpdateNewer": "버전 {0}을(를) 사용할 수 있습니다.",
   "About.UpdateOpen": "다운로드 페이지 열기",
   "About.UpdateFailed": "확인할 수 없습니다(오프라인이거나 아직 릴리스가 게시되지 않음).",
+  "About.UpdateDependenciesMissing": "누락됨: {0}. 설정 → 시스템 종속성에서 설치하세요.",
   "Wallpaper.WeatherInfo": "배경 화면에 시간, 날짜, 온도 표시",
   "Wallpaper.Fahrenheit": "온도를 °F로 표시",
   "Wallpaper.InfoX": "가로 위치",
