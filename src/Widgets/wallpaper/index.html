@@ -470,10 +470,29 @@ async function startDesktop() {
     stopWaves();
     videoLayers.forEach(v => { v.classList.add('videoHidden'); v.classList.remove('active'); v.pause(); });
     applyDesk(cfg.desk);
-    setDeskVisible(true);
-    // wait (max 1.5 s) until the picture is decoded so the window is not revealed with only the background colour
+    // ΔΙΟΡΘΩΣΗ πραγματικού flicker στην εκκίνηση (live-επιβεβαιωμένο με διαδοχικά screenshots): το
+    // setDeskVisible(true) ΓΙΝΟΤΑΝ πριν περιμένουμε την εικόνα, οπότε το στοιχείο ήταν ήδη ορατό
+    // (display:block) με μόνο το φόντο χρώμα (σκούρο navy) πριν προλάβει να ζωγραφιστεί η φωτογραφία
+    // — ακριβώς το "όλη η επιφάνεια εργασίας μαυρίζει στιγμιαία" που αναφέρθηκε. Τώρα μένει κρυφό
+    // μέχρι να είναι έτοιμη η εικόνα. Επίσης το παλιό onload εγγυάται μόνο ότι κατέβηκαν τα bytes,
+    // ΟΧΙ πλήρη αποκωδικοποίηση — σε μεγάλες φωτογραφίες ο browser μπορεί να κάνει decode ασύγχρονα
+    // μετά το onload· το decode() εγγυάται ότι η εικόνα είναι έτοιμη να ζωγραφιστεί αμέσως.
     const uri = cfg.desk && (cfg.desk.uri ?? cfg.desk.Uri);
-    if (uri) await new Promise(res => { const img = new Image(); img.onload = img.onerror = () => res(); img.src = uri; setTimeout(res, 1500); });
+    if (uri) {
+        const img = new Image();
+        img.src = uri;
+        const ready = (typeof img.decode === 'function')
+            ? img.decode().catch(() => new Promise(res => { img.onload = img.onerror = res; }))
+            : new Promise(res => { img.onload = img.onerror = res; });
+        await Promise.race([ready, new Promise(res => setTimeout(res, 1500))]);
+    }
+    setDeskVisible(true);
+    // img.decode() εγγυάται ότι το ΙΔΙΟ Image αντικείμενο είναι αποκωδικοποιημένο, όχι ότι ο
+    // compositor έχει ήδη ζωγραφίσει το background-image ενός ΔΙΑΦΟΡΕΤΙΚΟΥ στοιχείου (#desk) που
+    // δείχνει στο ίδιο URI — ένα μικρό residual flash παρέμενε ζωντανά ακόμα και μετά το decode().
+    // Δύο rAF εγγυώνται ότι έχει προλάβει να τρέξει τουλάχιστον ένα πραγματικό paint πριν συνεχίσουμε
+    // (και άρα πριν σηματοδοτηθεί signalReady() στον καλούντα, βλ. doRefresh/prepareFirstFrame).
+    await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
 }
 
 function drawWeather(dt) {
