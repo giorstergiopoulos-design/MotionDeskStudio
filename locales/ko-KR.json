@@ -106,6 +106,8 @@
   "Widgets.AudioVisualizer": "오디오 향상",
   "Widgets.Weather": "날씨",
   "Widgets.Disk": "디스크",
+  "Widgets.QuickSettings": "빠른 설정",
+  "WidgetText.Muted": "음소거",
   "Widgets.SaveLayout": "현재 위젯 레이아웃 저장",
   "Widgets.RestoreLayout": "저장된 위젯 레이아웃 복원",
   "Widgets.CloseAllWidgets": "모든 위젯 닫기",

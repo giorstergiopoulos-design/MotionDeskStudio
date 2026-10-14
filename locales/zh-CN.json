@@ -106,6 +106,8 @@
   "Widgets.AudioVisualizer": "音频增强",
   "Widgets.Weather": "天气",
   "Widgets.Disk": "磁盘",
+  "Widgets.QuickSettings": "快速设置",
+  "WidgetText.Muted": "已静音",
   "Widgets.SaveLayout": "保存当前小组件布局",
   "Widgets.RestoreLayout": "恢复已保存的小组件布局",
   "Widgets.CloseAllWidgets": "关闭所有小组件",

@@ -106,6 +106,8 @@
   "Widgets.AudioVisualizer": "Улучшение звука",
   "Widgets.Weather": "Погода",
   "Widgets.Disk": "Диски",
+  "Widgets.QuickSettings": "Быстрые настройки",
+  "WidgetText.Muted": "Без звука",
   "Widgets.SaveLayout": "Сохранить текущую раскладку виджетов",
   "Widgets.RestoreLayout": "Восстановить сохранённую раскладку виджетов",
   "Widgets.CloseAllWidgets": "Закрыть все виджеты",

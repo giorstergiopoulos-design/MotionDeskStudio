@@ -106,6 +106,8 @@
   "Widgets.AudioVisualizer": "Miglioramento audio",
   "Widgets.Weather": "Meteo",
   "Widgets.Disk": "Dischi",
+  "Widgets.QuickSettings": "Impostazioni rapide",
+  "WidgetText.Muted": "Silenziato",
   "Widgets.SaveLayout": "Salva il layout attuale dei widget",
   "Widgets.RestoreLayout": "Ripristina il layout widget salvato",
   "Widgets.CloseAllWidgets": "Chiudi tutti i widget",

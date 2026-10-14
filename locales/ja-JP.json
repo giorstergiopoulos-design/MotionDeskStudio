@@ -106,6 +106,8 @@
   "Widgets.AudioVisualizer": "オーディオ補正",
   "Widgets.Weather": "天気",
   "Widgets.Disk": "ディスク",
+  "Widgets.QuickSettings": "クイック設定",
+  "WidgetText.Muted": "ミュート",
   "Widgets.SaveLayout": "現在のウィジェット レイアウトを保存",
   "Widgets.RestoreLayout": "保存したウィジェット レイアウトを復元",
   "Widgets.CloseAllWidgets": "すべてのウィジェットを閉じる",

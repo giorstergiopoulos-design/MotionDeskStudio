@@ -23,9 +23,9 @@
          είχε κανένα πρακτικό αποτέλεσμα, μόνο θα πρόσθετε ~35+ άσχετα attributes σε custom controls.
          Βλ. https://aka.ms/winforms-warnings/wfo1000 -->
     <NoWarn>$(NoWarn);WFO1000</NoWarn>
-    <Version>1.9.5</Version>
-    <AssemblyVersion>1.9.5.0</AssemblyVersion>
-    <FileVersion>1.9.5.0</FileVersion>
+    <Version>1.9.6</Version>
+    <AssemblyVersion>1.9.6.0</AssemblyVersion>
+    <FileVersion>1.9.6.0</FileVersion>
     <Product>Opsis - Desktop Customization</Product>
     <!-- Ζητήθηκε ρητά "η εφαρμογή να μην περνά ως false positive". Πραγματική, εγγυημένη λύση
          είναι μόνο ένα πληρωμένο code-signing certificate (βλ. PROJECT_STATE.md — παραλείφθηκε
@@ -59,6 +59,8 @@
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.4" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" ExcludeAssets="build;buildTransitive" GeneratePathProperty="true" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <!-- Μόνο για τη νέα Quick Settings κάρτα (φωτεινότητα οθόνης μέσω WMI WmiMonitorBrightnessMethods). -->
+    <PackageReference Include="System.Management" Version="9.0.0" />
   </ItemGroup>
 
   <!-- WinForms-only WebView2 reference: do not import the package's WPF build assets. -->

@@ -289,6 +289,8 @@ namespace MotionDesk.Widgets
                 InitializeNativeWeather();
             else if (string.Equals(widgetId, "disk", StringComparison.OrdinalIgnoreCase))
                 InitializeNativeDisk();
+            else if (string.Equals(widgetId, "quicksettings", StringComparison.OrdinalIgnoreCase))
+                InitializeNativeQuickSettings();
             else
                 _ = InitializeWebViewAsync();
         }
@@ -872,6 +874,88 @@ namespace MotionDesk.Widgets
             _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
             FormClosed += (_, _) => spectrum.Dispose();
+        }
+
+        // Νέο widget "Quick Settings" — SeelenUI-inspired (το δικό τους αντίστοιχο popup συνδυάζει
+        // ήχο/φωτεινότητα/δίκτυο σε ένα πάνελ). Ήχος μέσω NAudio (ήδη εξάρτηση), φωτεινότητα μέσω
+        // WMI (μόνο αν η οθόνη το υποστηρίζει — συνήθως laptop panel, κρύβεται αλλιώς), σχέδιο
+        // ενέργειας μέσω powercfg. Καμία λειτουργία δεν χρειάζεται elevation.
+        private void InitializeNativeQuickSettings()
+        {
+            var panel = CreateNativePanel(LocalizationManager.T("Widgets.QuickSettings"), out var values);
+            values.Visible = false;
+
+            var stack = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent, Padding = new Padding(10, 6, 10, 6) };
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            panel.Controls.Add(stack);
+            stack.BringToFront();
+
+            // ---- Ήχος: κουμπί σίγασης + slider ----
+            var volumeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Top };
+            var muteBtn = new Label { Text = "🔊", Width = 28, Height = 24, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextPrimary, Font = new Font("Segoe UI", 12), Cursor = Cursors.Hand };
+            var volumeSlider = new FlatSlider { Width = 150, Height = 24, Minimum = 0, Maximum = 100, Margin = new Padding(6, 0, 6, 0) };
+            var volumeLabel = new Label { Width = 36, Height = 24, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody };
+            volumeRow.Controls.Add(muteBtn);
+            volumeRow.Controls.Add(volumeSlider);
+            volumeRow.Controls.Add(volumeLabel);
+            stack.Controls.Add(volumeRow, 0, 0);
+
+            void RefreshVolumeUi()
+            {
+                bool muted = SystemControlService.GetMute();
+                muteBtn.Text = muted ? "🔇" : "🔊";
+                int pct = (int)Math.Round(SystemControlService.GetVolume() * 100);
+                volumeSlider.Value = pct;
+                volumeLabel.Text = muted ? LocalizationManager.T("WidgetText.Muted") : $"{pct}%";
+            }
+            muteBtn.Click += (_, _) => { SystemControlService.SetMute(!SystemControlService.GetMute()); RefreshVolumeUi(); };
+            volumeSlider.ValueChanged += (_, _) => { SystemControlService.SetVolume(volumeSlider.Value / 100f); if (volumeSlider.Value > 0 && SystemControlService.GetMute()) SystemControlService.SetMute(false); RefreshVolumeUi(); };
+
+            // ---- Φωτεινότητα: μόνο αν υποστηρίζεται από την οθόνη ----
+            bool brightnessSupported = SystemControlService.IsBrightnessSupported();
+            var brightnessRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Top, Visible = brightnessSupported };
+            var brightnessIcon = new Label { Text = "☀", Width = 28, Height = 24, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextPrimary, Font = new Font("Segoe UI", 12) };
+            var brightnessSlider = new FlatSlider { Width = 150, Height = 24, Minimum = 0, Maximum = 100, Margin = new Padding(6, 0, 6, 0) };
+            var brightnessLabel = new Label { Width = 36, Height = 24, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody };
+            brightnessRow.Controls.Add(brightnessIcon);
+            brightnessRow.Controls.Add(brightnessSlider);
+            brightnessRow.Controls.Add(brightnessLabel);
+            stack.Controls.Add(brightnessRow, 0, 1);
+            if (brightnessSupported)
+            {
+                brightnessSlider.Value = SystemControlService.GetBrightness();
+                brightnessLabel.Text = $"{brightnessSlider.Value}%";
+                brightnessSlider.ValueChanged += (_, _) => { SystemControlService.SetBrightness(brightnessSlider.Value); brightnessLabel.Text = $"{brightnessSlider.Value}%"; };
+            }
+
+            // ---- Σχέδιο ενέργειας: ένα κουμπί ανά διαθέσιμο σχέδιο, το ενεργό τονισμένο ----
+            var powerPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Dock = DockStyle.Top, Margin = new Padding(0, 6, 0, 0) };
+            stack.Controls.Add(powerPanel, 0, 2);
+            void RefreshPowerPlans()
+            {
+                powerPanel.Controls.Clear();
+                foreach (var plan in SystemControlService.GetPowerPlans())
+                {
+                    var btn = new Label
+                    {
+                        Text = plan.Name, AutoSize = true, Padding = new Padding(8, 3, 8, 3), Margin = new Padding(0, 0, 6, 6),
+                        Cursor = Cursors.Hand, Font = UiTheme.FontBody,
+                        ForeColor = plan.IsActive ? Color.White : UiTheme.TextSecondary,
+                        BackColor = plan.IsActive ? UiTheme.AccentCyan : UiTheme.Surface,
+                    };
+                    var guid = plan.Guid;
+                    btn.Click += (_, _) => { SystemControlService.SetActivePowerPlan(guid); RefreshPowerPlans(); };
+                    powerPanel.Controls.Add(btn);
+                }
+            }
+
+            RefreshVolumeUi();
+            RefreshPowerPlans();
+            _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) { RefreshVolumeUi(); RefreshPowerPlans(); } };
+            _nativeMonitorTimer.Start();
         }
 
         // Νέο widget: χρήση/χωρητικότητα δίσκων συστήματος — ζητήθηκε ρητά.

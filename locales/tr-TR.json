@@ -106,6 +106,8 @@
   "Widgets.AudioVisualizer": "Ses İyileştirme",
   "Widgets.Weather": "Hava Durumu",
   "Widgets.Disk": "Diskler",
+  "Widgets.QuickSettings": "Hızlı Ayarlar",
+  "WidgetText.Muted": "Sessiz",
   "Widgets.SaveLayout": "Geçerli pencere öğesi düzenini kaydet",
   "Widgets.RestoreLayout": "Kayıtlı pencere öğesi düzenini geri yükle",
   "Widgets.CloseAllWidgets": "Tüm pencere öğelerini kapat",

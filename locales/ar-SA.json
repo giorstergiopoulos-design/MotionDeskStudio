@@ -106,6 +106,8 @@
   "Widgets.AudioVisualizer": "تحسين الصوت",
   "Widgets.Weather": "الطقس",
   "Widgets.Disk": "الأقراص",
+  "Widgets.QuickSettings": "الإعدادات السريعة",
+  "WidgetText.Muted": "كتم الصوت",
   "Widgets.SaveLayout": "حفظ تخطيط الأدوات الحالي",
   "Widgets.RestoreLayout": "استعادة تخطيط الأدوات المحفوظ",
   "Widgets.CloseAllWidgets": "إغلاق كل الأدوات",

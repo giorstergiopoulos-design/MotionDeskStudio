@@ -106,6 +106,8 @@
   "Widgets.AudioVisualizer": "ऑडियो एन्हांसमेंट",
   "Widgets.Weather": "मौसम",
   "Widgets.Disk": "डिस्क",
+  "Widgets.QuickSettings": "त्वरित सेटिंग्स",
+  "WidgetText.Muted": "म्यूट",
   "Widgets.SaveLayout": "वर्तमान विजेट लेआउट सहेजें",
   "Widgets.RestoreLayout": "सहेजा गया विजेट लेआउट पुनर्स्थापित करें",
   "Widgets.CloseAllWidgets": "सभी विजेट बंद करें",
