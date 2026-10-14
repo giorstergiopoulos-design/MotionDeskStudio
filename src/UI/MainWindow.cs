@@ -314,15 +314,22 @@ namespace MotionDesk.UI
                     g.Clip = oldClip;
                 }
 
-                float o1 = (float)(Math.Sin(wave) * 2.5);
-                float o2 = (float)(Math.Sin(wave + 1.4) * 2.5);
-                using (var pen1 = new Pen(Color.White, 2.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-                    g.DrawBezier(pen1, 8, 20 + o1, 13, 13 + o2, 21, 27 - o2, 26, 20 - o1);
+                // "Trace" λογότυπο (επιλέχθηκε από τον χρήστη ανάμεσα σε 5 προτάσεις): το ίδιο κύμα
+                // παραμένει σταθερό σαν ίχνος/track, και ένας φωτεινός κόμβος το ξαναδιατρέχει σε
+                // βρόχο — ίδια ιδέα με το νέο assets/Opsis.ico και τα tray frames (scripts/generate_*.ps1),
+                // εδώ ζωντανή/συνεχής αντί για 6 διακριτά καρέ, πάνω στο ήδη υπάρχον animation timer.
+                PointF P0 = new(8, 20), P1 = new(13, 13), P2 = new(21, 27), P3 = new(26, 20);
+                using (var pen1 = new Pen(Color.FromArgb(150, 255, 255, 255), 2.2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    g.DrawBezier(pen1, P0, P1, P2, P3);
 
-                float o3 = (float)(Math.Sin(wave + 0.8) * 2.2);
-                float o4 = (float)(Math.Sin(wave + 2.2) * 2.2);
-                using (var pen2 = new Pen(Color.FromArgb(215, 255, 255, 255), 1.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-                    g.DrawBezier(pen2, 8, 13 + o3, 13, 7 + o4, 21, 19 - o4, 26, 13 - o3);
+                double t = (_brandPulseT * 0.22) % 1.0;
+                double mt = 1 - t;
+                float nx = (float)(mt * mt * mt * P0.X + 3 * mt * mt * t * P1.X + 3 * mt * t * t * P2.X + t * t * t * P3.X);
+                float ny = (float)(mt * mt * mt * P0.Y + 3 * mt * mt * t * P1.Y + 3 * mt * t * t * P2.Y + t * t * t * P3.Y);
+                using (var nodeHalo = new SolidBrush(Color.FromArgb(110, 255, 255, 255)))
+                    g.FillEllipse(nodeHalo, nx - 5, ny - 5, 10, 10);
+                using (var nodeDot = new SolidBrush(Color.White))
+                    g.FillEllipse(nodeDot, nx - 2.3f, ny - 2.3f, 4.6f, 4.6f);
             };
             _brandPanel.Controls.Add(_brandDot);
             const int brandTextX = logoSize + 10;
