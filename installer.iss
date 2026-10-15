@@ -1,5 +1,5 @@
 #define MyAppName "Opsis - Desktop Customization"
-#define MyAppVersion "1.9.7"
+#define MyAppVersion "1.9.8"
 #define MyAppPublisher "Opsis Team"
 #define MyAppExeName "Opsis.exe"
 ; Πού βρίσκεται ο installer του News Crawler (δημοσιεύεται ως GitHub release του αντίστοιχου repo).
@@ -263,7 +263,11 @@ Name: "autostart"; Description: "{cm:AutostartTask}"; GroupDescription: "{cm:Sta
 ; wallpaper (WmvConversionService) — δεν είναι απαραίτητο για την υπόλοιπη εφαρμογή, γι' αυτό
 ; είναι tickbox και όχι υποχρεωτικό όπως το WebView2/.NET Runtime. Εγκαθίσταται μέσω winget (ίδιο
 ; πακέτο, Gyan.FFmpeg, με αυτό που ήδη ψάχνει το WmvConversionService.FindFfmpeg()).
-Name: "installcrawler"; Description: "{cm:CrawlerTask}"; GroupDescription: "{cm:ExtraDepsGroup}"; Flags: unchecked
+; Ζητήθηκε ρητά 15/10: προεπιλογή ενεργό (όχι πια "unchecked") — ο χρήστης βαρέθηκε να το ξεχνάει
+; σε κάθε ενημέρωση του Opsis και το News Crawler έμενε παλιό για μήνες. "checkedonce" (ίδιο flag
+; με το desktopicon παραπάνω) = ενεργό στην πρώτη εγκατάσταση, αλλά θυμάται αν ο χρήστης το
+; απενεργοποιήσει αργότερα — δεν το ξαναενεργοποιεί σιωπηλά σε κάθε update.
+Name: "installcrawler"; Description: "{cm:CrawlerTask}"; GroupDescription: "{cm:ExtraDepsGroup}"; Flags: checkedonce
 Name: "installffmpeg"; Description: "{cm:FfmpegTask}"; GroupDescription: "{cm:ExtraDepsGroup}"; Flags: unchecked; Check: IsWingetAvailable and not IsFfmpegInstalled
 
 [Files]

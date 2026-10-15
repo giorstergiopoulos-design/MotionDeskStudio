@@ -2587,7 +2587,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         // έπιασε ζωντανά ("το ιστορικό μένει στην 1.9.0"). Πρόσθεσε ΚΑΙ εδώ τη νέα έκδοση.
         private static readonly (string Version, string Date)[] VersionHistory =
         {
-            ("1.9.7", "2026-10"), ("1.9.6", "2026-10"), ("1.9.5", "2026-10"), ("1.9.4", "2026-10"), ("1.9.3", "2026-10"), ("1.9.2", "2026-10"), ("1.9.1", "2026-10"), ("1.9.0", "2026-10"), ("1.8.9", "2026-10"), ("1.8.8", "2026-10"), ("1.8.7", "2026-10"), ("1.8.6", "2026-10"), ("1.8.5", "2026-10"), ("1.7.8", "2026-10"), ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
+            ("1.9.8", "2026-10"), ("1.9.7", "2026-10"), ("1.9.6", "2026-10"), ("1.9.5", "2026-10"), ("1.9.4", "2026-10"), ("1.9.3", "2026-10"), ("1.9.2", "2026-10"), ("1.9.1", "2026-10"), ("1.9.0", "2026-10"), ("1.8.9", "2026-10"), ("1.8.8", "2026-10"), ("1.8.7", "2026-10"), ("1.8.6", "2026-10"), ("1.8.5", "2026-10"), ("1.7.8", "2026-10"), ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
         };
 
 
@@ -3148,7 +3148,41 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             };
             // Ζητήθηκε ρητά "να μην είναι το scrollbar λευκό στο dark mode".
             GlassBlur.ApplyScrollbarTheme(panel, UiTheme.Background.GetBrightness() < 0.5f);
+            // ΔΙΟΡΘΩΣΗ πραγματικού bug, live-verified ("scroll up issues στις καρτέλες"): τα Windows
+            // στέλνουν WM_MOUSEWHEEL στο control ΚΑΤΩ από τον κέρσορα, όχι απαραίτητα στο
+            // AutoScroll FlowLayoutPanel της σελίδας — μόλις ο κέρσορας βρεθεί πάνω από ένα Button/
+            // CheckBox/Label (πρακτικά αναπόφευκτο σε μια σελίδα γεμάτη κουμπιά), η κύλιση φαινόταν
+            // να "κολλάει" εκεί, ενώ στην πραγματικότητα απλώς δεν έφτανε ΠΟΤΕ στο panel. Λύση:
+            // προώθηση του MouseWheel από ΚΑΘΕ child control (καθώς προστίθεται, αναδρομικά) πίσω
+            // στο scroll του page panel — εκτός από controls με δικό τους νόημα για το wheel
+            // (TextBox/ComboBox/NumericUpDown, ή ήδη ξεχωριστά AutoScroll containers).
+            EnableWheelPassthrough(panel);
             return panel;
+        }
+
+        private static void EnableWheelPassthrough(ScrollableControl scrollHost)
+        {
+            void Hook(Control c)
+            {
+                bool hasOwnWheelMeaning = c is TextBoxBase || c is ListControl || c is NumericUpDown
+                    || (c is ScrollableControl inner && !ReferenceEquals(inner, scrollHost) && inner.AutoScroll);
+                if (!ReferenceEquals(c, scrollHost) && !hasOwnWheelMeaning)
+                {
+                    c.MouseWheel += (_, e) =>
+                    {
+                        if (e is HandledMouseEventArgs hme) hme.Handled = true;
+                        var pos = scrollHost.AutoScrollPosition;
+                        int newY = Math.Max(0, -pos.Y - e.Delta);
+                        scrollHost.AutoScrollPosition = new Point(-pos.X, newY);
+                    };
+                }
+                if (!hasOwnWheelMeaning)
+                {
+                    c.ControlAdded += (_, ce) => { if (ce.Control != null) Hook(ce.Control); };
+                    foreach (Control child in c.Controls) Hook(child);
+                }
+            }
+            Hook(scrollHost);
         }
 
         private static void AddHeading(Control parent, string text)
