@@ -1,9 +1,17 @@
-# Δημιουργεί ένα πολυ-ανάλυσης .ico (16/32/48/64/128/256) για το MotionDesk Studio,
-# με PNG-encoded frames (υποστηρίζεται από Explorer/Taskbar από Vista και μετά).
+# Δημιουργεί ένα πολυ-ανάλυσης .ico (16/32/48/64/128/256) για το Opsis — "Trace" concept:
+# το ίδιο κύμα-λογότυπο, με έναν φωτεινό κόμβο πάνω στη γραμμή (στατικό hero frame της
+# ζωντανής εκδοχής στο tray). PNG-encoded frames (υποστηρίζεται από Explorer/Taskbar από Vista και μετά).
 Add-Type -AssemblyName System.Drawing
 
+function BezierPoint([double]$t, [double[]]$p0, [double[]]$p1, [double[]]$p2, [double[]]$p3) {
+    $mt = 1 - $t
+    $x = $mt*$mt*$mt*$p0[0] + 3*$mt*$mt*$t*$p1[0] + 3*$mt*$t*$t*$p2[0] + $t*$t*$t*$p3[0]
+    $y = $mt*$mt*$mt*$p0[1] + 3*$mt*$mt*$t*$p1[1] + 3*$mt*$t*$t*$p2[1] + $t*$t*$t*$p3[1]
+    return @($x, $y)
+}
+
 $sizes = 16, 32, 48, 64, 128, 256
-$outIco = Join-Path $PSScriptRoot "..\assets\MotionDesk.ico"
+$outIco = Join-Path $PSScriptRoot "..\assets\Opsis.ico"
 $pngBlobs = @()
 
 foreach ($size in $sizes) {
@@ -12,8 +20,7 @@ foreach ($size in $sizes) {
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $g.Clear([System.Drawing.Color]::Transparent)
 
-    # Στρογγυλεμένο τετράγωνο φόντο με διαγώνιο gradient (cyan -> indigo), όπως το accent χρώμα
-    # που ήδη χρησιμοποιείται στα widgets (#00d2ff -> #3a7bd5).
+    # Στρογγυλεμένο τετράγωνο φόντο με διαγώνιο gradient (cyan -> indigo) — αμετάβλητο, ίδιο brand mark.
     $rect = New-Object System.Drawing.Rectangle 0, 0, $size, $size
     $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($rect,
         [System.Drawing.ColorTranslator]::FromHtml("#00d2ff"),
@@ -30,33 +37,35 @@ foreach ($size in $sizes) {
     $path.CloseFigure()
     $g.FillPath($brush, $path)
 
-    # Λευκό "motion wave" glyph (δύο overlapping τόξα) στο κέντρο, συμβολίζοντας κίνηση/desktop motion.
-    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, [Math]::Max(1.0, $size * 0.09))
-    $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-
-    $wavePath1 = New-Object System.Drawing.Drawing2D.GraphicsPath
     $w = $size * 0.62
     $x0 = ($size - $w) / 2
     $yMid = $size * 0.58
-    $wavePath1.AddBezier(
-        [float]$x0, [float]$yMid,
-        [float]($x0 + $w * 0.25), [float]($yMid - $size * 0.22),
-        [float]($x0 + $w * 0.75), [float]($yMid + $size * 0.22),
-        [float]($x0 + $w), [float]$yMid)
-    $g.DrawPath($pen, $wavePath1)
+    $p0 = @($x0, $yMid)
+    $p1 = @(($x0 + $w * 0.25), ($yMid - $size * 0.22))
+    $p2 = @(($x0 + $w * 0.75), ($yMid + $size * 0.22))
+    $p3 = @(($x0 + $w), $yMid)
 
-    $pen2 = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(210, 255, 255, 255), [Math]::Max(1.0, $size * 0.06))
-    $pen2.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $pen2.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $wavePath2 = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $yMid2 = $size * 0.38
-    $wavePath2.AddBezier(
-        [float]$x0, [float]$yMid2,
-        [float]($x0 + $w * 0.25), [float]($yMid2 - $size * 0.16),
-        [float]($x0 + $w * 0.75), [float]($yMid2 + $size * 0.16),
-        [float]($x0 + $w), [float]$yMid2)
-    $g.DrawPath($pen2, $wavePath2)
+    # "Trace": η ίδια γραμμή κύματος, πιο αχνή σαν ίχνος/track ...
+    $trackPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(130, 255, 255, 255), [Math]::Max(1.0, $size * 0.07))
+    $trackPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $trackPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $wavePath = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $wavePath.AddBezier([float]$p0[0], [float]$p0[1], [float]$p1[0], [float]$p1[1], [float]$p2[0], [float]$p2[1], [float]$p3[0], [float]$p3[1])
+    $g.DrawPath($trackPen, $wavePath)
+
+    # ... + ένας φωτεινός κόμβος στο μέσο της διαδρομής (στατικό "hero" στιγμιότυπο της κίνησης στο tray).
+    $node = BezierPoint 0.5 $p0 $p1 $p2 $p3
+    $glowSize = $size * 0.30
+    $glowBrush = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $glowBrush.AddEllipse($node[0] - $glowSize/2, $node[1] - $glowSize/2, $glowSize, $glowSize)
+    $glowPathBrush = New-Object System.Drawing.Drawing2D.PathGradientBrush($glowBrush)
+    $glowPathBrush.CenterColor = [System.Drawing.Color]::FromArgb(160, 255, 255, 255)
+    $glowPathBrush.SurroundColors = @([System.Drawing.Color]::FromArgb(0, 255, 255, 255))
+    $g.FillPath($glowPathBrush, $glowBrush)
+
+    $dotR = [Math]::Max(1.2, $size * 0.075)
+    $dotBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+    $g.FillEllipse($dotBrush, $node[0] - $dotR, $node[1] - $dotR, $dotR * 2, $dotR * 2)
 
     $ms = New-Object System.IO.MemoryStream
     $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)

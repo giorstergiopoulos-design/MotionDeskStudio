@@ -50,6 +50,7 @@ namespace MotionDesk.Widgets
                 KeyPreview = true
             };
             form.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape || e.KeyCode == Keys.Space) form.Close(); };
+            form.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(form.Handle);
             return form;
         }
 
@@ -83,7 +84,7 @@ namespace MotionDesk.Widgets
                 var buffer = new char[Math.Min(fi.Length, MaxTextPreviewBytes)];
                 int read = reader.Read(buffer, 0, buffer.Length);
                 content = new string(buffer, 0, read);
-                if (fi.Length > MaxTextPreviewBytes) content += "\n\n[…περικοπή προεπισκόπησης…]";
+                if (fi.Length > MaxTextPreviewBytes) content += MotionDesk.Services.LocalizationManager.T("QuickLook.Truncated");
             }
             // WinForms TextBox δεν αναγνωρίζει μοναχά-\n αλλαγές γραμμής (π.χ. αρχεία από git με LF) —
             // κανονικοποίηση σε \r\n πριν την εμφάνιση, αλλιώς όλο το κείμενο φαίνεται σε μία γραμμή.
@@ -149,9 +150,9 @@ namespace MotionDesk.Widgets
             {
                 foreach (var dir in Directory.EnumerateDirectories(path).Take(200)) list.Items.Add("📁 " + Path.GetFileName(dir));
                 foreach (var file in Directory.EnumerateFiles(path).Take(200)) list.Items.Add("📄 " + Path.GetFileName(file));
-                if (list.Items.Count == 0) list.Items.Add("(κενός φάκελος)");
+                if (list.Items.Count == 0) list.Items.Add(MotionDesk.Services.LocalizationManager.T("QuickLook.EmptyFolder"));
             }
-            catch (Exception ex) { list.Items.Add("(αδύνατη η ανάγνωση: " + ex.Message + ")"); }
+            catch (Exception ex) { list.Items.Add(string.Format(MotionDesk.Services.LocalizationManager.T("QuickLook.ReadErrorFormat"), ex.Message)); }
             form.Controls.Add(list);
             form.Show();
         }

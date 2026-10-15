@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.IO;
 using System.Text.Json;
@@ -14,17 +15,42 @@ namespace MotionDesk.Services
         public bool ShowSystemMonitor { get; set; }
         public bool RestoreLastSession { get; set; } = true;
         public bool MinimizeToTray { get; set; } = true;
+        // DeskZones: applications (process names, without .exe) whose windows are never snapped (e.g. media players, games)
+        public List<string> ZoneExcludedApps { get; set; } = new();
+        // Notify (tray balloon) when CPU or memory stays above 90% for a minute
+        public bool UsageAlertsEnabled { get; set; } = false;
+        // Check GitHub for a newer release once a day / show the changelog once after an update
+        public bool UpdateCheckEnabled { get; set; } = true;
+        public DateTime LastUpdateCheckUtc { get; set; } = DateTime.MinValue;
+        public string LastRunVersion { get; set; } = "";
         public bool StartWallpaperWithWindows { get; set; }
         public bool EnableAnimations { get; set; } = true;
         public string ThemeMode { get; set; } = "Follow"; // Follow | Light | Dark
+        // Seelen UI-inspired: αντί για σταθερή παλέτα accent χρωμάτων, ακολούθησε το πραγματικό
+        // accent color που έχει επιλέξει ο χρήστης στα Windows (Ρυθμίσεις > Εξατομίκευση > Χρώματα).
+        public bool FollowWindowsAccent { get; set; } = false;
         public string Language { get; set; } = "Follow";  // Follow | el | en
         public double WindowOpacity { get; set; } = 1.0;  // 0.6 - 1.0, εφαρμόζεται στο κύριο παράθυρο
         public double DarkIntensity { get; set; } = 0.5;  // 0 (πιο ανοιχτό σκούρο) - 1 (σχεδόν μαύρο), 0.5 = η αρχική βάση
         public bool UiSoundsEnabled { get; set; }
         public bool SidebarCollapsed { get; set; }
 
+        // Μηχανισμός plugin (φάκελος "plugins"): false = κανένα plugin δεν φορτώνεται (π.χ. για διάγνωση προβλήματος).
+        public bool PluginsEnabled { get; set; } = true;
+        // Ζητήθηκε ρητά: ξεχωριστό ενεργό/ανενεργό ΑΝΑ plugin (π.χ. το News Crawler), πέρα από τον
+        // γενικό διακόπτη PluginsEnabled παραπάνω. Αποθηκεύει το Id όσων ο χρήστης έχει απενεργοποιήσει.
+        public HashSet<string> DisabledPluginIds { get; set; } = new();
+
         // Φάκελος όπου αποθηκεύονται τα μετατρεπόμενα .wmv->.mp4 (κενό = προεπιλογή στο AppData).
         public string? WmvConversionOutputDir { get; set; }
+
+        // MD roadmap item: η οθόνη κλειδώματος/υποδοχής να μπορεί να γίνει ακριβές στιγμιότυπο του
+        // τρέχοντος ζωντανού wallpaper (waves/βίντεο + overlay), όχι μια τυχαία επιλεγμένη εικόνα.
+        // Το LockScreenSnapshotPath είναι το αρχείο που γράφει το στιγμιότυπο· όταν το
+        // LockScreenFollowsWallpaper είναι true, το Opsis το ξανατραβάει αυτόματα σε κάθε αλλαγή
+        // wallpaper ώστε η οθόνη κλειδώματος να μένει ταιριαστή (βλ. LockScreenEngine, WallpaperHostEngine).
+        public bool LockScreenFollowsWallpaper { get; set; } = false;
+        public string? LockScreenSnapshotPath { get; set; }
 
         // Ανεξάρτητο θέμα για widgets/DeskContainers από αυτό της ίδιας της εφαρμογής — ζητήθηκε
         // ρητά "αν η εφαρμογή είναι σε φωτεινό θέμα, τα widgets/containers να μπορούν είτε να
@@ -42,17 +68,23 @@ namespace MotionDesk.Services
         // πλωτό widget και στη σελίδα "Audio Enhancement" της εφαρμογής, ώστε να δείχνουν το ίδιο.
         public string AudioEnhancementPreset { get; set; } = "Flat";
 
-        private static string ConfigPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "settings.json");
+        // Fences-style διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας για απόκρυψη/επαναφορά
+        // εικονιδίων (DesktopIconVisibilityEngine) — υπήρχε ήδη ο μηχανισμός αλλά ήταν πάντα
+        // ενεργός χωρίς καμία ρύθμιση ορατή στο χρήστη· προεπιλογή true ώστε η υπάρχουσα
+        // συμπεριφορά να ΜΗΝ αλλάζει για όσους το χρησιμοποιούσαν ήδη χωρίς να το ξέρουν.
+        public bool QuickHideDoubleClickEnabled { get; set; } = true;
+
+        private static string ConfigPath => Path.Combine(AppPaths.AppDataFolder, "settings.json");
         public static AppSettings Load()
         {
-            try { if (File.Exists(ConfigPath)) return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(ConfigPath)) ?? new AppSettings(); }
+            try { if (File.Exists(ConfigPath)) return JsonSerializer.Deserialize<AppSettings>(MotionDesk.Services.AtomicFile.ReadAllText(ConfigPath)) ?? new AppSettings(); }
             catch (JsonException) { }
             catch (IOException) { }
             return new AppSettings();
         }
         public void Save()
         {
-            try { Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!); File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); }
+            try { Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!); MotionDesk.Services.AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true })); }
             catch (IOException) { }
         }
     }

@@ -120,6 +120,14 @@ namespace MotionDesk.Widgets
                     using var path = UiTheme.RoundedPath(rect, 10);
                     g.FillPath(fill, path);
                     g.DrawPath(border, path);
+
+                    // zone number in the centre (1, 2, 3 …) — makes layouts easy to read and to talk about
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                    float px = Math.Clamp(Math.Min(rect.Width, rect.Height) * 0.26f, 14f, 72f);
+                    using var numFont = new Font("Segoe UI Semibold", px, FontStyle.Bold, GraphicsUnit.Pixel);
+                    using var numBrush = new SolidBrush(Color.FromArgb(highlighted ? 235 : 120, 255, 255, 255));
+                    using var numFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                    g.DrawString((i + 1).ToString(), numFont, numBrush, rect, numFormat);
                 }
             }
 

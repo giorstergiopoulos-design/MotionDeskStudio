@@ -41,9 +41,9 @@ namespace MotionDesk.Widgets
         private const uint EVENT_SYSTEM_MOVESIZESTART = 0x000A;
         private const uint EVENT_SYSTEM_MOVESIZEEND = 0x000B;
         private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
-        // Αγνοεί αυτόματα events που προέρχονται από τη ΔΙΚΗ ΜΑΣ διεργασία (π.χ. ο χρήστης
-        // μετακινεί ένα widget/DeskContainer) — δεν χρειάζεται πια χειροκίνητος έλεγχος pid.
-        private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+        // ΠΡΙΝ χρησιμοποιούσαμε WINEVENT_SKIPOWNPROCESS και έτσι το ίδιο το παράθυρο του Opsis δεν κούμπωνε ποτέ σε ζώνη
+        // (ενώ τα παράθυρα όλων των άλλων εφαρμογών κούμπωναν). Τώρα τα events της δικής μας διεργασίας φτάνουν εδώ και τα
+        // φιλτράρει το IsCandidateWindow: επιτρέπεται ΜΟΝΟ το κύριο παράθυρο (AllowOwnWindow), όχι widgets/containers/overlays.
         private const uint SWP_NOZORDER = 0x0004;
         private const uint SWP_NOACTIVATE = 0x0010;
         private const int VK_SHIFT = 0x10;
@@ -74,7 +74,7 @@ namespace MotionDesk.Widgets
             // Application.Run το κάνει ήδη). Το εύρος START..END καλύπτει και τα δύο events με μία
             // εγγραφή hook, αφού είναι διαδοχικές σταθερές (0x000A, 0x000B).
             _hookId = SetWinEventHook(EVENT_SYSTEM_MOVESIZESTART, EVENT_SYSTEM_MOVESIZEEND,
-                IntPtr.Zero, _callback, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+                IntPtr.Zero, _callback, 0, 0, WINEVENT_OUTOFCONTEXT);
         }
 
         public static void Stop()
@@ -224,7 +224,7 @@ namespace MotionDesk.Widgets
         private static void UpdateMagneticOverlay(Point pt)
         {
             var screen = Screen.FromPoint(pt);
-            var region = DetectMagneticRegion(pt, screen.WorkingArea);
+            var region = DetectMagneticRegion(pt, screen);
             if (region == MagneticRegion.None) { HideOverlay(); return; }
 
             if (_overlay == null || _overlay.IsDisposed) _overlay = new ZoneOverlayWindow();
@@ -239,14 +239,27 @@ namespace MotionDesk.Widgets
             }
         }
 
-        private static MagneticRegion DetectMagneticRegion(Point screenPt, Rectangle workingArea)
+        // Άκρη που συνορεύει με ΑΛΛΗ οθόνη δεν είναι πραγματική άκρη: σέρνοντας ένα παράθυρο από τη μία
+        // οθόνη στην άλλη ο δείκτης περνά από εκεί, και το μαγνητικό snap ενεργοποιούνταν (ή και
+        // κούμπωνε αν το άφηνες κοντά) ενώ ο χρήστης απλώς άλλαζε οθόνη.
+        private static bool HasNeighborScreen(Rectangle bounds, int dx, int dy, Point pt)
         {
+            var probe = new Point(
+                dx < 0 ? bounds.Left - 2 : dx > 0 ? bounds.Right + 1 : pt.X,
+                dy < 0 ? bounds.Top - 2 : dy > 0 ? bounds.Bottom + 1 : pt.Y);
+            return Screen.AllScreens.Any(sc => sc.Bounds.Contains(probe));
+        }
+
+        private static MagneticRegion DetectMagneticRegion(Point screenPt, Screen screen)
+        {
+            var workingArea = screen.WorkingArea;
             int localX = screenPt.X - workingArea.X;
             int localY = screenPt.Y - workingArea.Y;
-            bool nearLeft = localX <= MagneticThresholdPx;
-            bool nearRight = localX >= workingArea.Width - MagneticThresholdPx;
-            bool nearTop = localY <= MagneticThresholdPx;
-            bool nearBottom = localY >= workingArea.Height - MagneticThresholdPx;
+            var b = screen.Bounds;
+            bool nearLeft = localX <= MagneticThresholdPx && !HasNeighborScreen(b, -1, 0, screenPt);
+            bool nearRight = localX >= workingArea.Width - MagneticThresholdPx && !HasNeighborScreen(b, 1, 0, screenPt);
+            bool nearTop = localY <= MagneticThresholdPx && !HasNeighborScreen(b, 0, -1, screenPt);
+            bool nearBottom = localY >= workingArea.Height - MagneticThresholdPx && !HasNeighborScreen(b, 0, 1, screenPt);
 
             if (nearLeft && nearTop) return MagneticRegion.TopLeft;
             if (nearRight && nearTop) return MagneticRegion.TopRight;
@@ -335,6 +348,8 @@ namespace MotionDesk.Widgets
                 }
                 if (bestIdx < 0) return;
 
+                // Ένα maximized παράθυρο αγνοεί το SetWindowPos (μένει μεγιστοποιημένο) — πρώτα restore.
+                if (IsZoomed(hwnd)) ShowWindow(hwnd, 9 /* SW_RESTORE */);
                 var target = AdjustForInvisibleFrame(hwnd, zones[bestIdx]);
                 SetWindowPos(hwnd, IntPtr.Zero, target.X, target.Y, target.Width, target.Height, SWP_NOZORDER | SWP_NOACTIVATE);
             }
@@ -349,9 +364,32 @@ namespace MotionDesk.Widgets
         // έλεγχοι στυλ (WS_CAPTION/WS_EX_TOOLWINDOW) της παλιάς υλοποίησης — αυτοί μπορούσαν να
         // απορρίψουν σιωπηλά ένα σύγχρονο παράθυρο με custom-drawn title bar. Κρατάμε μόνο τον
         // αποκλεισμό γνωστών shell/desktop κλάσεων ως δεύτερη γραμμή άμυνας.
+        // Ορίζεται από το κύριο παράθυρο: επιστρέφει true για τα παράθυρα της δικής μας διεργασίας που ΕΠΙΤΡΕΠΕΤΑΙ να κουμπώνουν.
+        public static Func<IntPtr, bool>? AllowOwnWindow { get; set; }
+
+        // Applications the user excluded from snapping (Settings → DeskZones). Matched by process name, case-insensitive, ".exe" optional.
+        private static bool IsExcludedApp(uint pid)
+        {
+            try
+            {
+                var excluded = MotionDesk.Services.AppSettings.Load().ZoneExcludedApps;
+                if (excluded == null || excluded.Count == 0) return false;
+                using var proc = System.Diagnostics.Process.GetProcessById((int)pid);
+                var name = proc.ProcessName;
+                return excluded.Any(e => string.Equals(System.IO.Path.GetFileNameWithoutExtension(e.Trim()), name, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception) { return false; }   // process already gone / access denied -> treat as not excluded
+        }
+
         private static bool IsCandidateWindow(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd)) return false;
+            // Παράθυρα που ζητούν ρητά να μην κουμπώνουν (π.χ. η μπάρα του News Crawler όταν τη μετακινεί ο χρήστης).
+            if (GetProp(hwnd, "Opsis.NoSnap") != IntPtr.Zero) return false;
+
+            GetWindowThreadProcessId(hwnd, out uint pid);
+            if (pid == (uint)Environment.ProcessId && AllowOwnWindow?.Invoke(hwnd) != true) return false;
+            if (pid != (uint)Environment.ProcessId && IsExcludedApp(pid)) return false;
 
             var sb = new StringBuilder(256);
             GetClassName(hwnd, sb, sb.Capacity);
@@ -371,10 +409,14 @@ namespace MotionDesk.Widgets
 
         [DllImport("user32.dll")]
         private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventProc lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+        [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
         [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
         [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT lpPoint);
         [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetProp(IntPtr hWnd, string name);
         [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern int GetClassName(IntPtr hwnd, StringBuilder lpClassName, int nMaxCount);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
         [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);

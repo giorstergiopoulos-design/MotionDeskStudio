@@ -32,6 +32,7 @@ namespace MotionDesk.Widgets
         {
             _selectedScreen = initialScreen ?? Screen.PrimaryScreen ?? Screen.AllScreens[0];
             _selectedTemplate = ZoneLayoutStore.GetLayout(_selectedScreen.DeviceName).Template;
+            LoadStepperValuesFromLayout();
 
             Text = LocalizationManager.T("DeskZones.EditorTitle");
             StartPosition = FormStartPosition.CenterParent;
@@ -41,6 +42,7 @@ namespace MotionDesk.Widgets
             MinimizeBox = false;
             BackColor = UiTheme.Background;
             ForeColor = UiTheme.TextPrimary;
+            HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(Handle);
 
             var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5, Padding = new Padding(20) };
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -61,6 +63,8 @@ namespace MotionDesk.Widgets
                     {
                         _selectedScreen = screen;
                         _selectedTemplate = ZoneLayoutStore.GetLayout(screen.DeviceName).Template;
+                        LoadStepperValuesFromLayout();
+                        _colsStepper.Value = _cols; _rowsStepper.Value = _rows;
                         foreach (Control c in screenRow.Controls) if (c is ScreenTile t) t.SetSelected(t == tile);
                         RefreshBigPreview();
                         RefreshCardSelection();
@@ -95,6 +99,7 @@ namespace MotionDesk.Widgets
 
             // ---- Template gallery ----
             _cardGrid = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
+            GlassBlur.ApplyScrollbarTheme(_cardGrid, UiTheme.Background.GetBrightness() < 0.5f);
             foreach (var t in Templates)
             {
                 var card = new TemplateCard(t, t == _selectedTemplate);
@@ -153,6 +158,24 @@ namespace MotionDesk.Widgets
             bool showRows = _selectedTemplate is "Rows" or "Grid" or "Custom";
             _colsLabel.Visible = _colsStepper.Visible = showCols;
             _rowsLabel.Visible = _rowsStepper.Visible = showRows;
+        }
+
+        // Οι τιμές στηλών/σειρών δεν αποθηκεύονται ξεχωριστά — πριν, κάθε άνοιγμα του editor τις επανέφερε στο
+        // 3×2 και ένα "Εφαρμογή" πάνω σε υπάρχον Custom/Grid layout το άλλαζε σιωπηλά. Τις συμπεραίνουμε από
+        // το αποθηκευμένο layout (πλήθος διακριτών X/Y θέσεων των ζωνών).
+        private void LoadStepperValuesFromLayout()
+        {
+            var layout = ZoneLayoutStore.GetLayout(_selectedScreen.DeviceName);
+            if (layout.Zones.Count == 0) return;
+            int distinctX = layout.Zones.Select(z => Math.Round(z.X, 3)).Distinct().Count();
+            int distinctY = layout.Zones.Select(z => Math.Round(z.Y, 3)).Distinct().Count();
+            switch (layout.Template)
+            {
+                case "Columns": _cols = Math.Clamp(layout.Zones.Count, 1, 6); break;
+                case "Rows": _rows = Math.Clamp(layout.Zones.Count, 1, 4); break;
+                case "Grid":
+                case "Custom": _cols = Math.Clamp(distinctX, 1, 6); _rows = Math.Clamp(distinctY, 1, 4); break;
+            }
         }
 
         private ZoneLayoutData BuildSelected() => _selectedTemplate is "Columns" or "Rows" or "Grid" or "Custom"
@@ -267,9 +290,17 @@ namespace MotionDesk.Widgets
             using var bgPath = UiTheme.RoundedPath(ClientRectangle, 6);
             g.FillPath(bg, bgPath);
 
+            // ΔΙΟΡΘΩΣΗ "η προεπισκόπηση κόβεται ελαφρά στα δεξιά": ζώνες που ακουμπάνε στην άκρη
+            // (X+Width=1 ή Y+Height=1) έδιναν rect.Right/Bottom == Width/Height ακριβώς, οπότε το
+            // πάχος 1.4px του περιγράμματος (μισό εκατέρωθεν της γραμμής) ζωγραφιζόταν ΜΙΣΟ έξω
+            // από το ClientRectangle και κοβόταν. Λύση: 1px εσωτερικό περιθώριο γύρω-γύρω πριν
+            // μετατραπούν τα fractional X/Y/Width/Height σε pixels.
+            const int previewInset = 1;
+            int drawW = Math.Max(1, Width - previewInset * 2);
+            int drawH = Math.Max(1, Height - previewInset * 2);
             foreach (var z in _layout.Zones)
             {
-                var rect = new Rectangle((int)(z.X * Width), (int)(z.Y * Height), (int)(z.Width * Width), (int)(z.Height * Height));
+                var rect = new Rectangle(previewInset + (int)(z.X * drawW), previewInset + (int)(z.Y * drawH), (int)(z.Width * drawW), (int)(z.Height * drawH));
                 if (rect.Width <= 2 || rect.Height <= 2) continue;
                 using var fill = new SolidBrush(Color.FromArgb(70, UiTheme.AccentCyan));
                 using var border = new Pen(UiTheme.AccentCyan, 1.4f);

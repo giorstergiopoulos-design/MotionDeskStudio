@@ -1,3 +1,4 @@
+using MotionDesk.Services;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -65,6 +66,21 @@ namespace MotionDesk.Widgets
             LoadState();
             RebuildTray();
             RepositionToBottomCenter();
+
+            // Η περιοχή εργασίας αλλάζει όταν μια άλλη εφαρμογή δεσμεύει χώρο (π.χ. η μπάρα του News Crawler ως AppBar)
+            // ή αλλάζουν οι οθόνες — ξανατοποθετούμαστε ώστε να μην πέφτουμε πάνω της.
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnWorkAreaMayHaveChanged;
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnWorkAreaMayHaveChanged;
+            Disposed += (_, _) =>
+            {
+                Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnWorkAreaMayHaveChanged;
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnWorkAreaMayHaveChanged;
+            };
+        }
+
+        private void OnWorkAreaMayHaveChanged(object? sender, EventArgs e)
+        {
+            if (IsHandleCreated && !IsDisposed) BeginInvoke(new Action(RepositionToBottomCenter));
         }
 
         private void RepositionToBottomCenter()
@@ -92,6 +108,7 @@ namespace MotionDesk.Widgets
         private void RebuildTray()
         {
             _tray.SuspendLayout();
+            foreach (Control old in _tray.Controls.Cast<Control>().ToList()) old.Dispose(); // Clear() δεν κάνει Dispose
             _tray.Controls.Clear();
             foreach (var path in _paths.ToArray())
                 _tray.Controls.Add(new DockTile(path, RemovePath));
@@ -154,9 +171,7 @@ namespace MotionDesk.Widgets
             e.Graphics.DrawPath(pen, path);
         }
 
-        private static string ConfigPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MotionDeskStudio", "deskstrip", "config.json");
+        private static string ConfigPath => Path.Combine(AppPaths.AppDataFolder, "deskstrip", "config.json");
 
         private sealed class DeskStripState { public List<string> Paths { get; set; } = new(); }
 
@@ -165,7 +180,7 @@ namespace MotionDesk.Widgets
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-                File.WriteAllText(ConfigPath, JsonSerializer.Serialize(new DeskStripState { Paths = _paths }));
+                MotionDesk.Services.AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(new DeskStripState { Paths = _paths }));
             }
             catch (IOException) { }
         }
@@ -175,7 +190,7 @@ namespace MotionDesk.Widgets
             if (!File.Exists(ConfigPath)) return;
             try
             {
-                var state = JsonSerializer.Deserialize<DeskStripState>(File.ReadAllText(ConfigPath));
+                var state = JsonSerializer.Deserialize<DeskStripState>(MotionDesk.Services.AtomicFile.ReadAllText(ConfigPath));
                 if (state?.Paths != null) _paths.AddRange(state.Paths.Where(p => File.Exists(p)));
             }
             catch (JsonException) { }
@@ -221,8 +236,8 @@ namespace MotionDesk.Widgets
                 if (e.Button == MouseButtons.Right)
                 {
                     var menu = new ContextMenuStrip();
-                    menu.Items.Add("Open", null, (_, _) => Launch());
-                    menu.Items.Add("Unpin from DeskStrip", null, (_, _) => _onRemove(_path));
+                    menu.Items.Add(LocalizationManager.T("DCMenu.Open"), null, (_, _) => Launch());
+                    menu.Items.Add(LocalizationManager.T("DCMenu.Unpin"), null, (_, _) => _onRemove(_path));
                     menu.Show(this, e.Location);
                 }
             };
@@ -240,17 +255,7 @@ namespace MotionDesk.Widgets
         {
             try
             {
-                string target = Path.GetFullPath(path);
-                foreach (var proc in Process.GetProcesses())
-                {
-                    try
-                    {
-                        if (proc.MainModule != null &&
-                            string.Equals(proc.MainModule.FileName, target, StringComparison.OrdinalIgnoreCase))
-                            return true;
-                    }
-                    catch (Exception) { /* access denied σε process άλλου χρήστη/elevated — αγνοείται */ }
-                }
+                return RunningProcessCache.IsRunningByPath(Path.GetFullPath(path));
             }
             catch (Exception) { }
             return false;

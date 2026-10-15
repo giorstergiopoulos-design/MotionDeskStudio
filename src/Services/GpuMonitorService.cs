@@ -25,8 +25,12 @@ namespace MotionDesk.Services
     // γυρνάει null αντί να πετάξει exception — το widget δείχνει "—" σε αυτή την περίπτωση.
     public sealed class GpuMonitorService : IDisposable
     {
-        private static GpuMonitorService? _instance;
-        public static GpuMonitorService Instance => _instance ??= new GpuMonitorService();
+        // Lazy (thread-safe): το Instance προσπελαύνεται ΤΑΥΤΟΧΡΟΝΑ από το background warm-up Task και από
+        // το UI thread — το απλό "??=" μπορούσε να δημιουργήσει ΔΥΟ Computer instances (διπλό, αργό
+        // hardware scan και διπλά ανοιχτοί sensors).
+        private static readonly Lazy<GpuMonitorService> _lazy = new(() => new GpuMonitorService());
+        public static GpuMonitorService Instance => _lazy.Value;
+        private readonly object _sync = new(); // το LibreHardwareMonitor ΔΕΝ είναι thread-safe
 
         private readonly Computer? _computer;
         private readonly UpdateVisitor _visitor = new();
@@ -49,7 +53,7 @@ namespace MotionDesk.Services
             if (!_opened || _computer == null) return snap;
             try
             {
-                _computer.Accept(_visitor);
+                lock (_sync) _computer.Accept(_visitor);
                 var gpu = _computer.Hardware.FirstOrDefault(h =>
                     h.HardwareType == HardwareType.GpuNvidia ||
                     h.HardwareType == HardwareType.GpuAmd ||

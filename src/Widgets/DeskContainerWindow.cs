@@ -33,7 +33,7 @@ namespace MotionDesk.Widgets
     // Organize > "Place new icons here by default"/"Manage sorting rules"), Configure…
     public sealed class DeskContainerWindow : Form
     {
-        private const int TitleBarHeight = 28;
+        private const int TitleBarHeight = 36;
         private readonly string _containerId;
         private string _title;
         private List<ContainerItem> _items = new();
@@ -42,8 +42,16 @@ namespace MotionDesk.Widgets
         private System.Windows.Forms.Timer? _rollUpAnimTimer;
         private System.Windows.Forms.Timer? _hoverPollTimer;
         private Label? _lockLabelRef;
+        private string _filter = "";
+        private Panel? _titleBarRef;
+        public string AutoCollectExtensions { get; set; } = "";
+        private long _lastTitleDownTick;
+        private Point _lastTitleDownPos;
         private int _expandedHeight;
         private ContainerSortMode _sortMode = ContainerSortMode.None;
+        // ΔΙΟΡΘΩΣΗ "η διαφάνεια να αφορά το παράθυρο όχι το περιεχόμενο": δεν χρησιμοποιούμε πια
+        // Form.Opacity (ξεθωριάζει μαζί και το κείμενο/εικονίδια) — βλ. MotionDesk.UI.GlassBlur.
+        private double _backgroundOpacity = 1.0;
 
         public string ContainerId => _containerId;
         public string ContainerTitle => _title;
@@ -51,6 +59,9 @@ namespace MotionDesk.Widgets
         public bool IsRolledUp { get; private set; }
         public bool ExcludeFromQuickHide { get; set; }
         public Color AccentColor { get; set; } = Color.FromArgb(0, 170, 255);
+        // Ζητήθηκε ρητά "να μπορεί να αλλαχθεί το μέγεθος και η γραμματοσειρά του τίτλου".
+        public string TitleFontFamily { get; set; } = "Segoe UI Semibold";
+        public float TitleFontSize { get; set; } = 10.5f;
 
         public DeskContainerWindow(string containerId, string title, int x, int y, int width, int height)
         {
@@ -63,6 +74,7 @@ namespace MotionDesk.Widgets
             ShowInTaskbar = false;
             BackColor = Color.FromArgb(24, 24, 24);
             Size = new Size(width, height);
+            MinimumSize = new Size(180, 140);
             AllowDrop = true;
 
             _saveTimer = new System.Windows.Forms.Timer { Interval = 350 };
@@ -86,25 +98,57 @@ namespace MotionDesk.Widgets
             // (Dock=Right/Left μέσα του), ίδιο μοτίβο με το CreateNativePanel των widgets — καμία
             // ανάγκη για SendToBack πλέον, αφού δεν ανταγωνίζονται πια το _grid στο ίδιο επίπεδο.
             var titleBar = new Panel { Dock = DockStyle.Top, Height = TitleBarHeight, BackColor = Color.Transparent };
+            _titleBarRef = titleBar;
             titleBar.MouseDown += (_, e) =>
             {
-                if (e.Button == MouseButtons.Left && !IsLocked) { ReleaseCapture(); SendMessage(Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0); }
+                if (e.Button != MouseButtons.Left) return;
+                // ΔΙΟΡΘΩΣΗ: το πρώτο κλικ ξεκινά το native move loop των Windows (WM_NCLBUTTONDOWN/HTCAPTION), που "καταπίνει" το
+                // mouse-up — έτσι το WinForms DoubleClick event δεν εκπεμπόταν ποτέ και η μετονομασία με διπλό κλικ δεν δούλευε.
+                // Ανιχνεύουμε το διπλό κλικ εδώ (χρόνος + απόσταση από το προηγούμενο πάτημα) πριν ξεκινήσει το drag.
+                long now = Environment.TickCount64;
+                bool isDouble = e.Clicks >= 2 ||
+                    (now - _lastTitleDownTick <= SystemInformation.DoubleClickTime &&
+                     Math.Abs(e.X - _lastTitleDownPos.X) <= SystemInformation.DoubleClickSize.Width &&
+                     Math.Abs(e.Y - _lastTitleDownPos.Y) <= SystemInformation.DoubleClickSize.Height);
+                if (isDouble)
+                {
+                    _lastTitleDownTick = 0;
+                    RenameContainer();
+                    return;
+                }
+                _lastTitleDownTick = now;
+                _lastTitleDownPos = e.Location;
+                if (!IsLocked) { ReleaseCapture(); SendMessage(Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0); }
             };
-            // Διπλό-κλικ στη γραμμή τίτλου = μετονομασία (ζητήθηκε ρητά, στυλ Fences) — το roll-up
-            // είναι πλέον hover-driven (βλ. EnsureHoverPolling/SetHoverExpanded), οπότε το διπλό-
-            // κλικ ήταν ελεύθερο να ξαναχρησιμοποιηθεί για κάτι πιο χρήσιμο από περιττό δεύτερο
-            // τρόπο toggle roll-up.
-            titleBar.DoubleClick += (_, _) => RenameContainer();
+            // (Διπλό-κλικ στη γραμμή τίτλου = μετονομασία, στυλ Fences — βλ. MouseDown παραπάνω.)
             titleBar.Paint += (_, e) =>
             {
+                // Γραμμή τίτλου με ΔΙΚΗ ΤΗΣ απόχρωση (σκούρο με τόνο του accent, ημιδιαφανές) ώστε να ξεχωρίζει από το υπόλοιπο
+                // παράθυρο, όπως στα Fences.
+                var header = Color.FromArgb(185,
+                    (int)(AccentColor.R * 0.35 + 8), (int)(AccentColor.G * 0.35 + 10), (int)(AccentColor.B * 0.35 + 16));
+                using (var headerBrush = new SolidBrush(header)) e.Graphics.FillRectangle(headerBrush, 0, 0, titleBar.Width, TitleBarHeight);
                 using var titleBrush = new SolidBrush(Color.White);
-                using var font = new Font("Segoe UI", 9f, FontStyle.Bold);
-                var textRect = new RectangleF(TitleBarHeight + 4, 0, Math.Max(20, titleBar.Width - TitleBarHeight * 3 - 8), TitleBarHeight);
-                using var sf = new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
-                e.Graphics.DrawString(_title, font, titleBrush, textRect, sf);
-                using var separator = new Pen(Color.FromArgb(60, 255, 255, 255));
+                using var font = new Font(TitleFontFamily, TitleFontSize, FontStyle.Bold);
+                // Κεντραρισμένος τίτλος: συμμετρική δέσμευση χώρου 2 κουμπιών αριστερά/δεξιά ώστε το κέντρο να είναι το κέντρο του παραθύρου.
+                var textRect = new RectangleF(TitleBarHeight * 2, 0, Math.Max(20, titleBar.Width - TitleBarHeight * 4), TitleBarHeight);
+                using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+                // title + item count ("Projects  12", or "3 / 12" while a search is active) — the count in a quieter colour
+                string count = _filter.Length > 0 ? $"{_grid.Controls.Count} / {_items.Count}" : _items.Count.ToString();
+                var titleSize = e.Graphics.MeasureString(_title, font, (int)textRect.Width, sf);
+                using var countFont = new Font("Segoe UI", 9f);
+                var countSize = e.Graphics.MeasureString(count, countFont);
+                float totalW = Math.Min(textRect.Width, titleSize.Width + 10 + countSize.Width);
+                float startX = textRect.X + (textRect.Width - totalW) / 2f;
+                var titleRect = new RectangleF(startX, textRect.Y, Math.Max(10, totalW - 10 - countSize.Width), textRect.Height);
+                using var leftSf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+                e.Graphics.DrawString(_title, font, titleBrush, titleRect, leftSf);
+                using var countBrush = new SolidBrush(Color.FromArgb(150, 255, 255, 255));
+                e.Graphics.DrawString(count, countFont, countBrush, new RectangleF(titleRect.Right + 10, textRect.Y, countSize.Width + 2, textRect.Height), leftSf);
+                using var separator = new Pen(Color.FromArgb(160, AccentColor), 2f);
                 e.Graphics.DrawLine(separator, 0, TitleBarHeight - 1, titleBar.Width, TitleBarHeight - 1);
             };
+            titleBar.Resize += (_, _) => titleBar.Invalidate();
 
             var closeLabel = new Label { Text = "✕", AutoSize = false, Size = new Size(TitleBarHeight, TitleBarHeight), Dock = DockStyle.Right, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.FromArgb(200, 255, 255, 255), BackColor = Color.Transparent, Font = new Font("Segoe UI", 10), Cursor = Cursors.Hand };
             closeLabel.MouseEnter += (_, _) => closeLabel.ForeColor = Color.FromArgb(255, 231, 76, 60);
@@ -118,7 +162,7 @@ namespace MotionDesk.Widgets
             var menuLabel = new Label { Text = "☰", AutoSize = false, Size = new Size(TitleBarHeight, TitleBarHeight), Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.FromArgb(200, 255, 255, 255), BackColor = Color.Transparent, Font = new Font("Segoe UI", 10), Cursor = Cursors.Hand };
             menuLabel.MouseEnter += (_, _) => menuLabel.ForeColor = Color.White;
             menuLabel.MouseLeave += (_, _) => menuLabel.ForeColor = Color.FromArgb(200, 255, 255, 255);
-            menuLabel.Click += (_, _) => ShowContainerMenu(menuLabel);
+            menuLabel.Click += (_, _) => ShowContainerSettingsDialog();
 
             // Ίδια σειρά προσθήκης με το ήδη-σωστό CreateNativePanel των widgets: lockLabel πριν
             // το closeLabel ώστε το ✕ να καταλήξει στην ακριανή δεξιά θέση.
@@ -133,7 +177,16 @@ namespace MotionDesk.Widgets
             // φρέσκο container (π.χ. μέσω "Create Folder Portal here") μπορεί να δείξει ΕΝΑ
             // πρώτο frame όπου το Dock=Fill του _grid υπολογίζεται πριν προλάβει να "κλειδώσει"
             // το ύψος του Dock=Top titleBar — φαινόμενο επικάλυψης ακριβώς στο πρώτο render.
-            _grid = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, AutoScroll = true, Padding = new Padding(8, 12, 8, 8), AllowDrop = true };
+            // Ζητήθηκε ξανά ρητά ("εξακολουθεί να επικαλύπτει"): ο κώδικας Dock/Z-order ήταν ήδη
+            // σωστός (titleBar πριν το _grid, Dock=Top/Fill, PerformLayout() αμέσως μετά) — το
+            // προηγούμενο πάνω padding (12px) απλώς δεν άφηνε αρκετό οπτικό κενό σε όλες τις
+            // αναλύσεις/DPI. Αυξήθηκε σε 18px για καθαρό, αδιαμφισβήτητο κενό κάτω από τη γραμμή τίτλου.
+            // Ζητήθηκε ρητά (ξανά) "μετακίνησε ακόμα πιο κάτω... τα εικονίδια" — το προηγούμενο
+            // πέρασμα αυτής της συνεδρίας ανέβασε το top padding 12px -> 18px, προφανώς όχι αρκετό.
+            _grid = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, AutoScroll = true, Padding = new Padding(8, 28, 8, 8), AllowDrop = true };
+            // Τα DeskContainers είναι πάντα σκούρο γυαλί (dark glass), ανεξάρτητα από το θέμα της
+            // εφαρμογής — το scrollbar ακολουθεί πάντα το σκούρο στυλ.
+            GlassBlur.ApplyScrollbarTheme(_grid, dark: true);
             _grid.DragEnter += Grid_DragEnter;
             _grid.DragDrop += Grid_DragDrop;
             Controls.Add(_grid);
@@ -141,6 +194,24 @@ namespace MotionDesk.Widgets
 
             DragEnter += Grid_DragEnter;
             DragDrop += Grid_DragDrop;
+
+            // ΔΙΟΡΘΩΣΗ "δεν λειτουργεί η προσαρμογή μεγέθους τραβώντας τις άκρες": το container
+            // ΔΕΝ είχε ΚΑΝΕΝΑ μηχανισμό αλλαγής μεγέθους (FormBorderStyle=None αφαιρεί και τη
+            // σχετική λαβή των Windows) — όχι bug σε υπάρχον μηχανισμό, απλά δεν υπήρχε καθόλου.
+            // Ίδιο ακριβώς "κόλπο" (WM_NCLBUTTONDOWN/HTBOTTOMRIGHT) με το ήδη αποδεδειγμένο
+            // BeginNativeResize των widgets (WidgetEngine.cs) — αναθέτει το resize στον ίδιο τον
+            // Windows compositor αντί για χειροκίνητο MouseMove tracking.
+            var resizeGrip = new Label
+            {
+                Text = "⤡", AutoSize = false, Size = new Size(18, 18), Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.FromArgb(140, 255, 255, 255), BackColor = Color.Transparent,
+                Font = new Font("Segoe UI", 9), Cursor = Cursors.SizeNWSE
+            };
+            resizeGrip.Location = new Point(Width - resizeGrip.Width - 2, Height - resizeGrip.Height - 2);
+            resizeGrip.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left && !IsLocked) { ReleaseCapture(); SendMessage(Handle, WM_NCLBUTTONDOWN, HTBOTTOMRIGHT, 0); } };
+            Controls.Add(resizeGrip);
+            resizeGrip.BringToFront();
+            Resize += (_, _) => { if (!IsRolledUp) { _expandedHeight = Height; QueueSave(); } };
 
             LoadState(x, y);
             lockLabel.Text = IsLocked ? "🔒" : "🔓";
@@ -174,15 +245,34 @@ namespace MotionDesk.Widgets
 
         private void RebuildGrid()
         {
+            // ΔΙΟΡΘΩΣΗ scroll-reset (ίδιο μοτίβο με RefreshActiveList στο MainWindow): το _grid είναι
+            // το ίδιο το AutoScroll FlowLayoutPanel, οπότε το Controls.Clear()+rebuild που τρέχει σε
+            // κάθε προσθήκη/αφαίρεση/ταξινόμηση επαναφέρει σιωπηλά την κύλιση στην κορυφή — αισθητό σε
+            // containers με πολλά εικονίδια όταν ο χρήστης είναι κυλισμένος κάτω.
+            var savedScroll = _grid.AutoScrollPosition;
             _grid.SuspendLayout();
+            // Controls.Clear() ΔΕΝ κάνει Dispose — κάθε tile κρατά native Icon (HICON clone) + handle, και
+            // η RebuildGrid τρέχει σε κάθε προσθήκη/αφαίρεση/ταξινόμηση. Ρητό Dispose για να μη διαρρέουν.
+            foreach (Control old in _grid.Controls.Cast<Control>().ToList()) old.Dispose();
             _grid.Controls.Clear();
             foreach (var item in _items.ToArray())
             {
                 string path = item.Path;
+                if (_filter.Length > 0 && Path.GetFileName(path).IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
                 var tile = new ContainerIconTile(path, RemovePath, () => IncrementOpenCount(path));
+                // ΔΙΟΡΘΩΣΗ "δεν λειτουργεί το drag&drop": οι χειριστές ήταν μόνο στο _grid/στο
+                // Form, όχι στα ίδια τα ContainerIconTile — αφού τα πλακίδια γεμίζουν όλο το grid,
+                // ΚΑΘΕ drop πάνω σε ήδη-υπάρχον εικονίδιο (δηλ. σχεδόν πάντα, αφού αυτό είναι το
+                // βασικό σενάριο χρήσης ενός container) πήγαινε στο tile, όχι στο γονικό
+                // FlowLayoutPanel, και αγνοούνταν σιωπηλά (το Panel δεν είχε AllowDrop/handlers).
+                tile.AllowDrop = true;
+                tile.DragEnter += Grid_DragEnter;
+                tile.DragDrop += Grid_DragDrop;
                 _grid.Controls.Add(tile);
             }
             _grid.ResumeLayout();
+            _grid.AutoScrollPosition = new Point(-savedScroll.X, -savedScroll.Y);
+            _titleBarRef?.Invalidate();       // the item count in the title follows the list
         }
 
         private void RemovePath(string path)
@@ -200,72 +290,162 @@ namespace MotionDesk.Widgets
             if (item != null) { item.OpenCount++; QueueSave(); }
         }
 
-        // ---- Μενού: ίδια διάρθρωση/λειτουργίες με το πραγματικό Stardock Fences ----
-        private void ShowContainerMenu(Control owner)
+        // ΔΙΟΡΘΩΣΗ ζητήματος "να μην θυμίζει Fences": το παλιό ContextMenuStrip flyout (το οποίο
+        // ΑΥΤΟ ΤΟ ΙΔΙΟ έδειχνε στο χρήστη screenshots Stardock Fences σαν αναφορά) αντικαταστάθηκε
+        // από ένα κανονικό pop-up παράθυρο με όλες τις ρυθμίσεις οργανωμένες σε tabs. Οι ίδιες
+        // ακριβώς ενέργειες/μέθοδοι (RenameContainer, ToggleRollUp, ApplyGlassBlur, EditColor,
+        // ApplySort, EditAutoCollectRule, AddViaDialog, FindInContainer) παραμένουν ως έχουν.
+        // ΔΙΟΡΘΩΣΗ "επικαλυπτόμενα κουμπιά": η προηγούμενη έκδοση τοποθετούσε κουμπιά/dropdown με
+        // χειροκίνητο Location (π.χ. δεύτερο κουμπί σε x=150 υποθέτοντας ότι το πρώτο χωράει σε
+        // 134px) — ελληνικό κείμενο σε AutoSize κουμπί είναι συχνά φαρδύτερο απ' όσο υπολογίστηκε,
+        // οπότε τα κουμπιά επικαλύπτονταν οπτικά. Ο χρήστης ζήτησε να μελετηθεί πώς το αδελφό
+        // project GearWin λύνει το ίδιο πρόβλημα· εκεί (WPF) κάθε γραμμή είναι ένα Grid/StackPanel
+        // που κατανέμει χώρο αυτόματα, ΠΟΤΕ απόλυτες συντεταγμένες pixel. Το ακριβές WinForms
+        // αντίστοιχο: κάθε "γραμμή" εδώ είναι πλέον ένα οριζόντιο FlowLayoutPanel (AutoSize, τα
+        // παιδιά παίρνουν το δικό τους φυσικό πλάτος και σειριακά ο ένας μετά τον άλλο με Margin —
+        // ΠΟΤΕ δεν μπορούν να επικαλυφθούν, όσο μεγάλο κι αν είναι το κείμενο/η γλώσσα), και κάθε
+        // tab είναι ένα κάθετο FlowLayoutPanel από τέτοιες γραμμές. Ίδιο μοτίβο να χρησιμοποιείται
+        // σε ΚΑΘΕ μελλοντικό dialog αντί για Location-based layout.
+        private static FlowLayoutPanel Row(params Control[] controls)
         {
-            // ΟΧΙ "using": το Show() δεν μπλοκάρει — immediate Dispose μετά έκανε το μενού να
-            // κλείνει πριν προλάβει ο χρήστης να διαλέξει κάτι (flash-and-vanish).
-            var menu = new ContextMenuStrip();
-            menu.Items.Add("Rename container…", null, (_, _) => RenameContainer());
+            var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0, 0, 0, 10) };
+            foreach (var c in controls) { c.Margin = new Padding(0, 0, 10, 0); row.Controls.Add(c); }
+            return row;
+        }
 
-            var viewMenu = new ToolStripMenuItem("View");
-            var rollUpItem = new ToolStripMenuItem("Roll-up container") { Checked = IsRolledUp };
-            rollUpItem.Click += (_, _) => ToggleRollUp(save: true);
-            viewMenu.DropDownItems.Add(rollUpItem);
-            var excludeItem = new ToolStripMenuItem("Exclude from quick-hide") { Checked = ExcludeFromQuickHide };
-            excludeItem.Click += (_, _) => { ExcludeFromQuickHide = !ExcludeFromQuickHide; QueueSave(); };
-            viewMenu.DropDownItems.Add(excludeItem);
-
-            var opacityMenu = new ToolStripMenuItem("Opacity");
-            foreach (int pct in new[] { 100, 85, 70, 55, 40, 25 })
+        private void ShowContainerSettingsDialog()
+        {
+            using var dialog = new Form
             {
-                var opacityItem = new ToolStripMenuItem($"{pct}%") { Checked = Math.Abs(Opacity * 100 - pct) < 1 };
-                opacityItem.Click += (_, _) => { Opacity = pct / 100.0; QueueSave(); };
-                opacityMenu.DropDownItems.Add(opacityItem);
-            }
-            viewMenu.DropDownItems.Add(opacityMenu);
-            viewMenu.DropDownItems.Add(new ToolStripSeparator());
-            viewMenu.DropDownItems.Add("Copy color", null, (_, _) => { try { Clipboard.SetText(ColorTranslator.ToHtml(AccentColor)); } catch { } });
-            viewMenu.DropDownItems.Add("Edit color…", null, (_, _) => EditColor());
-            menu.Items.Add(viewMenu);
-
-            var sortMenu = new ToolStripMenuItem("Sort by");
-            void AddSortOption(string label, ContainerSortMode mode)
-            {
-                var item = new ToolStripMenuItem(label) { Checked = _sortMode == mode };
-                item.Click += (_, _) => { _sortMode = mode; ApplySort(); QueueSave(); };
-                sortMenu.DropDownItems.Add(item);
-            }
-            AddSortOption("None", ContainerSortMode.None);
-            AddSortOption("Name", ContainerSortMode.Name);
-            AddSortOption("Size", ContainerSortMode.Size);
-            AddSortOption("Item type", ContainerSortMode.ItemType);
-            AddSortOption("Date modified", ContainerSortMode.DateModified);
-            AddSortOption("Date created", ContainerSortMode.DateCreated);
-            AddSortOption("Date added to container", ContainerSortMode.DateAdded);
-            AddSortOption("Number of times opened", ContainerSortMode.TimesOpened);
-            sortMenu.DropDownItems.Add(new ToolStripSeparator());
-            var organizeMenu = new ToolStripMenuItem("Organize");
-            var defaultItem = new ToolStripMenuItem("Place all new icons in this container by default") { Checked = DeskContainerHostEngine.Instance.DefaultContainerId == _containerId };
-            defaultItem.Click += (_, _) =>
-            {
-                DeskContainerHostEngine.Instance.DefaultContainerId = defaultItem.Checked ? null : _containerId;
-                QueueSave();
+                Text = LocalizationManager.T("DeskContainer.SettingsTitle"),
+                StartPosition = FormStartPosition.CenterParent,
+                ClientSize = new Size(460, 380),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MinimizeBox = false,
+                MaximizeBox = false,
+                BackColor = UiTheme.Surface,
+                ForeColor = UiTheme.TextPrimary
             };
-            organizeMenu.DropDownItems.Add(defaultItem);
-            organizeMenu.DropDownItems.Add("Manage sorting rules…", null, (_, _) => ShowSortingRulesInfo());
-            sortMenu.DropDownItems.Add(organizeMenu);
-            menu.Items.Add(sortMenu);
 
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Add files/folder…", null, (_, _) => AddViaDialog());
-            var lockItem = new ToolStripMenuItem(IsLocked ? "Unlock position" : "Lock position (save layout)");
-            lockItem.Click += (_, _) => { IsLocked = !IsLocked; if (_lockLabelRef != null) _lockLabelRef.Text = IsLocked ? "🔒" : "🔓"; QueueSave(); };
-            menu.Items.Add(lockItem);
-            menu.Items.Add("Configure container…", null, (_, _) => ShowContainerSettings());
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Close container", null, (_, _) => Close());
-            menu.Show(owner, new Point(0, owner.Height));
+            var tabs = new TabControl { Dock = DockStyle.Fill };
+
+            TabPage NewTab(string titleKey)
+            {
+                var page = new TabPage(LocalizationManager.T(titleKey)) { BackColor = UiTheme.Surface };
+                var stack = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(14) };
+                MotionDesk.UI.GlassBlur.ApplyScrollbarTheme(stack, UiTheme.Surface.GetBrightness() < 0.5f);
+                page.Controls.Add(stack);
+                return page;
+            }
+            FlowLayoutPanel StackOf(TabPage page) => (FlowLayoutPanel)page.Controls[0];
+
+            // --- Γενικά ---
+            var tabGeneral = NewTab("DeskContainer.TabGeneral");
+            var nameBox = new TextBox { Text = _title, Width = 220 };
+            var renameBtn = new Button { Text = LocalizationManager.T("Common.Save"), AutoSize = true };
+            renameBtn.Click += (_, _) => { var t = nameBox.Text.Trim(); if (t.Length > 0 && t != _title) { _title = t; _titleBarRef?.Invalidate(); QueueSave(); } };
+
+            var lockCheck = new FlatCheckBox { Text = LocalizationManager.T("DCMenu.Lock"), Checked = IsLocked, AutoSize = true, BackColor = UiTheme.Surface };
+            lockCheck.CheckedChanged += (_, _) => { IsLocked = lockCheck.Checked; if (_lockLabelRef != null) _lockLabelRef.Text = IsLocked ? "🔒" : "🔓"; QueueSave(); };
+
+            var excludeCheck = new FlatCheckBox { Text = LocalizationManager.T("DCMenu.ExcludeQuickHide"), Checked = ExcludeFromQuickHide, AutoSize = true, BackColor = UiTheme.Surface };
+            excludeCheck.CheckedChanged += (_, _) => { ExcludeFromQuickHide = excludeCheck.Checked; QueueSave(); };
+
+            var defaultCheck = new FlatCheckBox { Text = LocalizationManager.T("DCMenu.DefaultContainer"), Checked = DeskContainerHostEngine.Instance.DefaultContainerId == _containerId, AutoSize = true, BackColor = UiTheme.Surface };
+            defaultCheck.CheckedChanged += (_, _) => { DeskContainerHostEngine.Instance.DefaultContainerId = defaultCheck.Checked ? _containerId : null; QueueSave(); };
+
+            var closeContainerBtn = new Button { Text = LocalizationManager.T("DCMenu.Close"), AutoSize = true };
+            closeContainerBtn.Click += (_, _) => { dialog.Close(); Close(); };
+
+            var generalStack = StackOf(tabGeneral);
+            generalStack.Controls.Add(Row(new Label { Text = LocalizationManager.T("Common.NameLabel"), AutoSize = true, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 6, 10, 0) }, nameBox, renameBtn));
+            generalStack.Controls.Add(Row(lockCheck));
+            generalStack.Controls.Add(Row(excludeCheck));
+            generalStack.Controls.Add(Row(defaultCheck));
+            generalStack.Controls.Add(Row(closeContainerBtn));
+
+            // --- Εμφάνιση ---
+            var tabAppearance = NewTab("DeskContainer.TabAppearance");
+            var rollUpCheck = new FlatCheckBox { Text = LocalizationManager.T("DCMenu.RollUp"), Checked = IsRolledUp, AutoSize = true, BackColor = UiTheme.Surface };
+            rollUpCheck.CheckedChanged += (_, _) => { if (rollUpCheck.Checked != IsRolledUp) ToggleRollUp(save: true); };
+
+            var opacityTrack = new FlatSlider { Minimum = 25, Maximum = 100, SmallChange = 5, LargeChange = 15, Value = Math.Clamp((int)Math.Round(_backgroundOpacity * 100), 25, 100), Width = 260 };
+            var opacityValueLabel = new Label { Text = $"{opacityTrack.Value}%", AutoSize = true, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 6, 0, 0) };
+            opacityTrack.Scroll += (_, _) => { _backgroundOpacity = opacityTrack.Value / 100.0; opacityValueLabel.Text = $"{opacityTrack.Value}%"; ApplyGlassBlur(); QueueSave(); };
+
+            var editColorBtn = new Button { Text = LocalizationManager.T("DCMenu.EditColor"), AutoSize = true };
+            editColorBtn.Click += (_, _) => EditColor();
+            var copyColorBtn = new Button { Text = LocalizationManager.T("DCMenu.CopyColor"), AutoSize = true };
+            copyColorBtn.Click += (_, _) => { try { Clipboard.SetText(ColorTranslator.ToHtml(AccentColor)); } catch { } };
+            var resetColorBtn = new Button { Text = LocalizationManager.T("DeskContainer.ResetColor"), AutoSize = true };
+            resetColorBtn.Click += (_, _) => { AccentColor = Color.FromArgb(0, 170, 255); ApplyGlassBlur(); Invalidate(true); QueueSave(); };
+
+            // Ζητήθηκε ρητά "να μπορεί να αλλαχθεί το μέγεθος και η γραμματοσειρά του τίτλου".
+            var titleFontCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
+            var titleFontChoices = new[] { "Segoe UI Semibold", "Segoe UI", "Consolas", "Arial", "Georgia", "Verdana" };
+            titleFontCombo.Items.AddRange(titleFontChoices);
+            titleFontCombo.SelectedIndex = Math.Max(0, Array.IndexOf(titleFontChoices, TitleFontFamily));
+            titleFontCombo.SelectedIndexChanged += (_, _) => { TitleFontFamily = titleFontChoices[titleFontCombo.SelectedIndex]; _titleBarRef?.Invalidate(); QueueSave(); };
+            var titleSizeUpDown = new NumericUpDown { Width = 64, Minimum = 7, Maximum = 20, DecimalPlaces = 1, Increment = 0.5m, Value = (decimal)TitleFontSize };
+            titleSizeUpDown.ValueChanged += (_, _) => { TitleFontSize = (float)titleSizeUpDown.Value; _titleBarRef?.Invalidate(); QueueSave(); };
+
+            var appearanceStack = StackOf(tabAppearance);
+            appearanceStack.Controls.Add(Row(rollUpCheck));
+            appearanceStack.Controls.Add(Row(new Label { Text = LocalizationManager.T("DCMenu.Opacity"), AutoSize = true, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 6, 10, 0) }));
+            appearanceStack.Controls.Add(Row(opacityTrack, opacityValueLabel));
+            appearanceStack.Controls.Add(Row(editColorBtn, copyColorBtn));
+            appearanceStack.Controls.Add(Row(resetColorBtn));
+            appearanceStack.Controls.Add(Row(new Label { Text = LocalizationManager.T("DeskContainer.TitleFont"), AutoSize = true, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 6, 10, 0) }));
+            appearanceStack.Controls.Add(Row(titleFontCombo, titleSizeUpDown));
+
+            // --- Ταξινόμηση ---
+            var tabSorting = NewTab("DeskContainer.TabSorting");
+            var sortCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
+            var sortOptions = new (string Label, ContainerSortMode Mode)[]
+            {
+                (LocalizationManager.T("DCMenu.SortNone"), ContainerSortMode.None),
+                (LocalizationManager.T("DCMenu.SortName"), ContainerSortMode.Name),
+                (LocalizationManager.T("DCMenu.SortSize"), ContainerSortMode.Size),
+                (LocalizationManager.T("DCMenu.SortType"), ContainerSortMode.ItemType),
+                (LocalizationManager.T("DCMenu.SortModified"), ContainerSortMode.DateModified),
+                (LocalizationManager.T("DCMenu.SortCreated"), ContainerSortMode.DateCreated),
+                (LocalizationManager.T("DCMenu.SortAdded"), ContainerSortMode.DateAdded),
+                (LocalizationManager.T("DCMenu.SortOpened"), ContainerSortMode.TimesOpened),
+            };
+            foreach (var opt in sortOptions) sortCombo.Items.Add(opt.Label);
+            sortCombo.SelectedIndex = Math.Max(0, Array.FindIndex(sortOptions, o => o.Mode == _sortMode));
+            sortCombo.SelectedIndexChanged += (_, _) => { _sortMode = sortOptions[sortCombo.SelectedIndex].Mode; ApplySort(); QueueSave(); };
+
+            var defaultCheck2 = new FlatCheckBox { Text = LocalizationManager.T("DCMenu.DefaultContainer"), Checked = DeskContainerHostEngine.Instance.DefaultContainerId == _containerId, AutoSize = true, BackColor = UiTheme.Surface };
+            defaultCheck2.CheckedChanged += (_, _) => { DeskContainerHostEngine.Instance.DefaultContainerId = defaultCheck2.Checked ? _containerId : null; defaultCheck.Checked = defaultCheck2.Checked; QueueSave(); };
+            var autoCollectBtn = new Button { Text = LocalizationManager.T("DCMenu.AutoCollect"), AutoSize = true };
+            autoCollectBtn.Click += (_, _) => EditAutoCollectRule();
+
+            var sortingStack = StackOf(tabSorting);
+            sortingStack.Controls.Add(Row(new Label { Text = LocalizationManager.T("DCMenu.SortBy"), AutoSize = true, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 6, 10, 0) }));
+            sortingStack.Controls.Add(Row(sortCombo));
+            sortingStack.Controls.Add(Row(new Label { Text = LocalizationManager.T("DCMenu.Organize"), AutoSize = true, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 6, 10, 0) }));
+            sortingStack.Controls.Add(Row(defaultCheck2));
+            sortingStack.Controls.Add(Row(autoCollectBtn));
+
+            // --- Αρχεία ---
+            var tabFiles = NewTab("DeskContainer.TabFiles");
+            var addFilesBtn = new Button { Text = LocalizationManager.T("DCMenu.AddFiles"), AutoSize = true };
+            addFilesBtn.Click += (_, _) => AddViaDialog();
+            var findBtn = new Button { Text = LocalizationManager.T("DCMenu.Find"), AutoSize = true };
+            findBtn.Click += (_, _) => FindInContainer();
+            var clearFindBtn = new Button { Text = LocalizationManager.T("DCMenu.ClearFind"), AutoSize = true, Enabled = _filter.Length > 0 };
+            clearFindBtn.Click += (_, _) => { _filter = ""; RebuildGrid(); clearFindBtn.Enabled = false; };
+
+            var filesStack = StackOf(tabFiles);
+            filesStack.Controls.Add(Row(addFilesBtn));
+            filesStack.Controls.Add(Row(findBtn, clearFindBtn));
+
+            tabs.TabPages.AddRange(new[] { tabGeneral, tabAppearance, tabSorting, tabFiles });
+            dialog.Controls.Add(tabs);
+            // Ζητήθηκε ρητά "σκιασμένα popup" (MediaPlayerPro) — native DWM drop-shadow.
+            dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
+            dialog.ShowDialog(this);
         }
 
         // ΔΙΟΡΘΩΣΗ συμπεριφοράς (ζητήθηκε ρητά "να γίνεται με hover"): το "Roll-up container" δεν
@@ -342,9 +522,19 @@ namespace MotionDesk.Widgets
             _rollUpAnimTimer?.Stop();
             _rollUpAnimTimer?.Dispose();
             int startHeight = Height;
-            const int totalSteps = 10;
+            // Ζητήθηκε ρητά "πιο smooth animation" — 10 βήματα/12ms (120ms σύνολο) ήταν αισθητά
+            // απότομο. 20 βήματα/10ms (~200ms) με το ίδιο ease-out cubic είναι αισθητά πιο ομαλό
+            // χωρίς να γίνεται αργό/κολλημένο.
+            const int totalSteps = 20;
             int step = 0;
-            _rollUpAnimTimer = new System.Windows.Forms.Timer { Interval = 12 };
+            // ΔΙΟΡΘΩΣΗ "bug εμφάνισης scrollbar χωρίς να υπάρχει ανάγκη": το _grid είναι
+            // AutoScroll — κατά τη διάρκεια της γρήγορης αλλαγής ύψους το WinForms υπολογίζει
+            // στιγμιαία (λάθος) ότι το περιεχόμενο ξεπερνάει το ορατό ύψος σε ενδιάμεσα frames,
+            // εμφανίζοντας/κρύβοντας scrollbar κάθε λίγα ms. Απενεργοποίηση του AutoScroll ΜΟΝΟ
+            // κατά τη διάρκεια του animation (όχι ανά frame) το αποτρέπει τελείως.
+            bool wasAutoScroll = _grid.AutoScroll;
+            _grid.AutoScroll = false;
+            _rollUpAnimTimer = new System.Windows.Forms.Timer { Interval = 10 };
             _rollUpAnimTimer.Tick += (_, _) =>
             {
                 step++;
@@ -355,6 +545,7 @@ namespace MotionDesk.Widgets
                 {
                     Height = targetHeight;
                     _rollUpAnimTimer?.Stop();
+                    _grid.AutoScroll = wasAutoScroll;
                     onComplete?.Invoke();
                 }
             };
@@ -404,43 +595,83 @@ namespace MotionDesk.Widgets
                 LocalizationManager.T("DeskContainer.SortingRulesTitle"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        private void ShowContainerSettings()
+        // Small single-line input dialog (same look as the rename dialog)
+        private string? PromptText(string title, string prompt, string initial)
         {
-            using var dialog = new Form
+            using var dialog = new Form { Text = title, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(440, 150), FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary };
+            var label = new Label { Text = prompt, Location = new Point(14, 12), Size = new Size(412, 50), ForeColor = UiTheme.TextSecondary };
+            var box = new TextBox { Text = initial, Location = new Point(14, 66), Width = 412 };
+            var ok = new Button { Text = LocalizationManager.T("Common.OK"), DialogResult = DialogResult.OK, Location = new Point(250, 104), Size = new Size(86, 30) };
+            var cancel = new Button { Text = LocalizationManager.T("Common.Cancel"), DialogResult = DialogResult.Cancel, Location = new Point(342, 104), Size = new Size(86, 30) };
+            dialog.Controls.AddRange(new Control[] { label, box, ok, cancel });
+            dialog.AcceptButton = ok; dialog.CancelButton = cancel;
+            dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
+            return dialog.ShowDialog(this) == DialogResult.OK ? box.Text.Trim() : null;
+        }
+
+        private void FindInContainer()
+        {
+            var text = PromptText(LocalizationManager.T("DeskContainer.FindTitle"), LocalizationManager.T("DeskContainer.FindPrompt"), _filter);
+            if (text == null) return;
+            _filter = text;
+            RebuildGrid();
+        }
+
+        private void EditAutoCollectRule()
+        {
+            var text = PromptText(LocalizationManager.T("DeskContainer.AutoCollectTitle"), LocalizationManager.T("DeskContainer.AutoCollectPrompt"), AutoCollectExtensions);
+            if (text == null) return;
+            AutoCollectExtensions = NormalizeExtensions(text);
+            QueueSave();
+            if (AutoCollectExtensions.Length > 0) CollectFromDesktop();
+        }
+
+        private static string NormalizeExtensions(string raw) =>
+            string.Join(", ", raw.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(e => e.Trim().TrimStart('*').TrimStart('.').ToLowerInvariant())
+                .Where(e => e.Length > 0 && e.All(char.IsLetterOrDigit)).Distinct());
+
+        public bool MatchesAutoCollect(string path)
+        {
+            if (AutoCollectExtensions.Length == 0) return false;
+            var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+            return ext.Length > 0 && AutoCollectExtensions.Split(',').Any(e => e.Trim() == ext);
+        }
+
+        // Adds a desktop file when it matches this container's rule (called by the desktop watcher on the UI thread)
+        public void TryAutoCollect(string path)
+        {
+            if (!IsDisposed && MatchesAutoCollect(path) && File.Exists(path)) AddPaths(new[] { path });
+        }
+
+        // Scans the current desktop folders for files that already match the rule
+        public void CollectFromDesktop()
+        {
+            var found = new List<string>();
+            foreach (var dir in DeskContainerHostEngine.DesktopFolders())
             {
-                Text = LocalizationManager.T("DeskContainer.SettingsTitle"),
-                StartPosition = FormStartPosition.CenterParent,
-                Size = new Size(360, 200),
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MinimizeBox = false,
-                MaximizeBox = false
-            };
-            var info = new Label { Text = string.Format(LocalizationManager.T("DeskContainer.SettingsInfoFormat"), _title, _items.Count, _sortMode, (int)(Opacity * 100)), AutoSize = true, Location = new Point(16, 16) };
-            dialog.Controls.Add(info);
-            var resetColorBtn = new Button { Text = LocalizationManager.T("DeskContainer.ResetColor"), AutoSize = true, Location = new Point(16, 100) };
-            resetColorBtn.Click += (_, _) => { AccentColor = Color.FromArgb(0, 170, 255); ApplyGlassBlur(); Invalidate(true); QueueSave(); };
-            dialog.Controls.Add(resetColorBtn);
-            var ok = new Button { Text = LocalizationManager.T("Common.Close"), DialogResult = DialogResult.OK, Location = new Point(16, 140) };
-            dialog.Controls.Add(ok);
-            dialog.AcceptButton = ok;
-            dialog.ShowDialog(this);
+                try { found.AddRange(Directory.EnumerateFiles(dir).Where(MatchesAutoCollect)); }
+                catch (Exception) { /* inaccessible folder */ }
+            }
+            if (found.Count > 0) AddPaths(found);
         }
 
         private void AddViaDialog()
         {
-            using var dialog = new OpenFileDialog { Multiselect = true, Title = "Add files to DeskContainer", CheckFileExists = true };
+            using var dialog = new OpenFileDialog { Multiselect = true, Title = LocalizationManager.T("DeskContainer.AddFilesTitle"), CheckFileExists = true };
             if (dialog.ShowDialog(this) == DialogResult.OK)
                 AddPaths(dialog.FileNames);
         }
 
         private void RenameContainer()
         {
-            using var dialog = new Form { Text = "Rename DeskContainer", StartPosition = FormStartPosition.CenterParent, Size = new Size(420, 150), FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
+            using var dialog = new Form { Text = LocalizationManager.T("DCMenu.RenameTitle"), StartPosition = FormStartPosition.CenterParent, Size = new Size(420, 150), FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
             var box = new TextBox { Text = _title, Dock = DockStyle.Top, Margin = new Padding(12) };
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 34 };
+            var ok = new Button { Text = LocalizationManager.T("Common.OK"), DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 34 };
             dialog.Controls.Add(box);
             dialog.Controls.Add(ok);
             dialog.AcceptButton = ok;
+            dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
             if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(box.Text))
             {
                 _title = box.Text.Trim();
@@ -456,6 +687,8 @@ namespace MotionDesk.Widgets
             base.OnHandleCreated(e);
             ApplyGlassBlur();
             ApplyRoundedCorners();
+            GlassBlur.DisableNativeBorderAccent(Handle);
+            GlassBlur.AllowDragDropAcrossUipi(Handle);
         }
 
         // Στρογγυλεμένες γωνίες στο container — αισθητική κατεύθυνση από το Portals: Desktop
@@ -484,27 +717,10 @@ namespace MotionDesk.Widgets
 
         // Το AccentColor αναμειγνύεται ελαφρά μέσα στο σκούρο γυάλινο φόντο (DWM blur) — ίδια
         // ιδέα με το accent-color tinting των πραγματικών Fences.
-        private void ApplyGlassBlur()
-        {
-            var baseColor = Color.FromArgb(0x20, 0x20, 0x20);
-            const double t = 0.16;
-            int r = (int)(baseColor.R + (AccentColor.R - baseColor.R) * t);
-            int gCh = (int)(baseColor.G + (AccentColor.G - baseColor.G) * t);
-            int b = (int)(baseColor.B + (AccentColor.B - baseColor.B) * t);
-            int gradientColor = unchecked((int)0x99000000) | (r << 16) | (gCh << 8) | b;
-
-            var accent = new ACCENT_POLICY { AccentState = 3, GradientColor = gradientColor };
-            int size = Marshal.SizeOf(accent);
-            IntPtr accentPtr = Marshal.AllocHGlobal(size);
-            Marshal.StructureToPtr(accent, accentPtr, false);
-            var data = new WINDOWCOMPOSITIONATTRIBDATA { Attribute = 19, SizeOfData = size, Data = accentPtr };
-            SetWindowCompositionAttribute(Handle, ref data);
-            Marshal.FreeHGlobal(accentPtr);
-        }
+        private void ApplyGlassBlur() => GlassBlur.Apply(Handle, AccentColor, _backgroundOpacity);
 
         private string GetConfigFilePath() =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MotionDeskStudio", "deskcontainers", $"{_containerId}_config.json");
+            Path.Combine(AppPaths.AppDataFolder, "deskcontainers", $"{_containerId}_config.json");
 
         private void SaveState()
         {
@@ -525,10 +741,13 @@ namespace MotionDesk.Widgets
                     ExcludeFromQuickHide = ExcludeFromQuickHide,
                     PlaceNewIconsHereByDefault = DeskContainerHostEngine.Instance.DefaultContainerId == _containerId,
                     AccentColorArgb = AccentColor.ToArgb(),
-                    WindowOpacity = Opacity,
-                    SortMode = _sortMode.ToString()
+                    WindowOpacity = _backgroundOpacity,
+                    SortMode = _sortMode.ToString(),
+                    AutoCollectExtensions = AutoCollectExtensions,
+                    TitleFontFamily = TitleFontFamily,
+                    TitleFontSize = TitleFontSize
                 };
-                File.WriteAllText(path, JsonSerializer.Serialize(state));
+                MotionDesk.Services.AtomicFile.WriteAllText(path, JsonSerializer.Serialize(state));
             }
             catch (IOException) { }
         }
@@ -540,20 +759,30 @@ namespace MotionDesk.Widgets
             {
                 try
                 {
-                    var state = JsonSerializer.Deserialize<DeskContainerState>(File.ReadAllText(path));
+                    var state = JsonSerializer.Deserialize<DeskContainerState>(MotionDesk.Services.AtomicFile.ReadAllText(path));
                     if (state != null)
                     {
                         if (state.Width > 160 && state.Height > 120)
                             Size = new Size(Math.Clamp(state.Width, 200, 1600), Math.Clamp(state.Height, 140, 1000));
                         _expandedHeight = Height;
-                        Location = new Point(state.X, state.Y);
+                        // Αποθηκευμένη θέση σε οθόνη που δεν είναι πια συνδεδεμένη (π.χ. αποσύνδεση εξωτερικής
+                        // οθόνης) = container αόρατο για πάντα. Αν δεν τέμνει καμία οθόνη, πάει στην κύρια.
+                        var wanted = new Rectangle(state.X, state.Y, Width, Height);
+                        Location = Screen.AllScreens.Any(sc => sc.WorkingArea.IntersectsWith(wanted))
+                            ? new Point(state.X, state.Y)
+                            : new Point((Screen.PrimaryScreen ?? Screen.AllScreens[0]).WorkingArea.X + 80, (Screen.PrimaryScreen ?? Screen.AllScreens[0]).WorkingArea.Y + 80);
                         _title = state.Title ?? _title;
                         IsLocked = state.IsLocked;
                         ExcludeFromQuickHide = state.ExcludeFromQuickHide;
+                        TitleFontFamily = string.IsNullOrWhiteSpace(state.TitleFontFamily) ? "Segoe UI Semibold" : state.TitleFontFamily;
+                        TitleFontSize = state.TitleFontSize is >= 7f and <= 20f ? state.TitleFontSize : 10.5f;
                         AccentColor = Color.FromArgb(state.AccentColorArgb == 0 ? Color.FromArgb(0, 170, 255).ToArgb() : state.AccentColorArgb);
-                        Opacity = state.WindowOpacity is > 0 and <= 1 ? state.WindowOpacity : 1.0;
+                        _backgroundOpacity = state.WindowOpacity is > 0 and <= 1 ? state.WindowOpacity : 1.0;
                         Enum.TryParse(state.SortMode, out _sortMode);
-                        if (state.Items != null) _items = state.Items.Where(i => File.Exists(i.Path) || Directory.Exists(i.Path)).ToList();
+                        AutoCollectExtensions = state.AutoCollectExtensions ?? "";
+                        // ΔΕΝ φιλτράρουμε τα στοιχεία που λείπουν: ένας offline δίσκος/USB/δικτυακός πόρος εξαφάνιζε μόνιμα τα στοιχεία του
+                        // (το επόμενο save τα έσβηνε). Μένουν ως εικονίδιο που ο χρήστης αφαιρεί χειροκίνητα.
+                        if (state.Items != null) _items = state.Items.ToList();
                         else if (state.Paths != null) _items = state.Paths.Where(p => File.Exists(p) || Directory.Exists(p)).Select(p => new ContainerItem { Path = p }).ToList();
                         if (state.PlaceNewIconsHereByDefault) DeskContainerHostEngine.Instance.DefaultContainerId = _containerId;
                         if (state.IsRolledUp)
@@ -577,16 +806,11 @@ namespace MotionDesk.Widgets
             Location = new Point(defaultX, defaultY);
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct ACCENT_POLICY { public int AccentState; public int AccentFlags; public int GradientColor; public int AnimationId; }
-        [StructLayout(LayoutKind.Sequential)]
-        private struct WINDOWCOMPOSITIONATTRIBDATA { public int Attribute; public IntPtr Data; public int SizeOfData; }
-
         private const int WM_NCLBUTTONDOWN = 0xA1;
         private const int HTCAPTION = 0x2;
+        private const int HTBOTTOMRIGHT = 0x11;
         [DllImport("user32.dll")] private static extern bool ReleaseCapture();
         [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
-        [DllImport("user32.dll")] private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WINDOWCOMPOSITIONATTRIBDATA data);
     }
 
     // Owner-draw πλακίδιο: πραγματικό system icon (μέσω Icon.ExtractAssociatedIcon) + όνομα από
@@ -622,9 +846,9 @@ namespace MotionDesk.Widgets
                 {
                     Focus();
                     var menu = new ContextMenuStrip();
-                    menu.Items.Add("Open", null, (_, _) => LaunchSelf());
-                    menu.Items.Add("Quick Look (Space)", null, (_, _) => QuickLookPreview.Show(_path));
-                    menu.Items.Add("Remove from container", null, (_, _) => _onRemove(_path));
+                    menu.Items.Add(LocalizationManager.T("DCMenu.Open"), null, (_, _) => LaunchSelf());
+                    menu.Items.Add(LocalizationManager.T("DCMenu.QuickLook"), null, (_, _) => QuickLookPreview.Show(_path));
+                    menu.Items.Add(LocalizationManager.T("DCMenu.Remove"), null, (_, _) => _onRemove(_path));
                     menu.Show(this, e.Location);
                 }
             };
@@ -726,6 +950,10 @@ namespace MotionDesk.Widgets
         public int AccentColorArgb { get; set; }
         public double WindowOpacity { get; set; } = 1.0;
         public string SortMode { get; set; } = "None";
+        // File types (extensions, comma-separated) that are collected automatically from the desktop into this container
+        public string AutoCollectExtensions { get; set; } = "";
+        public string TitleFontFamily { get; set; } = "Segoe UI Semibold";
+        public float TitleFontSize { get; set; } = 10.5f;
     }
 
     // Snapshot ενός DeskContainer για αποθήκευση μέσα σε ένα WorkspaceProfile (π.χ. "Last
@@ -785,6 +1013,45 @@ namespace MotionDesk.Widgets
             }
         }
 
+        // ---- desktop watcher: new files matching a container's "auto-collect" rule are added to it automatically
+        public static IEnumerable<string> DesktopFolders()
+        {
+            var user = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+            if (!string.IsNullOrEmpty(user) && Directory.Exists(user)) yield return user;
+            if (!string.IsNullOrEmpty(common) && Directory.Exists(common)) yield return common;
+        }
+
+        private readonly List<FileSystemWatcher> _desktopWatchers = new();
+        private System.Threading.SynchronizationContext? _ui;
+
+        private void EnsureDesktopWatchers()
+        {
+            if (_desktopWatchers.Count > 0) return;
+            _ui = System.Threading.SynchronizationContext.Current;
+            foreach (var dir in DesktopFolders())
+            {
+                try
+                {
+                    var w = new FileSystemWatcher(dir) { NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime, IncludeSubdirectories = false, EnableRaisingEvents = true };
+                    w.Created += (_, e) => OnDesktopFile(e.FullPath);
+                    w.Renamed += (_, e) => OnDesktopFile(e.FullPath);
+                    _desktopWatchers.Add(w);
+                }
+                catch (Exception) { /* a watcher is a convenience, never fatal */ }
+            }
+        }
+
+        private void OnDesktopFile(string path)
+        {
+            // files that are still being written can be locked for a moment: marshal to the UI thread after a short delay
+            System.Threading.Tasks.Task.Delay(800).ContinueWith(_ =>
+            {
+                void Run() { foreach (var c in _active.ToArray()) c.TryAutoCollect(path); }
+                if (_ui != null) _ui.Post(_ => Run(), null); else Run();
+            });
+        }
+
         public DeskContainerWindow SpawnContainer(string containerId, string title, int x, int y, int width, int height)
         {
             var existing = _active.Find(c => c.Tag as string == containerId);
@@ -795,6 +1062,7 @@ namespace MotionDesk.Widgets
 
             var container = new DeskContainerWindow(containerId, title, x, y, width, height) { Tag = containerId };
             _active.Add(container);
+            EnsureDesktopWatchers();
             container.FormClosed += (s, e) => _active.Remove(container);
             container.Show();
             return container;

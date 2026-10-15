@@ -17,8 +17,7 @@ namespace MotionDesk.Services
     // με σταθερό, καλά τεκμηριωμένο command-line interface.
     public static class WmvConversionService
     {
-        private static string DefaultCacheDir => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "converted");
+        private static string DefaultCacheDir => Path.Combine(AppPaths.AppDataFolder, "converted");
 
         // Ο χρήστης μπορεί να επιλέξει δικό του φάκελο αποθήκευσης για ΟΛΑ τα μετατρεπόμενα
         // βίντεο (ζητήθηκε ρητά "να έχει επιλογή ο χρήστης το path αποθήκευσης") — προεπιλογή
@@ -39,6 +38,9 @@ namespace MotionDesk.Services
         public static string? FindFfmpeg()
         {
             if (_cachedFfmpegPath != null) return _cachedFfmpegPath;
+            // Αρνητικό cache 30s: όταν το FFmpeg ΔΕΝ υπάρχει, κάθε κλήση (άνοιγμα σελίδας Ρυθμίσεων, κάθε
+            // προσθήκη βίντεο) ξεκινούσε διεργασία probe + αναδρομική σάρωση του WinGet\Packages στο UI thread.
+            if (_notFoundUntil > DateTime.UtcNow) return null;
 
             // 1) Ήδη στο PATH του συστήματος (π.χ. εγκαταστάθηκε από τον χρήστη ή μέσω winget).
             if (TryProbe("ffmpeg")) { _cachedFfmpegPath = "ffmpeg"; return _cachedFfmpegPath; }
@@ -70,8 +72,14 @@ namespace MotionDesk.Services
                 catch (UnauthorizedAccessException) { }
             }
 
+            _notFoundUntil = DateTime.UtcNow.AddSeconds(30);
             return null;
         }
+
+        private static DateTime _notFoundUntil = DateTime.MinValue;
+
+        // Μετά από (ξανα)εγκατάσταση ζητάμε άμεση νέα ανίχνευση αντί να περιμένουμε τη λήξη του αρνητικού cache.
+        public static void ResetDetection() { _notFoundUntil = DateTime.MinValue; _cachedFfmpegPath = null; }
 
         private static bool TryProbe(string exe)
         {
@@ -90,6 +98,15 @@ namespace MotionDesk.Services
 
         // Ανοίγει τη σελίδα λήψης σε browser — ΔΕΝ κατεβάζουμε/εκτελούμε τίποτα εμείς οι ίδιοι,
         // ο χρήστης εγκαθιστά το FFmpeg με δική του ρητή ενέργεια.
+        // Κοινός, τοπικοποιημένος διάλογος "λείπει το FFmpeg" για όλα τα σημεία εισαγωγής .wmv.
+        public static void PromptInstallFfmpeg(int wmvCount)
+        {
+            var choice = MessageBox.Show(
+                string.Format(LocalizationManager.T("Dialog.FfmpegMissingFormat"), wmvCount),
+                LocalizationManager.T("Dialog.FfmpegTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            if (choice == DialogResult.Yes) OpenFfmpegDownloadPage();
+        }
+
         public static void OpenFfmpegDownloadPage()
         {
             try { Process.Start(new ProcessStartInfo("https://www.gyan.dev/ffmpeg/builds/") { UseShellExecute = true }); }
@@ -107,23 +124,47 @@ namespace MotionDesk.Services
             string outputPath = Path.Combine(CacheDir, $"{Path.GetFileNameWithoutExtension(wmvPath)}_{QuickHash(wmvPath)}.mp4");
             if (File.Exists(outputPath)) return outputPath;
 
-            var psi = new ProcessStartInfo(ffmpeg,
-                $"-y -i \"{wmvPath}\" -c:v libx264 -preset veryfast -crf 23 -c:a aac -movflags +faststart \"{outputPath}\"")
+            // Γράφουμε πρώτα σε προσωρινό αρχείο και μετονομάζουμε μόνο σε επιτυχία — αλλιώς μια
+            // διακοπή/αποτυχία άφηνε μισό .mp4 που το cache (File.Exists) θα επέστρεφε για πάντα
+            // ως "έτοιμο". Το -pix_fmt yuv420p και το scale σε ζυγές διαστάσεις είναι απαραίτητα
+            // για libx264 (αλλιώς αποτυγχάνει σε WMV με περιττό πλάτος/ύψος ή μη-4:2:0 pixel format).
+            string tempPath = outputPath + ".partial.mp4";
+            // ArgumentList, όχι interpolated string — ένα " στο όνομα του αρχείου (έγκυρο σε NTFS)
+            // θα έσπαγε το parsing των ορισμάτων του ffmpeg.
+            var psi = new ProcessStartInfo(ffmpeg)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true
             };
+            foreach (var a in new[] { "-y", "-i", wmvPath, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-pix_fmt", "yuv420p",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", tempPath })
+                psi.ArgumentList.Add(a);
 
             try
             {
                 using var proc = Process.Start(psi);
                 if (proc == null) return null;
+                // ΚΡΙΣΙΜΟ: το FFmpeg γράφει συνεχώς πρόοδο στο stderr. Αν το pipe δεν διαβάζεται, γεμίζει
+                // (~4KB) και το FFmpeg μπλοκάρει για πάντα — τα μεγάλα .wmv "κόλλαγαν" χωρίς σφάλμα.
+                var errTask = proc.StandardError.ReadToEndAsync();
+                var outTask = proc.StandardOutput.ReadToEndAsync();
                 await proc.WaitForExitAsync();
-                return proc.ExitCode == 0 && File.Exists(outputPath) ? outputPath : null;
+                await Task.WhenAll(errTask, outTask);
+
+                if (proc.ExitCode == 0 && File.Exists(tempPath))
+                {
+                    File.Move(tempPath, outputPath, overwrite: true);
+                    return outputPath;
+                }
+                return null;
             }
             catch { return null; }
+            finally
+            {
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            }
         }
 
         private static string QuickHash(string path)

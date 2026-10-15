@@ -118,27 +118,176 @@ namespace MotionDesk.Services
             catch (Exception) { return null; }
         }
 
+        // ---- Wallpaper "Weather" mode: richer data than the widget (cloud cover, wind direction, precipitation, UTC offset).
+        // Cached for 10 minutes per location (shared by every screen's bridge); on failure the last good payload (even if stale)
+        // is returned, otherwise {"ok":false} and the wallpaper keeps a clear sky with the real time of day.
+        private static string? _wpCacheKey, _wpCacheJson;
+        private static DateTime _wpCacheAt = DateTime.MinValue;
+        private static readonly object _wpLock = new();
+
+        private static string BuildWallpaperUrl(double lat, double lon) =>
+            $"https://api.open-meteo.com/v1/forecast?latitude={lat.ToString(CultureInfo.InvariantCulture)}&longitude={lon.ToString(CultureInfo.InvariantCulture)}" +
+            "&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,is_day&timezone=auto";
+
+        private static int CodeForCondition(WeatherCondition c) => c switch
+        {
+            WeatherCondition.Clear => 0, WeatherCondition.PartlyCloudy => 2, WeatherCondition.Cloudy => 3, WeatherCondition.Fog => 45,
+            WeatherCondition.Drizzle => 51, WeatherCondition.Rain => 63, WeatherCondition.Snow => 73, WeatherCondition.Thunderstorm => 95, _ => 0
+        };
+
+        // Synchronous, non-blocking accessors for the WebView2 host object (async Task<T> across the COM bridge is not reliable):
+        // GetWallpaperWeatherCached returns whatever is cached for this location (or {"ok":false,"pending":true}),
+        // RequestWallpaperWeatherRefresh starts a background refresh when the cache is missing/stale (de-duplicated).
+        private static int _wpRefreshing;
+
+        public static string GetWallpaperWeatherCached(double lat, double lon)
+        {
+            string key = $"{lat.ToString(CultureInfo.InvariantCulture)},{lon.ToString(CultureInfo.InvariantCulture)}";
+            lock (_wpLock)
+            {
+                if (_wpCacheKey == key && _wpCacheJson != null) return _wpCacheJson;
+            }
+            return "{\"ok\":false,\"pending\":true}";
+        }
+
+        public static void RequestWallpaperWeatherRefresh(double lat, double lon)
+        {
+            string key = $"{lat.ToString(CultureInfo.InvariantCulture)},{lon.ToString(CultureInfo.InvariantCulture)}";
+            lock (_wpLock)
+            {
+                if (_wpCacheKey == key && _wpCacheJson != null && DateTime.UtcNow - _wpCacheAt < TimeSpan.FromMinutes(10)) return;   // still fresh
+            }
+            if (System.Threading.Interlocked.Exchange(ref _wpRefreshing, 1) == 1) return;
+            _ = Task.Run(async () =>
+            {
+                try { await GetWallpaperWeatherJsonAsync(lat, lon); }
+                catch (Exception) { /* offline: the page keeps polling */ }
+                finally { System.Threading.Interlocked.Exchange(ref _wpRefreshing, 0); }
+            });
+        }
+
+        public static async Task<string> GetWallpaperWeatherJsonAsync(double lat, double lon)
+        {
+            string key = $"{lat.ToString(CultureInfo.InvariantCulture)},{lon.ToString(CultureInfo.InvariantCulture)}";
+            lock (_wpLock)
+            {
+                if (_wpCacheKey == key && _wpCacheJson != null && DateTime.UtcNow - _wpCacheAt < TimeSpan.FromMinutes(10)) return _wpCacheJson;
+            }
+
+            string? json = null;
+            try
+            {
+                string raw = await _httpClient.GetStringAsync(BuildWallpaperUrl(lat, lon));
+                using var doc = JsonDocument.Parse(raw);
+                var cur = doc.RootElement.GetProperty("current");
+                double Num(string n, double d = 0) => cur.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : d;
+                json = JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    code = (int)Num("weather_code"),
+                    temp = Num("temperature_2m"),
+                    humidity = Num("relative_humidity_2m", -1),
+                    precip = Num("precipitation"),
+                    cloud = Num("cloud_cover", -1),
+                    wind = Num("wind_speed_10m"),
+                    windDir = Num("wind_direction_10m", 270),
+                    isDay = Num("is_day", 1) > 0,
+                    utcOffsetSec = doc.RootElement.TryGetProperty("utc_offset_seconds", out var off) && off.ValueKind == JsonValueKind.Number ? off.GetInt32() : (int?)null,
+                    source = "Open-Meteo"
+                });
+            }
+            catch (Exception) { /* fall through to the second provider */ }
+
+            if (json == null)
+            {
+                var fallback = await GetNormalizedWeatherAsync(lat, lon);
+                if (fallback != null)
+                    json = JsonSerializer.Serialize(new
+                    {
+                        ok = true, code = CodeForCondition(fallback.Condition), temp = fallback.TemperatureC, humidity = fallback.HumidityPercent ?? -1,
+                        precip = 0.0, cloud = -1, wind = fallback.WindKmh, windDir = 270, isDay = true, utcOffsetSec = (int?)null, source = fallback.Source
+                    });
+            }
+
+            lock (_wpLock)
+            {
+                if (json != null) { _wpCacheKey = key; _wpCacheJson = json; _wpCacheAt = DateTime.UtcNow; return json; }
+                if (_wpCacheKey == key && _wpCacheJson != null) return _wpCacheJson;   // stale but better than nothing
+            }
+            return "{\"ok\":false}";
+        }
+
         // Open-Meteo geocoding API (ίδιος δωρεάν πάροχος με τον καιρό, χωρίς API key) — επιτρέπει
         // στο widget να έχει πραγματική επιλογή τοποθεσίας αντί για μόνιμα κλειδωμένη Αθήνα.
         public static async Task<(double Lat, double Lon, string Name)?> GeocodeAsync(string cityName)
         {
+            var list = await GeocodeMultipleAsync(cityName, 1);
+            if (list.Count == 0) return null;
+            return (list[0].Lat, list[0].Lon, list[0].Name);
+        }
+
+        public sealed class GeocodeMatch
+        {
+            public double Lat { get; set; }
+            public double Lon { get; set; }
+            public string Name { get; set; } = "";
+            public string Country { get; set; } = "";
+        }
+
+        // Ζητήθηκε ρητά μετά από αναφορά χρήστη: η αναζήτηση έβγαζε "δεν βρέθηκε" για "Αθηνα" στα
+        // ελληνικά. Αιτία: το Open-Meteo geocoding API ψάχνει με βάση το δικό του "language" παράμετρο
+        // ΚΑΙ στο ποια γλώσσα/γραφή ταιριάζει το όνομα, όχι μόνο στο πώς εμφανίζεται το αποτέλεσμα —
+        // με hardcoded "en" ένα ελληνικό όνομα απλά δεν έβρισκε τίποτα. Επιβεβαιώθηκε ζωντανά:
+        // name=Αθηνα&language=en -> 0 αποτελέσματα, name=Αθηνα&language=el -> βρίσκει Αθήνα.
+        // Τώρα στέλνουμε τη γλώσσα της εφαρμογής. Επίσης ζητήθηκε να εμφανίζονται επιλογές όταν
+        // υπάρχουν πολλές πόλεις με το ίδιο όνομα (π.χ. "Αθήνα, Ελλάδα" vs "Αθήνα, Ουκρανία") αντί να
+        // παίρνουμε σιωπηλά την πρώτη — γι' αυτό η πολλαπλή εκδοχή επιστρέφει έως `count` αποτελέσματα.
+        public static async Task<System.Collections.Generic.List<GeocodeMatch>> GeocodeMultipleAsync(string cityName, int count = 5)
+        {
+            var matches = new System.Collections.Generic.List<GeocodeMatch>();
             try
             {
-                string url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(cityName)}&count=1&language=en&format=json";
+                string lang = string.IsNullOrWhiteSpace(LocalizationManager.CurrentLanguage) ? "en" : LocalizationManager.CurrentLanguage;
+                string url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(cityName)}&count={count}&language={lang}&format=json";
                 string json = await _httpClient.GetStringAsync(url);
                 using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
+                if (doc.RootElement.TryGetProperty("results", out var results))
                 {
-                    var first = results[0];
-                    double lat = first.GetProperty("latitude").GetDouble();
-                    double lon = first.GetProperty("longitude").GetDouble();
-                    // Μόνο το όνομα πόλης (όχι + χώρα) — ζητήθηκε να μη κόβεται ο τίτλος του widget.
-                    string name = first.GetProperty("name").GetString() ?? cityName;
-                    return (lat, lon, name);
+                    foreach (var r in results.EnumerateArray())
+                    {
+                        matches.Add(new GeocodeMatch
+                        {
+                            Lat = r.GetProperty("latitude").GetDouble(),
+                            Lon = r.GetProperty("longitude").GetDouble(),
+                            Name = r.GetProperty("name").GetString() ?? cityName,
+                            Country = r.TryGetProperty("country", out var c) ? (c.GetString() ?? "") : "",
+                        });
+                    }
+                }
+                // Μία επαναπροσπάθεια με "en" αν η τοπική γλώσσα δεν βρήκε τίποτα — κάποια ονόματα
+                // (ειδικά μικρών πόλεων) υπάρχουν στη βάση μόνο στα αγγλικά.
+                if (matches.Count == 0 && lang != "en")
+                {
+                    string fallbackUrl = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(cityName)}&count={count}&language=en&format=json";
+                    string fallbackJson = await _httpClient.GetStringAsync(fallbackUrl);
+                    using var fallbackDoc = JsonDocument.Parse(fallbackJson);
+                    if (fallbackDoc.RootElement.TryGetProperty("results", out var fallbackResults))
+                    {
+                        foreach (var r in fallbackResults.EnumerateArray())
+                        {
+                            matches.Add(new GeocodeMatch
+                            {
+                                Lat = r.GetProperty("latitude").GetDouble(),
+                                Lon = r.GetProperty("longitude").GetDouble(),
+                                Name = r.GetProperty("name").GetString() ?? cityName,
+                                Country = r.TryGetProperty("country", out var c) ? (c.GetString() ?? "") : "",
+                            });
+                        }
+                    }
                 }
             }
             catch (Exception) { }
-            return null;
+            return matches;
         }
 
         // WMO weather codes (Open-Meteo current_weather.weathercode) -> ομαδοποιημένη συνθήκη.

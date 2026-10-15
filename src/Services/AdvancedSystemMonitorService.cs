@@ -13,6 +13,21 @@ public sealed class AdvancedSystemMonitorService
     private DateTime _lastNetwork = DateTime.UtcNow;
     private DateTime _lastSnapshot = DateTime.MinValue;
     private AdvancedMetrics _cached;
+    private int _processCount;
+    private DateTime _lastProcessCount = DateTime.MinValue;
+
+    // Το Process.GetProcesses() δημιουργεί ένα Process object ανά διεργασία (εκατοντάδες, ανά
+    // δευτερόλεπτο, από κάθε widget) και δεν γίνονταν ποτέ Dispose — συνεχής πίεση στο GC/handles.
+    // Ο αριθμός διεργασιών δεν χρειάζεται ανανέωση πιο συχνά από κάθε 5s.
+    private int GetProcessCount(DateTime now)
+    {
+        if ((now - _lastProcessCount).TotalSeconds < 5 && _lastProcessCount != DateTime.MinValue) return _processCount;
+        var procs = Process.GetProcesses();
+        _processCount = procs.Length;
+        foreach (var p in procs) p.Dispose();
+        _lastProcessCount = now;
+        return _processCount;
+    }
 
     public AdvancedMetrics GetSnapshot()
     {
@@ -41,7 +56,7 @@ public sealed class AdvancedSystemMonitorService
 
         _cached = new AdvancedMetrics(
             basic.CpuPercent, basic.AvailableMemoryMb, basic.TotalMemoryMb,
-            downK, upK, Process.GetProcesses().Length,
+            downK, upK, GetProcessCount(now),
             PerformanceModeManager.GetRecommendedMode());
         _lastSnapshot = now;
         return _cached;

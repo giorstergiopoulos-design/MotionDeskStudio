@@ -19,28 +19,43 @@ namespace MotionDesk
                 return;
             }
 
+            // Single-instance: δύο ταυτόχρονες εκτελέσεις θα πάλευαν για τα ίδια global hotkeys,
+            // θα έφτιαχναν διπλά wallpaper windows/tray icons και θα έγραφαν τα ίδια config αρχεία.
+            using var singleInstance = new System.Threading.Mutex(true, @"Local\Opsis.SingleInstance", out bool isFirst);
+            if (!isFirst) return;
+
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (s, e) => ReportError(e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => ReportError(e.ExceptionObject as Exception);
 
+            // Sync η Taskbar translucency (GlassBlur.SetTaskbarTranslucency) με την τρέχουσα τιμή του
+            // Windows "Εφέ διαφάνειας" στην εκκίνηση — χωρίς αυτό, το blur της Taskbar θα εφαρμοζόταν
+            // μόνο αφού ο χρήστης σβήσει/ξανατσεκάρει το checkbox στις Ρυθμίσεις μία φορά.
+            try { MotionDesk.UI.GlassBlur.SetTaskbarTranslucency(Services.WindowsSystemSettings.GetTransparencyEffectsEnabled()); } catch (Exception) { }
+
             ApplicationConfiguration.Initialize();
             Application.Run(new TrayApplicationContext());
         }
+
+        private static DateTime _lastErrorDialog = DateTime.MinValue;
 
         private static void ReportError(Exception? ex)
         {
             if (ex == null) return;
             try
             {
-                var logPath = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "MotionDeskStudio", "crash.log");
+                var logPath = System.IO.Path.Combine(Services.AppPaths.AppDataFolder, "crash.log");
                 System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(logPath)!);
                 System.IO.File.AppendAllText(logPath, $"[{DateTime.Now:O}] {ex}\n\n");
             }
-            catch (System.IO.IOException) { }
+            catch (Exception) { }
 
-            MessageBox.Show($"Παρουσιάστηκε σφάλμα:\n\n{ex.Message}", "MotionDesk Studio",
+            // Ένα exception μέσα σε timer tick επαναλαμβάνεται κάθε tick — χωρίς όριο, ο χρήστης έβλεπε
+            // ατέλειωτη αλληλουχία modal διαλόγων. Ένας διάλογος ανά 30s αρκεί (όλα καταγράφονται στο crash.log).
+            if ((DateTime.Now - _lastErrorDialog).TotalSeconds < 30) return;
+            _lastErrorDialog = DateTime.Now;
+
+            MessageBox.Show(string.Format(MotionDesk.Services.LocalizationManager.T("Dialog.UnhandledErrorFormat"), ex.Message), "Opsis",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }

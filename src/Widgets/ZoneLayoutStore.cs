@@ -17,11 +17,25 @@ namespace MotionDesk.Widgets
         public double Width { get; set; }
         public double Height { get; set; }
 
-        public Rectangle ToAbsolute(Rectangle workingArea) => new(
-            workingArea.X + (int)(X * workingArea.Width),
-            workingArea.Y + (int)(Y * workingArea.Height),
-            (int)(Width * workingArea.Width),
-            (int)(Height * workingArea.Height));
+        // ΔΙΟΡΘΩΣΗ πραγματικού bug ("Opsis zones να εφάπτονται ακριβώς... να μην υπάρχουν κενά
+        // μεταξύ τους" — εξακολουθούσε να υπάρχει κενό ΑΚΟΜΑ ΚΙ ΑΦΟΥ το gap μηδενίστηκε στο
+        // BuildTemplate): ο προηγούμενος κώδικας στρογγυλοποιούσε το Width/Height ΑΝΕΞΑΡΤΗΤΑ από
+        // το X/Y (δύο ξεχωριστές πράξεις (int) στρογγυλοποίησης) — δύο γειτονικές ζώνες με
+        // ΑΚΡΙΒΩΣ το ίδιο κοινό όριο σε κανονικοποιημένες συντεταγμένες (π.χ. ζώνη Α τελειώνει στο
+        // 1/3, ζώνη Β ξεκινά στο 1/3) μπορούσαν να καταλήξουν σε ΔΙΑΦΟΡΕΤΙΚΑ pixel όρια μόλις το
+        // workingArea.Width δεν διαιρείται ακριβώς με το count (π.χ. 1927px σε 3 στήλες) — κλασικό
+        // σφάλμα περικοπής floating-point, άσχετο με το ίδιο το gap. Η λύση: στρογγυλοποίηση των
+        // ΑΠΟΛΥΤΩΝ ΑΚΡΩΝ (left/top/right/bottom) αντί για στρογγυλοποίηση μήκους — δύο ζώνες με το
+        // ΙΔΙΟ κανονικοποιημένο κοινό όριο υπολογίζουν ΤΗΝ ΙΔΙΑ ακριβώς τιμή Math.Round(όριο*W) και
+        // άρα καταλήγουν πάντα στο ίδιο pixel, εγγυημένα, όχι απλώς "συνήθως".
+        public Rectangle ToAbsolute(Rectangle workingArea)
+        {
+            int left = workingArea.X + (int)Math.Round(X * workingArea.Width);
+            int top = workingArea.Y + (int)Math.Round(Y * workingArea.Height);
+            int right = workingArea.X + (int)Math.Round((X + Width) * workingArea.Width);
+            int bottom = workingArea.Y + (int)Math.Round((Y + Height) * workingArea.Height);
+            return new Rectangle(left, top, right - left, bottom - top);
+        }
     }
 
     public sealed class ZoneLayoutData
@@ -29,6 +43,8 @@ namespace MotionDesk.Widgets
         // No layout | Focus | Columns | Rows | Grid | PriorityGrid | Custom
         public string Template { get; set; } = "Rows";
         public List<ZoneRect> Zones { get; set; } = new();
+        // "WxH" of the monitor this layout was made for — lets a layout follow its monitor when Windows renumbers \\.\DISPLAYn after a reconnect
+        public string? Resolution { get; set; }
     }
 
     // Πραγματική συμπεριφορά στυλ FancyZones (PowerToys), όχι Fences: τα layouts είναι ΔΕΔΟΜΕΝΑ
@@ -37,9 +53,7 @@ namespace MotionDesk.Widgets
     // (ZoneOverlayWindow) εμφανίζεται ΜΟΝΟ όσο κρατάς Shift ενώ σέρνεις ένα παράθυρο.
     public static class ZoneLayoutStore
     {
-        private static string ConfigPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MotionDeskStudio", "zonelayouts.json");
+        private static string ConfigPath => Path.Combine(Services.AppPaths.AppDataFolder, "zonelayouts.json");
 
         private static Dictionary<string, ZoneLayoutData>? _cache;
 
@@ -50,7 +64,7 @@ namespace MotionDesk.Widgets
             {
                 if (File.Exists(ConfigPath))
                 {
-                    var loaded = JsonSerializer.Deserialize<Dictionary<string, ZoneLayoutData>>(File.ReadAllText(ConfigPath));
+                    var loaded = JsonSerializer.Deserialize<Dictionary<string, ZoneLayoutData>>(MotionDesk.Services.AtomicFile.ReadAllText(ConfigPath));
                     if (loaded != null) { _cache = loaded; return _cache; }
                 }
             }
@@ -65,7 +79,7 @@ namespace MotionDesk.Widgets
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-                File.WriteAllText(ConfigPath, JsonSerializer.Serialize(_cache ?? new Dictionary<string, ZoneLayoutData>(), new JsonSerializerOptions { WriteIndented = true }));
+                MotionDesk.Services.AtomicFile.WriteAllText(ConfigPath, JsonSerializer.Serialize(_cache ?? new Dictionary<string, ZoneLayoutData>(), new JsonSerializerOptions { WriteIndented = true }));
             }
             catch (IOException) { }
         }
@@ -74,6 +88,27 @@ namespace MotionDesk.Widgets
         {
             var map = Load();
             if (map.TryGetValue(screenDeviceName, out var data)) return data;
+
+            // No layout under this device name: when a monitor is reconnected Windows can hand it a different \\.\DISPLAYn name.
+            // Adopt an ORPHANED layout (its key is not a currently connected screen) that was made for the same resolution.
+            try
+            {
+                var screen = Screen.AllScreens.FirstOrDefault(sc => sc.DeviceName == screenDeviceName);
+                if (screen != null)
+                {
+                    string res = $"{screen.Bounds.Width}x{screen.Bounds.Height}";
+                    var connected = new HashSet<string>(Screen.AllScreens.Select(sc => sc.DeviceName));
+                    var orphan = map.FirstOrDefault(kv => !connected.Contains(kv.Key) && kv.Value.Resolution == res);
+                    if (orphan.Value != null)
+                    {
+                        map[screenDeviceName] = orphan.Value;
+                        map.Remove(orphan.Key);
+                        Save();
+                        return orphan.Value;
+                    }
+                }
+            }
+            catch (Exception) { /* fall through to the default layout */ }
             // Προεπιλογή για μια οθόνη που δεν έχει ρυθμιστεί ακόμα: 3 στήλες, το πιο κοινό
             // πρώτο-run layout στο πραγματικό FancyZones.
             return BuildTemplate("Columns", 3, 2);
@@ -82,6 +117,8 @@ namespace MotionDesk.Widgets
         public static void SetLayout(string screenDeviceName, ZoneLayoutData data)
         {
             var map = Load();
+            var scr = Screen.AllScreens.FirstOrDefault(sc => sc.DeviceName == screenDeviceName);
+            if (scr != null) data.Resolution = $"{scr.Bounds.Width}x{scr.Bounds.Height}";
             map[screenDeviceName] = data;
             Save();
         }
@@ -104,7 +141,11 @@ namespace MotionDesk.Widgets
         public static ZoneLayoutData BuildTemplate(string template, int n1 = 3, int n2 = 2)
         {
             var zones = new List<ZoneRect>();
-            const double gap = 0.012; // μικρό, ορατό κενό ανάμεσα σε ζώνες, όπως το πραγματικό FancyZones
+            // Ζητήθηκε ρητά "οι ζώνες να εφάπτονται ακριβώς ώστε και τα παράθυρα να εφάπτονται,
+            // χωρίς κενά μεταξύ τους" — μηδενισμός του προηγούμενου μικρού οπτικού κενού
+            // (FancyZones-style) ανάμεσα σε γειτονικές ζώνες. Η υπόλοιπη λογική (CellRange/
+            // Priority Grid) παραμένει ίδια — με gap=0 απλώς δεν αφαιρεί τίποτα πλέον.
+            const double gap = 0.0;
 
             // Άκρα ενός κελιού [index, index+1) πάνω σε "count" ίσα κομμάτια του 0..1, με gap/2
             // ΜΟΝΟ στις εσωτερικές πλευρές (index>0 για την αρχή, index<count-1 για το τέλος).

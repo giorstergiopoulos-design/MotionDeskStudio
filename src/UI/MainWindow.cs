@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -25,6 +25,7 @@ namespace MotionDesk.UI
         private PulsingLogoPanel _brandDot = null!;
         private Label _brandLabel = null!;
         private Label _brandSubLabel = null!;
+        private Label _brandVersionLabel = null!;
         private SidebarToggleButton _collapseToggle = null!;
         private System.Windows.Forms.Timer? _sidebarAnimTimer;
         private bool _sidebarCollapsed;
@@ -37,7 +38,7 @@ namespace MotionDesk.UI
         private Panel _content = null!;
         private Label _pageTitle = null!;
         private StatusStrip _status = null!;
-        private readonly ToolStripStatusLabel _statusLabel = new("MotionDesk ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+        private readonly ToolStripStatusLabel _statusLabel = new("Opsis ready") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
         private readonly System.Windows.Forms.Timer _statusTimer;
         private readonly System.Windows.Forms.Timer _brandPulseTimer;
         private double _brandPulseT;
@@ -50,6 +51,18 @@ namespace MotionDesk.UI
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(System.IntPtr hwnd, int attr, ref int value, int size);
+
+        // ΔΙΟΡΘΩΣΗ "λευκό πλαίσιο παραθύρου εμφανίζεται στιγμιαία πάνω-αριστερά κατά την αλλαγή
+        // καρτέλας": το MainWindow δεν είχε ΠΟΤΕ εφαρμόσει DWMWA_BORDER_COLOR="none" (μόνο
+        // widgets/DeskContainers το είχαν) — το προεπιλεγμένο λεπτό accent-περίγραμμα των Windows
+        // 11 γύρω από κάθε top-level παράθυρο είναι κανονικά αόρατο πίσω από το δικό μας σκούρο
+        // θέμα, αλλά σε κάποιο ενδιάμεσο frame κατά το Controls.Clear()+Add() του SetPage (βλ.
+        // DoubleBuffered πιο κάτω για ένα σχετικό αλλά διαφορετικό bug) γίνεται στιγμιαία ορατό.
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            GlassBlur.DisableNativeBorderAccent(Handle);
+        }
 
         public MainWindow()
         {
@@ -72,7 +85,7 @@ namespace MotionDesk.UI
             WidgetSnapEngine.EnableGridSnap = appSettings.GridSnap;
             WidgetSnapEngine.SnapThreshold = Math.Clamp(appSettings.SnapThreshold, 5, 50);
             WidgetSnapEngine.GridSize = Math.Clamp(appSettings.GridSize, 5, 100);
-            Text = "MotionDesk Studio";
+            Text = "Opsis";
             Icon = LoadApplicationIcon();
             StartPosition = FormStartPosition.CenterScreen;
             // Μεγαλύτερο προεπιλεγμένο μέγεθος — ζητήθηκε ρητά ώστε να χωράει άνετα η νέα σελίδα
@@ -81,17 +94,17 @@ namespace MotionDesk.UI
             Size = new Size(1280, 800);
             Opacity = Math.Clamp(appSettings.WindowOpacity, 0.6, 1.0);
 
-            _pageBuilders["Dashboard"] = ShowDashboard;
-            _pageBuilders["Widgets"] = ShowWidgets;
-            _pageBuilders["DeskZones"] = ShowDeskZones;
-            _pageBuilders["Wallpaper"] = ShowWallpaper;
-            _pageBuilders["Settings"] = ShowSettings;
-            _pageBuilders["Profiles"] = ShowProfiles;
-            _pageBuilders["Performance"] = ShowPerformance;
-            _pageBuilders["Automation"] = ShowAutomation;
-            _pageBuilders["Personalization"] = ShowPersonalization;
-            _pageBuilders["About"] = ShowAbout;
-            _pageBuilders["AudioEnhancement"] = ShowAudioEnhancement;
+            _pageBuilders["Dashboard"] = () => SafeBuildPage("Dashboard", ShowDashboard);
+            _pageBuilders["Widgets"] = () => SafeBuildPage("Widgets", ShowWidgets);
+            _pageBuilders["DeskZones"] = () => SafeBuildPage("DeskZones", ShowDeskZones);
+            _pageBuilders["Wallpaper"] = () => SafeBuildPage("Wallpaper", ShowWallpaper);
+            _pageBuilders["Settings"] = () => SafeBuildPage("Settings", ShowSettings);
+            _pageBuilders["Profiles"] = () => SafeBuildPage("Profiles", ShowProfiles);
+            _pageBuilders["Performance"] = () => SafeBuildPage("Performance", ShowPerformance);
+            _pageBuilders["Automation"] = () => SafeBuildPage("Automation", ShowAutomation);
+            _pageBuilders["Personalization"] = () => SafeBuildPage("Personalization", ShowPersonalization);
+            _pageBuilders["About"] = () => SafeBuildPage("About", ShowAbout);
+            _pageBuilders["AudioEnhancement"] = () => SafeBuildPage("AudioEnhancement", ShowAudioEnhancement);
 
             BuildChrome();
             ApplyChromeColors();
@@ -123,6 +136,9 @@ namespace MotionDesk.UI
             _hotkeys.RegisterCtrlAltShift(Keys.Up, () => ZoneSnapEngine.MoveForegroundWindowToZone(ZoneSnapEngine.ZoneDirection.Up));
             _hotkeys.RegisterCtrlAltShift(Keys.Down, () => ZoneSnapEngine.MoveForegroundWindowToZone(ZoneSnapEngine.ZoneDirection.Down));
 
+            ThemeManager.UiContext = System.Threading.SynchronizationContext.Current;
+            AnimationsSettingChanged += UpdateAnimationTimers;
+            WorkspaceProfileService.ExitSaveDone = false;
             ThemeManager.Changed += OnThemeOrLanguageChanged;
             ThemeManager.Repainted += OnThemeRepainted;
             LocalizationManager.Changed += OnThemeOrLanguageChanged;
@@ -130,11 +146,15 @@ namespace MotionDesk.UI
 
             // Χαμηλού-κόστους hook, τρέχει σε όλη τη διάρκεια ζωής της εφαρμογής — δεν κάνει
             // τίποτα εκτός αν ο χρήστης κρατάει Shift ενώ σέρνει ένα παράθυρο (βλ. ZoneSnapEngine).
+            // After an update, show the Version History once (the first time the window is shown with a new version)
+            Shown += (_, _) => ShowChangelogAfterUpdate();
+            ZoneSnapEngine.AllowOwnWindow = h => IsHandleCreated && h == Handle;
             ZoneSnapEngine.Start();
 
             FormClosed += (_, _) =>
             {
-                try { WorkspaceProfileService.Save("Last Session"); } catch { }
+                if (!WorkspaceProfileService.ExitSaveDone) { try { WorkspaceProfileService.Save("Last Session"); } catch { } }
+                AnimationsSettingChanged -= UpdateAnimationTimers;
                 ThemeManager.Changed -= OnThemeOrLanguageChanged;
                 ThemeManager.Repainted -= OnThemeRepainted;
                 LocalizationManager.Changed -= OnThemeOrLanguageChanged;
@@ -159,6 +179,7 @@ namespace MotionDesk.UI
             }
             if (_navButtons.TryGetValue("Dashboard", out var dashboardButton))
                 SetActiveButton(dashboardButton);
+            UpdateAnimationTimers(); // παράθυρο ακόμη αόρατο (π.χ. --background) → οι animations ξεκινούν μόνο όταν εμφανιστεί
         }
 
         private void OnWindowsPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
@@ -218,9 +239,22 @@ namespace MotionDesk.UI
             Invalidate(true);
         }
 
+        // 1.7.8 - διπλό buffering για container controls (Panel/TableLayoutPanel/FlowLayoutPanel) που δεν το
+        // εκθέτουν δημόσια: χωρίς αυτό το animation πλάτους του sidebar άφηνε "κυματισμούς" από παλιά καρέ.
+        private static void EnableDoubleBuffer(Control c)
+        {
+            try
+            {
+                typeof(Control).GetProperty("DoubleBuffered", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                    ?.SetValue(c, true);
+            }
+            catch { }
+        }
+
         private void BuildChrome()
         {
             _sidebar = new Panel { Dock = DockStyle.Left, Width = SidebarExpandedWidth, Padding = new Padding(16, 20, 16, 12) };
+            EnableDoubleBuffer(_sidebar);
 
             // TableLayoutPanel αντί για Dock=Top (brand) + Dock=Fill (nav) απευθείας μέσα στο
             // padded _sidebar: σε αυτόν τον συνδυασμό το Fill rectangle του _nav υπολογιζόταν
@@ -230,6 +264,7 @@ namespace MotionDesk.UI
             // το πρώτο κουμπί πλοήγησης (Dashboard). Οι σταθερές δύο σειρές ενός
             // TableLayoutPanel δεν έχουν αυτή την ασάφεια.
             _sidebarLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+            EnableDoubleBuffer(_sidebarLayout);
             _sidebarLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
             _sidebarLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             _sidebarLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
@@ -237,14 +272,15 @@ namespace MotionDesk.UI
             _sidebar.Controls.Add(_sidebarLayout);
 
             _brandPanel = new Panel { Dock = DockStyle.Fill };
-            // Το ίδιο σχέδιο με το MotionDesk.ico (τετράγωνο, στρογγυλεμένο, gradient, δύο
+            // Το ίδιο σχέδιο με το Opsis.ico (τετράγωνο, στρογγυλεμένο, gradient, δύο
             // κυματιστές γραμμές) αντί για απλό κύκλο. Οι γραμμές μετατοπίζουν φάση με τον
             // χρόνο (πραγματική κίνηση κύματος) — το halo έχει ΣΤΑΘΕΡΟ μέγεθος (μόνο η
             // διαφάνειά του παλλεται) ώστε να μη δίνει εντύπωση "μεγέθυνσης/σμίκρυνσης".
-            // Μεγαλύτερο λογότυπο + τίτλος (ζητήθηκε ρητά) — όλες οι συντεταγμένες σχεδίασης
-            // παραμένουν στο αρχικό 36x36 grid και κλιμακώνονται μέσω ScaleTransform, ώστε το
-            // μέγεθος να ρυθμίζεται μόνο αλλάζοντας το Size παρακάτω.
-            const int logoSize = 48;
+            // Μεγαλύτερο λογότυπο + τίτλος (ζητήθηκε ρητά, ξανά μεγαλύτερο για να ισορροπεί με
+            // τις 3 γραμμές κειμένου παρακάτω) — όλες οι συντεταγμένες σχεδίασης παραμένουν στο
+            // αρχικό 36x36 grid και κλιμακώνονται μέσω ScaleTransform, ώστε το μέγεθος να
+            // ρυθμίζεται μόνο αλλάζοντας το Size παρακάτω.
+            const int logoSize = 56;
             _brandDot = new PulsingLogoPanel { Size = new Size(logoSize, logoSize), Location = new Point(0, 2) };
             _brandDot.Paint += (s, e) =>
             {
@@ -278,23 +314,54 @@ namespace MotionDesk.UI
                     g.Clip = oldClip;
                 }
 
-                float o1 = (float)(Math.Sin(wave) * 2.5);
-                float o2 = (float)(Math.Sin(wave + 1.4) * 2.5);
-                using (var pen1 = new Pen(Color.White, 2.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-                    g.DrawBezier(pen1, 8, 20 + o1, 13, 13 + o2, 21, 27 - o2, 26, 20 - o1);
+                // "Trace" λογότυπο (επιλέχθηκε από τον χρήστη ανάμεσα σε 5 προτάσεις): το ίδιο κύμα
+                // παραμένει σταθερό σαν ίχνος/track, και ένας φωτεινός κόμβος το ξαναδιατρέχει σε
+                // βρόχο — ίδια ιδέα με το νέο assets/Opsis.ico και τα tray frames (scripts/generate_*.ps1),
+                // εδώ ζωντανή/συνεχής αντί για 6 διακριτά καρέ, πάνω στο ήδη υπάρχον animation timer.
+                PointF P0 = new(8, 20), P1 = new(13, 13), P2 = new(21, 27), P3 = new(26, 20);
+                using (var pen1 = new Pen(Color.FromArgb(150, 255, 255, 255), 2.2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    g.DrawBezier(pen1, P0, P1, P2, P3);
 
-                float o3 = (float)(Math.Sin(wave + 0.8) * 2.2);
-                float o4 = (float)(Math.Sin(wave + 2.2) * 2.2);
-                using (var pen2 = new Pen(Color.FromArgb(215, 255, 255, 255), 1.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-                    g.DrawBezier(pen2, 8, 13 + o3, 13, 7 + o4, 21, 19 - o4, 26, 13 - o3);
+                double t = (_brandPulseT * 0.22) % 1.0;
+                double mt = 1 - t;
+                float nx = (float)(mt * mt * mt * P0.X + 3 * mt * mt * t * P1.X + 3 * mt * t * t * P2.X + t * t * t * P3.X);
+                float ny = (float)(mt * mt * mt * P0.Y + 3 * mt * mt * t * P1.Y + 3 * mt * t * t * P2.Y + t * t * t * P3.Y);
+                using (var nodeHalo = new SolidBrush(Color.FromArgb(110, 255, 255, 255)))
+                    g.FillEllipse(nodeHalo, nx - 5, ny - 5, 10, 10);
+                using (var nodeDot = new SolidBrush(Color.White))
+                    g.FillEllipse(nodeDot, nx - 2.3f, ny - 2.3f, 4.6f, 4.6f);
             };
             _brandPanel.Controls.Add(_brandDot);
             const int brandTextX = logoSize + 10;
-            _brandLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 3), Text = "MotionDesk", Font = new Font("Segoe UI", 15.5f, FontStyle.Bold), AutoEllipsis = true };
+            int brandLabelWidth = SidebarExpandedWidth - brandTextX - _sidebar.Padding.Horizontal;
+            _brandLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 2), Text = "Opsis", Font = new Font("Segoe UI", 16f, FontStyle.Bold), AutoEllipsis = true };
             _brandPanel.Controls.Add(_brandLabel);
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            _brandSubLabel = new Label { AutoSize = true, Location = new Point(brandTextX, 32), Text = $"STUDIO   v{version?.ToString(3) ?? "1.0.0"}", Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
+            // Ζητήθηκε ρητά "εφόσον στον τίτλο η έκδοση δεν φαίνεται, βάλε την σε τρίτη γραμμή από
+            // κάτω" — στο προηγούμενο πέρασμα η έκδοση ήταν στην ΙΔΙΑ γραμμή με το tagline
+            // ("Desktop Customization  ·  vX.X.X"), και το AutoEllipsis έκοβε το κείμενο πριν καν
+            // φτάσει στην έκδοση (το σύνολο δεν χωρούσε στα ~142px). Τώρα 3 ξεχωριστές γραμμές:
+            // τίτλος / tagline / έκδοση — η καθεμία χωράει πλέον άνετα μόνη της.
+            _brandSubLabel = new Label
+            {
+                AutoSize = false,
+                AutoEllipsis = true,
+                Location = new Point(brandTextX, 30),
+                Size = new Size(brandLabelWidth, 16),
+                Text = "Desktop Customization",
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular)
+            };
             _brandPanel.Controls.Add(_brandSubLabel);
+            _brandVersionLabel = new Label
+            {
+                AutoSize = false,
+                AutoEllipsis = true,
+                Location = new Point(brandTextX, 46),
+                Size = new Size(brandLabelWidth, 16),
+                Text = $"v{version?.ToString(3) ?? "1.0.0"}",
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular)
+            };
+            _brandPanel.Controls.Add(_brandVersionLabel);
             _sidebarLayout.Controls.Add(_brandPanel, 0, 0);
 
             // ΟΧΙ AutoScroll: μια κάθετη scrollbar (όταν τα 9 nav items δεν χωρούν καθ' ύψος)
@@ -303,6 +370,7 @@ namespace MotionDesk.UI
             // να γεμίζουν ΑΚΡΙΒΩΣ το διαθέσιμο πλάτος, χωρίς περιθώριο. Ζητήθηκε ρητά καμία
             // scrollbar· καλύτερα να κόβεται καθαρά ένα τελευταίο στοιχείο παρά να εμφανίζεται.
             _nav = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = false, Padding = new Padding(0, 14, 0, 0) };
+            EnableDoubleBuffer(_nav);
             _sidebarLayout.Controls.Add(_nav, 0, 1);
             RebuildSidebarNav();
 
@@ -311,6 +379,7 @@ namespace MotionDesk.UI
             _sidebarLayout.Controls.Add(_collapseToggle, 0, 2);
 
             _content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(32, 24, 32, 24) };
+            EnableDoubleBuffer(_content);
 
             // Απαλό, κινούμενο κύμα-φόντο πίσω από τον τίτλο κάθε σελίδας (ζητήθηκε ρητά) — ίδια
             // "γλώσσα" με το wallpaper/λογότυπο, αλλά πολύ χαμηλής έντασης ώστε να μην αποσπά.
@@ -332,9 +401,58 @@ namespace MotionDesk.UI
             Controls.Add(_status);
         }
 
+        // Οι διακοσμητικές animations (παλμός λογότυπου, κύμα header) τρέχαν συνεχώς σε 20Hz/16Hz
+        // ακόμη κι όταν το παράθυρο ήταν κρυμμένο στο tray ή ελαχιστοποιημένο — άσκοπη κατανάλωση
+        // CPU/GPU για μια εφαρμογή που ζει κυρίως στο παρασκήνιο. Τρέχουν μόνο όταν φαίνονται.
+        // Καλείται και από τη ρύθμιση Animations ώστε η αλλαγή να ισχύει αμέσως.
+        internal static event Action? AnimationsSettingChanged;
+
+        private void UpdateAnimationTimers()
+        {
+            bool visible = Visible && WindowState != FormWindowState.Minimized && AppSettings.Load().EnableAnimations;
+            if (_brandPulseTimer != null) _brandPulseTimer.Enabled = visible;
+            if (_headerWaveTimer != null) _headerWaveTimer.Enabled = visible;
+        }
+
+        // ΔΙΟΡΘΩΣΗ πραγματικού bug: το κλείσιμο (X) του κύριου παραθύρου το ΚΑΤΕΣΤΡΕΦΕ — και το
+        // FormClosed handler σταματούσε ZoneSnapEngine + όλα τα global hotkeys (Ctrl+Alt+G/M/Shift+βέλη)
+        // ενώ η εφαρμογή συνέχιζε να ζει στο tray (DeskZones/συντομεύσεις "έσβηναν" σιωπηλά), και το
+        // επόμενο άνοιγμα ξανάτρεχε όλον τον constructor (επαναφορά "Last Session" ξανά). Η ρύθμιση
+        // MinimizeToTray (προεπιλογή true) υπήρχε αλλά ΔΕΝ χρησιμοποιούνταν πουθενά. Τώρα το X κρύβει
+        // στο tray· η πραγματική έξοδος γίνεται μόνο από το "Έξοδος" του tray menu (CloseReason != UserClosing).
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (e.CloseReason == CloseReason.UserClosing && AppSettings.Load().MinimizeToTray)
+            {
+                e.Cancel = true;
+                // Φεύγουμε από βαριές σελίδες (live equalizer: WASAPI capture + timer 25Hz) ώστε να μην
+                // τρέχουν αόρατες στο παρασκήνιο.
+                if (_currentPageKey is "AudioEnhancement" or "Performance") NavigateTo("Dashboard");
+                Hide();
+                return;
+            }
+            // Πραγματικό κλείσιμο (έξοδος/shutdown): αποθήκευση ΤΩΡΑ, όσο τα widgets ζουν ακόμα.
+            if (!WorkspaceProfileService.ExitSaveDone)
+            {
+                try { WorkspaceProfileService.Save("Last Session"); WorkspaceProfileService.ExitSaveDone = true; } catch { }
+            }
+            base.OnFormClosing(e);
+        }
+
+        protected override void OnVisibleChanged(EventArgs e) { base.OnVisibleChanged(e); UpdateAnimationTimers(); }
+        protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); UpdateAnimationTimers(); }
+
+        // Controls.Clear() ΜΟΝΟ αφαιρεί — δεν κάνει Dispose. Οι σελίδες Widgets/DeskZones/DeskStrip ξαναχτίζουν
+        // τις λίστες τους κάθε 2s, άρα πριν διέρρεαν panels/labels/buttons/Regions συνεχώς όσο ήταν ανοιχτή η σελίδα.
+        private static void DisposeChildren(Control parent)
+        {
+            foreach (Control child in parent.Controls.Cast<Control>().ToList()) child.Dispose();
+            parent.Controls.Clear();
+        }
+
         private void RebuildSidebarNav()
         {
-            _nav.Controls.Clear();
+            DisposeChildren(_nav);
             _navButtons.Clear();
             _activeButton = null;
             AddNavButton(_nav, LocalizationManager.T("Nav.Dashboard"), "Dashboard", ShowDashboard, 1);
@@ -349,6 +467,12 @@ namespace MotionDesk.UI
             // Ζητήθηκε ρητά: αντί για απλό "Audio Visualizer", νέα καρτέλα "Διαχείριση Ήχου" με
             // presets ενίσχυσης + ζωντανό visualizer, εμπνευσμένη από τη λογική του FXSound.
             AddNavButton(_nav, LocalizationManager.T("Nav.AudioEnhancement"), "AudioEnhancement", ShowAudioEnhancement, (string?)null);
+            // Σελίδες των plugin (π.χ. News Crawler) — μπαίνουν πριν το "Σχετικά" που μένει τελευταίο.
+            foreach (var pluginItem in Services.PluginHost.Instance.GetNavigationItems())
+            {
+                var captured = pluginItem;
+                AddNavButton(_nav, Services.PluginHost.TitleOf(captured), "plugin:" + captured.Key, () => ShowPluginPage(captured), (string?)null);
+            }
             // "Σχετικά" ζητήθηκε ρητά να είναι το ΤΕΛΕΥΤΑΙΟ στοιχείο του nav, κάτω από τη
             // "Διαχείριση Ήχου" (πριν ήταν ανάποδα).
             AddNavButton(_nav, LocalizationManager.T("Nav.About"), "About", ShowAbout, 9);
@@ -373,6 +497,7 @@ namespace MotionDesk.UI
             _statusLabel.ForeColor = UiTheme.TextSecondary;
             _brandLabel.ForeColor = UiTheme.TextPrimary;
             _brandSubLabel.ForeColor = UiTheme.TextMuted;
+            _brandVersionLabel.ForeColor = UiTheme.TextMuted;
 
             int useDark = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0;
             try { if (IsHandleCreated) DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDark, sizeof(int)); }
@@ -387,7 +512,7 @@ namespace MotionDesk.UI
         private NavButton AddNavButton(Control parent, string text, string key, Action action, string? shortcutLabel)
         {
             var button = new NavButton(key, text, shortcutLabel) { Width = 184 };
-            button.Click += (_, _) => { _currentPageKey = key; action(); };
+            button.Click += (_, _) => { _currentPageKey = key; SafeBuildPage(key, action); };
             button.Click += (_, _) => SetActiveButton(button);
             button.Click += (_, _) => Services.UiSounds.PlayClick();
             parent.Controls.Add(button);
@@ -442,8 +567,7 @@ namespace MotionDesk.UI
                 base.OnPaint(e);
                 var g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                using (var bg = new SolidBrush(UiTheme.Background))
-                    g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Background); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
 
                 double t = _getT();
                 var colors = new[] { UiTheme.AccentCyan, UiTheme.AccentBlue, UiTheme.AccentCyan };
@@ -486,10 +610,15 @@ namespace MotionDesk.UI
                     // 56 (όχι ίσο με το πλήρες πλάτος του container, 64) — σκόπιμο περιθώριο
                     // ασφαλείας ώστε τίποτα να μην ακουμπάει/κόβεται στο δεξί άκρο, ό,τι κι αν
                     // προκαλούσε το προηγούμενο ζήτημα ("κόβονται τα εικονίδια").
-                    Width = value ? 56 : 184;
+                    if (!SuppressWidth) ApplyWidth();
                     Invalidate();
                 }
             }
+
+            // 1.7.8 - κατά το animation του sidebar το πλάτος του κάθε κουμπιού ΑΚΟΛΟΥΘΕΙ το πλάτος του sidebar
+            // (ορίζεται από το MainWindow ανά καρέ) αντί να πηδά αμέσως 56 <-> 184 - αυτό προκαλούσε τα "κύματα".
+            public bool SuppressWidth { get; set; }
+            public void ApplyWidth() => Width = _collapsed ? 56 : 184;
 
             private readonly ToolTip _tip = new() { InitialDelay = 300, AutoPopDelay = 4000 };
             private readonly string? _shortcutHint;
@@ -526,15 +655,19 @@ namespace MotionDesk.UI
                 // "τετράγωνα κουμπιά" + μεγαλύτερα εικονίδια στη σύμπτυξη.
                 if (_collapsed)
                 {
-                    const int tile = 42;
-                    var tileRect = new Rectangle((Width - tile) / 2, (Height - tile) / 2, tile, tile);
+                    // Το πλακίδιο ήταν 42 px μέσα σε κουμπί ύψους 42 px: το κάτω περίγραμμα κοβόταν και το πάνω έβγαινε παχύτερο.
+                    // Τώρα 40 px με 1 px περιθώριο, και το περίγραμμα πέφτει ακριβώς πάνω σε pixel (offset 0,5), ίδιο πάχος σε όλες τις πλευρές.
+                    const int tile = 40;
+                    var tileRect = new Rectangle((Width - tile) / 2, (Height - tile) / 2, tile - 1, tile - 1);
                     var bg = IsActive ? UiTheme.SurfaceHover : (_hover ? UiTheme.Surface : UiTheme.Sidebar);
+                    g.TranslateTransform(0.5f, 0.5f);
                     using (var bgBrush = new SolidBrush(bg))
                     using (var path = UiTheme.RoundedPath(tileRect, 6))
                         g.FillPath(bgBrush, path);
                     using (var borderPen = new Pen(IsActive ? UiTheme.AccentCyan : UiTheme.Border, IsActive ? 1.6f : 1f))
                     using (var path = UiTheme.RoundedPath(tileRect, 6))
                         g.DrawPath(borderPen, path);
+                    g.ResetTransform();
 
                     const int iconSize = 26;
                     IconRenderer.Draw(g, _iconKey, new RectangleF(tileRect.X + (tile - iconSize) / 2f, tileRect.Y + (tile - iconSize) / 2f, iconSize, iconSize), iconColor);
@@ -575,7 +708,9 @@ namespace MotionDesk.UI
             {
                 Dock = DockStyle.Fill;
                 Cursor = Cursors.Hand;
-                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+                // ResizeRedraw: το κουμπί ξαναζωγραφίζεται σε ΚΑΘΕ αλλαγή πλάτους (animation) ώστε το βέλος να μένει
+                // κεντραρισμένο και να μη μένουν υπολείμματα ("κυματισμοί") από παλιά καρέ.
+                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
                 MouseEnter += (_, _) => { _hover = true; Invalidate(); };
                 MouseLeave += (_, _) => { _hover = false; Invalidate(); };
                 MouseUp += (_, e) => { if (e.Button == MouseButtons.Left && ClientRectangle.Contains(e.Location)) Click?.Invoke(this, EventArgs.Empty); };
@@ -617,7 +752,8 @@ namespace MotionDesk.UI
             else
             {
                 ApplySidebarCollapsedVisuals(false);
-                AnimateSidebarWidth(SidebarExpandedWidth);
+                _collapseToggle.Collapsed = true; // το βέλος αλλάζει κατεύθυνση ΜΟΝΟ όταν τελειώσει η επέκταση
+                AnimateSidebarWidth(SidebarExpandedWidth, () => _collapseToggle.Collapsed = false);
             }
         }
 
@@ -630,49 +766,112 @@ namespace MotionDesk.UI
         {
             _sidebar.Padding = collapsed ? new Padding(8, 20, 8, 12) : new Padding(16, 20, 16, 12);
 
-            const int expandedLogoSize = 48;
-            const int collapsedLogoSize = 40;
-            int usableWidth = (collapsed ? SidebarCollapsedWidth : SidebarExpandedWidth) - _sidebar.Padding.Horizontal;
+            // Ζητήθηκε ρητά "όταν το πλευρικό μενού γίνεται μόνο εικονίδια να μην μικραίνει το
+            // εικονίδιο της εφαρμογής & να είναι aligned με εκείνα του πλευρικού μενού" — πριν
+            // μίκραινε (48->40) και κεντραριζόταν ανεξάρτητα μέσα στο usableWidth, όχι στο ίδιο
+            // σημείο με τα τετράγωνα πλακίδια (42px) των NavButton, που κεντράρονται μέσα στο δικό
+            // τους πλάτος 56px (δηλ. κέντρο στο x=28 μέσα στο padded περιεχόμενο). Το λογότυπο
+            // μένει πλέον στο ΙΔΙΟ μέγεθος (48) και στο ίδιο κέντρο (x=28) με τα nav εικονίδια.
+            const int logoSizeFixed = 48;
+            const int navTileCenterX = 28;
             if (collapsed)
             {
-                _brandDot.Size = new Size(collapsedLogoSize, collapsedLogoSize);
-                _brandDot.Location = new Point(Math.Max(0, (usableWidth - collapsedLogoSize) / 2), 6);
+                _brandDot.Size = new Size(logoSizeFixed, logoSizeFixed);
+                _brandDot.Location = new Point(navTileCenterX - logoSizeFixed / 2, 6);
             }
             else
             {
-                _brandDot.Size = new Size(expandedLogoSize, expandedLogoSize);
+                _brandDot.Size = new Size(logoSizeFixed, logoSizeFixed);
                 _brandDot.Location = new Point(0, 2);
             }
 
             _collapseToggle.Collapsed = collapsed;
             _brandLabel.Visible = !collapsed;
             _brandSubLabel.Visible = !collapsed;
+            _brandVersionLabel.Visible = !collapsed;
             foreach (var btn in _navButtons.Values) { btn.Collapsed = collapsed; btn.Refresh(); }
             _nav.Refresh();
         }
 
         private void AnimateSidebarWidth(int targetWidth, Action? onComplete = null)
         {
+            // Η ρύθμιση "Animations" (Ρυθμίσεις → Εκκίνηση) δεν είχε καμία επίδραση — τώρα την τηρούμε.
+            if (!AppSettings.Load().EnableAnimations)
+            {
+                _sidebar.Width = targetWidth;
+                foreach (var btn in _navButtons.Values) { btn.SuppressWidth = false; btn.ApplyWidth(); }
+                onComplete?.Invoke();
+                return;
+            }
             _sidebarAnimTimer?.Stop();
             _sidebarAnimTimer?.Dispose();
             int startWidth = _sidebar.Width;
-            const int totalSteps = 10;
-            int step = 0;
-            _sidebarAnimTimer = new System.Windows.Forms.Timer { Interval = 12 };
+            // 1.7.8 - animation βασισμένη στον ΠΡΑΓΜΑΤΙΚΟ χρόνο (220 ms, ease-out cubic) αντί για 10 σταθερά βήματα:
+            // ο timer των WinForms έχει ανάλυση ~15 ms, οπότε τα 10 βήματα ήταν λίγα/ανομοιόμορφα (σκαλοπάτια).
+            // Το πλάτος κάθε κουμπιού μενού ακολουθεί το πλάτος του sidebar ανά καρέ, ώστε περιεχόμενο και κουμπί
+            // να μένουν κεντραρισμένα χωρίς να "πηδούν".
+            const double durationMs = 220;
+            foreach (var btn in _navButtons.Values) btn.SuppressWidth = true;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            _sidebarAnimTimer = new System.Windows.Forms.Timer { Interval = 8 };
             _sidebarAnimTimer.Tick += (_, _) =>
             {
-                step++;
-                double t = Math.Min(1.0, step / (double)totalSteps);
+                double t = Math.Min(1.0, clock.Elapsed.TotalMilliseconds / durationMs);
                 double eased = 1 - Math.Pow(1 - t, 3);
-                _sidebar.Width = (int)(startWidth + (targetWidth - startWidth) * eased);
+                int w = (int)Math.Round(startWidth + (targetWidth - startWidth) * eased);
+                if (w != _sidebar.Width)
+                {
+                    _sidebar.Width = w;
+                    int usable = Math.Max(56, w - _sidebar.Padding.Horizontal);
+                    foreach (var btn in _navButtons.Values) btn.Width = Math.Clamp(usable, 56, 184);
+                }
                 if (t >= 1.0)
                 {
-                    _sidebar.Width = targetWidth;
                     _sidebarAnimTimer?.Stop();
+                    _sidebar.Width = targetWidth;
+                    foreach (var btn in _navButtons.Values) { btn.SuppressWidth = false; btn.ApplyWidth(); }
                     onComplete?.Invoke();
                 }
             };
             _sidebarAnimTimer.Start();
+        }
+
+        // Σελίδα που παρέχεται από plugin. Αν το plugin αποτύχει να φτιάξει τη σελίδα, δείχνουμε μήνυμα αντί να ρίξουμε το Opsis.
+        private void ShowPluginPage(OpsisNewsCrawler.Plugin.Abstractions.PluginNavigationItem item)
+        {
+            Control page;
+            try { page = item.CreatePage(); }
+            catch (Exception ex)
+            {
+                page = new Label { Text = "Plugin error: " + ex.Message, ForeColor = UiTheme.TextSecondary, AutoSize = true, Padding = new Padding(24) };
+            }
+            SetPage(Services.PluginHost.TitleOf(item), page); // ένα κλειδί που λείπει από τα locale files εμφανίζεται ως το ίδιο το κείμενο
+        }
+
+        // Ίδια λογική με το ShowPluginPage παρακάτω, εφαρμοσμένη ΚΑΙ στις ενσωματωμένες σελίδες:
+        // αν ένας page builder ρίξει exception στα μισά του χτισίματος, δείχνουμε μήνυμα σφάλματος
+        // αντί για μισοχτισμένη/κενή σελίδα, και το καταγράφουμε ώστε να μην εξαφανίζεται σιωπηλά
+        // (ζητήθηκε ρητά μετά από αναφορά χρήστη για κενή σελίδα Wallpaper χωρίς καταγεγραμμένο σφάλμα).
+        private void SafeBuildPage(string key, Action builder)
+        {
+            try { builder(); }
+            catch (Exception ex)
+            {
+                LogPageError(key, ex);
+                _currentPageKey = key;
+                var errorPage = new Label { Text = "Page error: " + ex.Message, ForeColor = UiTheme.TextSecondary, AutoSize = true, Padding = new Padding(24) };
+                SetPage(key, errorPage);
+            }
+        }
+
+        private static void LogPageError(string key, Exception ex)
+        {
+            try
+            {
+                var path = Path.Combine(AppPaths.AppDataFolder, "ui-errors.log");
+                File.AppendAllText(path, $"[{DateTime.Now:O}] Page '{key}' failed to build: {ex}\n");
+            }
+            catch (Exception) { /* logging must never itself throw */ }
         }
 
         private void SetPage(string titleKey, Control control)
@@ -733,7 +932,7 @@ namespace MotionDesk.UI
                     return true;
                 case Keys.Control | Keys.Shift | Keys.N:
                     using (var editor = new ZoneLayoutEditorForm())
-                        if (editor.ShowDialog(this) == DialogResult.OK) _statusLabel.Text = "DeskZone layout updated";
+                        if (editor.ShowDialog(this) == DialogResult.OK) _statusLabel.Text = LocalizationManager.T("Status.ZonesUpdated");
                     if (_currentPageKey == "DeskZones" && _pageBuilders.TryGetValue("DeskZones", out var dzBuilder)) dzBuilder();
                     return true;
                 case Keys.Control | Keys.Oemcomma:
@@ -757,14 +956,14 @@ namespace MotionDesk.UI
         {
             _currentPageKey = "Dashboard";
             var panel = CreatePagePanel();
-            AddHeading(panel, "MotionDesk Studio");
+            AddHeading(panel, "Opsis — Desktop Customization");
             AddText(panel, LocalizationManager.T("Dashboard.Intro"));
 
             var metrics = SystemMonitorService.Instance.GetSnapshot();
             // "System" card = ζωντανή σύνοψη + συντόμευση στο πλήρες System Monitor (εκεί μένει η λεπτομέρεια:
             // CPU/RAM/δίκτυο/processes). Η γραμμή κατάστασης κάτω-κάτω δείχνει μόνο ένα ambient CPU/RAM glance.
             var systemCard = AddCard(panel, LocalizationManager.T("Dashboard.SystemCardTitle"),
-                $"CPU {metrics.CpuPercent:0.0}%   •   RAM {metrics.AvailableMemoryMb:0} / {metrics.TotalMemoryMb:0} MB free",
+                string.Format(LocalizationManager.T("Dashboard.SystemCardFormat"), metrics.CpuPercent.ToString("0.0"), metrics.AvailableMemoryMb.ToString("0"), metrics.TotalMemoryMb.ToString("0"), RamUsedPercent(metrics.AvailableMemoryMb, metrics.TotalMemoryMb)),
                 onClick: () => NavigateTo("Performance"));
             AddCard(panel, LocalizationManager.T("Dashboard.DesktopCardTitle"), string.Format(LocalizationManager.T("Dashboard.DesktopCardBodyFormat"),
                 Screen.AllScreens.Length, WidgetHostEngine.Instance.GetActiveWidgets().Count, Screen.AllScreens.Sum(s => ZoneLayoutStore.GetLayout(s.DeviceName).Zones.Count)));
@@ -774,7 +973,7 @@ namespace MotionDesk.UI
             dashboardRefreshTimer.Tick += (_, _) =>
             {
                 var m = SystemMonitorService.Instance.GetSnapshot();
-                systemCard.Text = $"CPU {m.CpuPercent:0.0}%   •   RAM {m.AvailableMemoryMb:0} / {m.TotalMemoryMb:0} MB free";
+                systemCard.Text = string.Format(LocalizationManager.T("Dashboard.SystemCardFormat"), m.CpuPercent.ToString("0.0"), m.AvailableMemoryMb.ToString("0"), m.TotalMemoryMb.ToString("0"), RamUsedPercent(m.AvailableMemoryMb, m.TotalMemoryMb));
             };
             dashboardRefreshTimer.Start();
             panel.Disposed += (_, _) => dashboardRefreshTimer.Dispose();
@@ -814,7 +1013,8 @@ namespace MotionDesk.UI
                 ("Network", LocalizationManager.T("Widgets.Network"), (_, _) => WidgetHostEngine.Instance.SpawnWidget("network", 100, 350, ww, wh)),
                 ("AudioVisualizer", LocalizationManager.T("Widgets.AudioVisualizer"), (_, _) => WidgetHostEngine.Instance.SpawnWidget("audio", 450, 350, ww, wh)),
                 ("Weather", LocalizationManager.T("Widgets.Weather"), (_, _) => WidgetHostEngine.Instance.SpawnWidget("weather", 800, 100, ww, wh)),
-                ("Disk", LocalizationManager.T("Widgets.Disk"), (_, _) => WidgetHostEngine.Instance.SpawnWidget("disk", 800, 350, ww, wh)));
+                ("Disk", LocalizationManager.T("Widgets.Disk"), (_, _) => WidgetHostEngine.Instance.SpawnWidget("disk", 800, 350, ww, wh)),
+                ("Settings", LocalizationManager.T("Widgets.QuickSettings"), (_, _) => WidgetHostEngine.Instance.SpawnWidget("quicksettings", 1100, 100, ww, wh)));
             AddSection(panel, LocalizationManager.T("Widgets.SectionWorkspaceActions"));
             AddIconButtonGrid(panel,
                 ("Save", LocalizationManager.T("Widgets.SaveLayout"), (_, _) => { WorkspaceProfileService.Save("Last Session"); _statusLabel.Text = LocalizationManager.T("Widgets.LayoutSavedStatus"); }),
@@ -825,11 +1025,24 @@ namespace MotionDesk.UI
             var activeList = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
             panel.Controls.Add(activeList);
 
+            // ΔΙΟΡΘΩΣΗ "εξάλειψη flicker στα ενεργά widgets": το παλιό κώδικας έκανε πλήρες
+            // DisposeChildren+rebuild ΚΑΘΕ 2s ΑΣΧΕΤΑ αν κάτι είχε πραγματικά αλλάξει — καταστροφή/
+            // αναδημιουργία πραγματικών child HWNDs κάθε tick είναι ο πιο συνηθισμένος λόγος
+            // ορατού flicker στο WinForms. Τώρα συγκρίνεται μια φθηνή "υπογραφή" (id+lock state)
+            // και η ανοικοδόμηση γίνεται ΜΟΝΟ όταν κάτι πραγματικά άλλαξε.
+            string? lastSignature = null;
             void RefreshActiveList()
             {
-                activeList.SuspendLayout();
-                activeList.Controls.Clear();
                 var active = WidgetHostEngine.Instance.GetActiveWidgets();
+                string signature = string.Join("|", active.Select(w => $"{w.WidgetId}:{w.IsLocked}"));
+                if (signature == lastSignature) return;
+                lastSignature = signature;
+
+                // Ίδια διόρθωση scroll-reset με το RefreshPinnedApps (DeskStrip)/topLabel (Performance):
+                // το Controls.Clear()+rebuild μέσα σε AutoScroll container επαναφέρει σιωπηλά στην κορυφή.
+                var savedScroll = panel.AutoScrollPosition;
+                activeList.SuspendLayout();
+                DisposeChildren(activeList);
                 if (active.Count == 0)
                 {
                     activeList.Controls.Add(new Label { AutoSize = true, Text = LocalizationManager.T("Common.NoActiveWidgets"), ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody });
@@ -850,6 +1063,7 @@ namespace MotionDesk.UI
                     activeList.Controls.Add(row);
                 }
                 activeList.ResumeLayout();
+                panel.AutoScrollPosition = new Point(-savedScroll.X, -savedScroll.Y);
             }
             RefreshActiveList();
             var widgetsRefreshTimer = new System.Windows.Forms.Timer { Interval = 2000 };
@@ -902,6 +1116,21 @@ namespace MotionDesk.UI
             // έννοια των Fences (ομαδοποίηση αρχείων/φακέλων/συντομεύσεων, όχι παραθύρων).
             AddSection(panel, LocalizationManager.T("DeskZones.SectionContainers"));
             AddText(panel, LocalizationManager.T("DeskZones.ContainersIntro"));
+
+            // Ζητήθηκε ρητά: ο μηχανισμός "διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας
+            // κρύβει/επαναφέρει τα εικονίδια" (DesktopIconVisibilityEngine) υπήρχε ήδη πλήρως
+            // λειτουργικός αλλά ήταν πάντα ενεργός χωρίς καμία ρύθμιση ορατή στο χρήστη. Τώρα
+            // μπορεί να απενεργοποιηθεί από εδώ (ενεργοποιείται/απενεργοποιείται ζωντανά, χωρίς
+            // restart της εφαρμογής).
+            var quickHideCheck = new FlatCheckBox { Text = LocalizationManager.T("DeskZones.QuickHideDoubleClick"), Checked = AppSettings.Load().QuickHideDoubleClickEnabled, AutoSize = true, BackColor = UiTheme.Background, Margin = new Padding(0, 0, 0, 10) };
+            quickHideCheck.CheckedChanged += (_, _) =>
+            {
+                var a = AppSettings.Load(); a.QuickHideDoubleClickEnabled = quickHideCheck.Checked; a.Save();
+                if (quickHideCheck.Checked) MotionDesk.Widgets.DesktopIconVisibilityEngine.Instance.Start();
+                else MotionDesk.Widgets.DesktopIconVisibilityEngine.Instance.Stop();
+            };
+            panel.Controls.Add(quickHideCheck);
+
             AddIconButtonGrid(panel,
                 ("Container", LocalizationManager.T("DeskZones.NewContainerBtn"), (_, _) => DeskContainerHostEngine.Instance.SpawnContainer($"container{DateTime.Now.Ticks}", LocalizationManager.T("DeskZones.NewContainerDefaultTitle"), 360, 200, 360, 260)),
                 ("Close", LocalizationManager.T("DeskZones.CloseAllContainers"), (_, _) => DeskContainerHostEngine.Instance.CloseAll()));
@@ -909,11 +1138,20 @@ namespace MotionDesk.UI
             var activeContainersList = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
             panel.Controls.Add(activeContainersList);
 
+            // Ίδια διόρθωση flicker με το RefreshActiveList (Widgets page): rebuild μόνο όταν
+            // πραγματικά άλλαξε κάτι, όχι σε κάθε tick του timer.
+            string? lastContainersSignature = null;
             void RefreshActiveContainers()
             {
-                activeContainersList.SuspendLayout();
-                activeContainersList.Controls.Clear();
                 var active = DeskContainerHostEngine.Instance.GetActiveContainers();
+                string signature = string.Join("|", active.Select(c => c.ContainerId));
+                if (signature == lastContainersSignature) return;
+                lastContainersSignature = signature;
+
+                // Ίδια διόρθωση scroll-reset με το RefreshActiveList (Widgets page).
+                var savedScroll = panel.AutoScrollPosition;
+                activeContainersList.SuspendLayout();
+                DisposeChildren(activeContainersList);
                 if (active.Count == 0)
                 {
                     activeContainersList.Controls.Add(new Label { AutoSize = true, Text = LocalizationManager.T("Common.NoActiveContainers"), ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody });
@@ -930,12 +1168,31 @@ namespace MotionDesk.UI
                     activeContainersList.Controls.Add(row);
                 }
                 activeContainersList.ResumeLayout();
+                panel.AutoScrollPosition = new Point(-savedScroll.X, -savedScroll.Y);
             }
             RefreshActiveContainers();
             var containersRefreshTimer = new System.Windows.Forms.Timer { Interval = 2000 };
             containersRefreshTimer.Tick += (_, _) => RefreshActiveContainers();
             containersRefreshTimer.Start();
             panel.Disposed += (_, _) => containersRefreshTimer.Dispose();
+
+            // Applications that are never snapped (one process name per line, e.g. vlc, obs64)
+            AddSection(panel, LocalizationManager.T("DeskZones.SectionExcludedApps"));
+            AddText(panel, LocalizationManager.T("DeskZones.ExcludedAppsHint"));
+            var excludedBox = new TextBox
+            {
+                Multiline = true, Width = 360, Height = 90, ScrollBars = ScrollBars.Vertical, AcceptsReturn = true, Font = UiTheme.FontBody,
+                BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 10),
+                Text = string.Join(Environment.NewLine, AppSettings.Load().ZoneExcludedApps)
+            };
+            excludedBox.Leave += (_, _) =>
+            {
+                var a = AppSettings.Load();
+                a.ZoneExcludedApps = excludedBox.Text.Split(new[] { '\r', '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => Path.GetFileNameWithoutExtension(x.Trim())).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                a.Save();
+            };
+            panel.Controls.Add(excludedBox);
 
             SetPage("Page.DeskZones.Title", panel);
         }
@@ -964,7 +1221,7 @@ namespace MotionDesk.UI
 
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionMode"));
             var modeCombo = new FlatComboBox { Width = 200, Margin = new Padding(0, 0, 0, 10) };
-            modeCombo.SetItems(new[] { "Waves", "Video", "Particles" }, settings.Mode);
+            modeCombo.SetItems(new[] { "Waves", "Video", "Particles", "Weather", "Desktop" }, settings.Mode);
             // Ξαναχτίζει ΟΛΟΚΛΗΡΗ τη σελίδα κάθε φορά που αλλάζει το Mode — ζητήθηκε ρητά bug fix:
             // πριν, οι ενότητες "Video Library"/"Theme & Colors"/"Wave Tuning" ήταν ΠΑΝΤΑ ορατές
             // ανεξάρτητα από το επιλεγμένο mode, οπότε η επιλογή βίντεο έμενε στην οθόνη ακόμη κι
@@ -981,72 +1238,124 @@ namespace MotionDesk.UI
             // με τα βίντεο". Πριν, η λίστα (dropdown/κάρτα) δεν ανανεωνόταν καθόλου μετά την
             // προσθήκη — μόνο το στατιστικό κείμενο του playlistCard.
             AddIconButtonGrid(panel,
-                ("Add", "Προσθήκη βίντεο…", (_, _) => ChooseWallpaperVideoFiles(ShowWallpaper)),
-                ("Add", "Προσθήκη φακέλου…", (_, _) => { ChooseWallpaperFolder(); ShowWallpaper(); }),
-                ("Delete", "Καθαρισμός playlist", (_, _) => { WallpaperHostEngine.Instance.ClearVideo(); ShowWallpaper(); }));
+                ("Add", LocalizationManager.T("Wallpaper.AddVideoButton"), (_, _) => ChooseWallpaperVideoFiles(ShowWallpaper)),
+                ("Add", LocalizationManager.T("Wallpaper.AddFolderButton"), (_, _) => { ChooseWallpaperFolder(); ShowWallpaper(); }),
+                ("Delete", LocalizationManager.T("Wallpaper.ClearPlaylist"), (_, _) => { WallpaperHostEngine.Instance.ClearVideo(); ShowWallpaper(); }));
+
+            var subfoldersCheck = new FlatCheckBox { Text = LocalizationManager.T("Wallpaper.IncludeSubfolders"), AutoSize = true, Checked = settings.IncludeSubfolders, BackColor = UiTheme.Background, Margin = new Padding(0, 4, 0, 6) };
+            subfoldersCheck.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetIncludeSubfolders(subfoldersCheck.Checked);
+            panel.Controls.Add(subfoldersCheck);
+
+            // Επιλογή ποια από τα φορτωμένα βίντεο (αρχεία ή περιεχόμενο φακέλου) θα αναπαράγονται: όλα / κανένα με ένα κλικ,
+            // και μετά τικάρισμα μεμονωμένων γραμμών παρακάτω (κλικ και πάνω στο όνομα).
+            var selectionButtons = new List<(string IconKey, string Text, EventHandler Action)>
+            {
+                ("Restore", LocalizationManager.T("Wallpaper.SelectAll"), (_, _) => { WallpaperHostEngine.Instance.SetAllVideosEnabled(true); ShowWallpaper(); }),
+                ("Close", LocalizationManager.T("Wallpaper.SelectNone"), (_, _) => { WallpaperHostEngine.Instance.SetAllVideosEnabled(false); ShowWallpaper(); }),
+            };
+            int missingCount = settings.VideoPaths.Count(vp => !File.Exists(vp));
+            if (missingCount > 0)
+                selectionButtons.Add(("Delete", string.Format(LocalizationManager.T("Wallpaper.RemoveMissing"), missingCount), (_, _) => { WallpaperHostEngine.Instance.RemoveMissingVideos(); ShowWallpaper(); }));
+            AddIconButtonGrid(panel, selectionButtons.ToArray());
 
             // Πραγματική λίστα με ΟΛΑ τα φορτωμένα βίντεο (όχι μόνο ένα στατιστικό "N αρχεία") —
             // κάθε γραμμή έχει το όνομα αρχείου και ένα ✕ για αφαίρεση, ζητήθηκε ρητά "να μπορεί
             // να προσθαφαιρεί αρχεία βίντεο" απευθείας από τη βιβλιοθήκη.
-            var videoListPanel = new Panel { Width = 720, Height = Math.Min(220, Math.Max(50, settings.VideoPaths.Count * 34 + 10)), Margin = new Padding(0, 0, 0, 10), AutoScroll = true, BackColor = UiTheme.Surface };
+            var videoListPanel = new Panel { Width = 720, Height = Math.Min(300, Math.Max(50, settings.VideoPaths.Count * 46 + 10)), Margin = new Padding(0, 0, 0, 10), AutoScroll = true, BackColor = UiTheme.Surface };
+            GlassBlur.ApplyScrollbarTheme(videoListPanel, UiTheme.Surface.GetBrightness() < 0.5f);
             int rowY = 4;
             foreach (var videoPath in settings.VideoPaths.ToArray())
             {
                 bool exists = File.Exists(videoPath);
-                var row = new Panel { Location = new Point(4, rowY), Size = new Size(700, 28) };
+                var row = new Panel { Location = new Point(4, rowY), Size = new Size(700, 42), BackColor = UiTheme.Surface };
                 // Ζητήθηκε ρητά "να επιλέγει ο χρήστης 1 ή περισσότερα βίντεο για να
                 // αναπαράγονται" — ένα φορτωμένο βίντεο μπορεί να μείνει στη βιβλιοθήκη χωρίς να
                 // συμμετέχει στην ενεργή αναπαραγωγή/shuffle (checkbox, όχι αφαίρεση).
-                var enabledCheck = new CheckBox { Checked = !settings.DisabledVideoPaths.Contains(videoPath), Location = new Point(2, 4), Size = new Size(20, 20) };
-                enabledCheck.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetVideoEnabled(videoPath, enabledCheck.Checked);
+                var enabledCheck = new FlatCheckBox { Checked = !settings.DisabledVideoPaths.Contains(videoPath), Location = new Point(4, 11), Size = new Size(20, 20), BackColor = UiTheme.Surface };
+                // Ζητήθηκε ρητά "ενσωμάτωσε την παρουσίαση ενός media player" (MediaPlayerPro) —
+                // λεπτή έγχρωμη λωρίδα αριστερά (ίδια τεχνική με το accent border selection strip
+                // στη λίστα playlist του MediaPlayerPro), εδώ δηλώνει "ενεργό στο playlist" αντί
+                // για "επιλεγμένο" αφού δεν υπάρχει έννοια επιλογής γραμμής εδώ.
+                row.Paint += (_, pe) =>
+                {
+                    if (enabledCheck.Checked)
+                        using (var stripBrush = new SolidBrush(UiTheme.AccentCyan)) pe.Graphics.FillRectangle(stripBrush, 0, 0, 3, row.Height);
+                };
+                enabledCheck.CheckedChanged += (_, _) => { WallpaperHostEngine.Instance.SetVideoEnabled(videoPath, enabledCheck.Checked); row.Invalidate(); };
                 var nameLabel = new Label
                 {
-                    Text = Path.GetFileName(videoPath) + (exists ? "" : "  (λείπει)"),
+                    Text = Path.GetFileName(videoPath) + (exists ? "" : LocalizationManager.T("Wallpaper.MissingSuffix")),
                     AutoSize = false,
-                    Size = new Size(596, 24),
-                    Location = new Point(28, 2),
+                    Size = new Size(500, 28),
+                    Location = new Point(102, 7),
+                    TextAlign = ContentAlignment.MiddleLeft,
                     ForeColor = exists ? UiTheme.TextPrimary : UiTheme.TextMuted,
                     Font = UiTheme.FontBody,
                     AutoEllipsis = true
                 };
-                var removeBtn = new Label { Text = "✕", AutoSize = false, Size = new Size(24, 24), Location = new Point(670, 2), TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextSecondary, Cursor = Cursors.Hand, Font = new Font("Segoe UI", 9) };
-                removeBtn.MouseEnter += (_, _) => removeBtn.ForeColor = Color.FromArgb(231, 76, 60);
-                removeBtn.MouseLeave += (_, _) => removeBtn.ForeColor = UiTheme.TextSecondary;
+                // Στρογγυλό, borderless κουμπί αφαίρεσης με κυκλικό hover-highlight αντί για απλή
+                // αλλαγή χρώματος κειμένου — ίδιο πνεύμα με τα icon-only κουμπιά του MediaPlayerPro.
+                var removeBtn = new Label { Text = "", AutoSize = false, Size = new Size(24, 24), Location = new Point(670, 9), Cursor = Cursors.Hand, Font = new Font("Segoe UI", 9), BackColor = Color.Transparent };
+                bool removeHot = false;
+                removeBtn.Paint += (_, pe) =>
+                {
+                    pe.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    if (removeHot) using (var hb = new SolidBrush(Color.FromArgb(40, 231, 76, 60))) pe.Graphics.FillEllipse(hb, 0, 0, removeBtn.Width - 1, removeBtn.Height - 1);
+                    using var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+                    using var textBrush = new SolidBrush(removeHot ? Color.FromArgb(231, 76, 60) : UiTheme.TextSecondary);
+                    pe.Graphics.DrawString("✕", removeBtn.Font, textBrush, new RectangleF(0, 0, removeBtn.Width, removeBtn.Height), sf);
+                };
+                removeBtn.MouseEnter += (_, _) => { removeHot = true; removeBtn.Invalidate(); };
+                removeBtn.MouseLeave += (_, _) => { removeHot = false; removeBtn.Invalidate(); };
                 removeBtn.Click += (_, _) => { WallpaperHostEngine.Instance.RemoveVideo(videoPath); ShowWallpaper(); };
+                nameLabel.Click += (_, _) => enabledCheck.Checked = !enabledCheck.Checked;
+                // thumbnail (Windows Shell) + duration (FFmpeg, if present) — loaded in the background, the row never waits for them
+                var thumb = new PictureBox { Location = new Point(28, 3), Size = new Size(68, 36), SizeMode = PictureBoxSizeMode.Zoom, BackColor = UiTheme.Background, Cursor = Cursors.Hand };
+                thumb.Click += (_, _) => enabledCheck.Checked = !enabledCheck.Checked;
+                var durationLabel = new Label { Text = "", AutoSize = false, Size = new Size(60, 28), Location = new Point(604, 7), TextAlign = ContentAlignment.MiddleRight, ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody };
+                if (exists) _ = LoadVideoRowMetaAsync(videoPath, thumb, durationLabel);
                 row.Controls.Add(enabledCheck);
+                row.Controls.Add(thumb);
+                row.Controls.Add(durationLabel);
                 row.Controls.Add(nameLabel);
                 row.Controls.Add(removeBtn);
                 videoListPanel.Controls.Add(row);
-                rowY += 32;
+                rowY += 46;
             }
             if (settings.VideoPaths.Count == 0)
-                videoListPanel.Controls.Add(new Label { Text = "Δεν έχουν προστεθεί βίντεο ακόμα.", AutoSize = true, Location = new Point(6, 6), ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody });
+                videoListPanel.Controls.Add(new Label { Text = LocalizationManager.T("Wallpaper.NoVideosYet"), AutoSize = true, Location = new Point(6, 6), ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody });
             panel.Controls.Add(videoListPanel);
 
-            var shuffle = new CheckBox { Text = "Shuffle", AutoSize = true, Checked = settings.Shuffle, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 4, 0, 10) };
+            var shuffle = new FlatCheckBox { Text = LocalizationManager.T("Wallpaper.Shuffle"), AutoSize = true, Checked = settings.Shuffle, BackColor = UiTheme.Background, Margin = new Padding(0, 4, 0, 10) };
             shuffle.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetShuffle(shuffle.Checked);
             panel.Controls.Add(shuffle);
+
+            // Επαναλήψεις ανά βίντεο + εναλλαγή ανά N λεπτά (αποθηκεύονται με καθυστέρηση 500ms μετά το τελευταίο σύρσιμο)
+            FlatSlider? repeatTrack = null, rotateTrack = null;
+            void CommitPlayback() { if (repeatTrack != null && rotateTrack != null) WallpaperHostEngine.Instance.SetPlaybackOptions(repeatTrack.Value, rotateTrack.Value); }
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.RepeatPerVideo"), settings.RepeatPerVideo, 1, 10, v => v == 1 ? LocalizationManager.T("Wallpaper.RepeatOnce") : $"{v}×", CommitPlayback, t => repeatTrack = t));
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.RotateEvery"), settings.RotateEveryMinutes, 0, 60, v => v == 0 ? LocalizationManager.T("Wallpaper.RotateWhenEnds") : string.Format(LocalizationManager.T("Wallpaper.RotateMinutesFormat"), v), CommitPlayback, t => rotateTrack = t));
 
             AddText(panel, LocalizationManager.T("Wallpaper.SupportedFormats"));
 
             // Πραγματικό DSP (bass/mid/treble/volume) πάνω στον ΔΙΚΟ ΜΑΣ ήχο του wallpaper video,
             // μέσω Web Audio API στο wallpaper/index.html (ensureAudioGraph/applyAudioConfig) — όχι
-            // system-wide, μόνο η αναπαραγωγή του MotionDesk. Προεπιλογή ΚΛΕΙΣΤΟ (AudioEnabled
+            // system-wide, μόνο η αναπαραγωγή του Opsis. Προεπιλογή ΚΛΕΙΣΤΟ (AudioEnabled
             // false): το wallpaper ήταν πάντα σιωπηλό πριν, δεν αλλάζει συμπεριφορά χωρίς ρητή
             // ενεργοποίηση από τον χρήστη.
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionAudio"));
-            var audioEnabledCheck = new CheckBox { Text = LocalizationManager.T("Wallpaper.AudioEnabled"), AutoSize = true, Checked = settings.AudioEnabled, ForeColor = UiTheme.TextPrimary, Margin = new Padding(0, 4, 0, 8) };
+            var audioEnabledCheck = new FlatCheckBox { Text = LocalizationManager.T("Wallpaper.AudioEnabled"), AutoSize = true, Checked = settings.AudioEnabled, BackColor = UiTheme.Background, Margin = new Padding(0, 4, 0, 8) };
             panel.Controls.Add(audioEnabledCheck);
 
-            var volumeTrack = new TrackBar { Minimum = 0, Maximum = 100, Value = (int)Math.Clamp(settings.AudioVolume * 100, 0, 100), Width = 220, TickStyle = TickStyle.None };
-            var bassTrack = new TrackBar { Minimum = -12, Maximum = 12, Value = (int)Math.Clamp(settings.AudioBassGain, -12, 12), Width = 220, TickStyle = TickStyle.None };
-            var midTrack = new TrackBar { Minimum = -12, Maximum = 12, Value = (int)Math.Clamp(settings.AudioMidGain, -12, 12), Width = 220, TickStyle = TickStyle.None };
-            var trebleTrack = new TrackBar { Minimum = -12, Maximum = 12, Value = (int)Math.Clamp(settings.AudioTrebleGain, -12, 12), Width = 220, TickStyle = TickStyle.None };
+            var volumeTrack = new FlatSlider { Minimum = 0, Maximum = 100, Value = (int)Math.Clamp(settings.AudioVolume * 100, 0, 100), Width = 220 };
+            var bassTrack = new FlatSlider { Minimum = -12, Maximum = 12, Value = (int)Math.Clamp(settings.AudioBassGain, -12, 12), Width = 220 };
+            var midTrack = new FlatSlider { Minimum = -12, Maximum = 12, Value = (int)Math.Clamp(settings.AudioMidGain, -12, 12), Width = 220 };
+            var trebleTrack = new FlatSlider { Minimum = -12, Maximum = 12, Value = (int)Math.Clamp(settings.AudioTrebleGain, -12, 12), Width = 220 };
 
             void ApplyAudioSettings() => WallpaperHostEngine.Instance.SetAudioSettings(
                 audioEnabledCheck.Checked, volumeTrack.Value / 100.0, bassTrack.Value, midTrack.Value, trebleTrack.Value);
 
-            Panel AudioRow(string label, TrackBar track, string unit)
+            Panel AudioRow(string label, FlatSlider track, string unit)
             {
                 var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
                 row.Controls.Add(new Label { Text = label, AutoSize = true, ForeColor = UiTheme.TextSecondary, Width = 110, Padding = new Padding(0, 6, 8, 0) });
@@ -1108,7 +1417,10 @@ namespace MotionDesk.UI
 
             // Theme/Palette και Wave Tuning ισχύουν για Waves ΚΑΙ Particles (μοιράζονται το ίδιο
             // cfg.speed/glowIntensity/palette στο JS engine) — άσχετα μόνο σε Video mode.
-            if (settings.Mode != "Video")
+            if (settings.Mode == "Weather") BuildWeatherWallpaperSection(panel, settings);
+            if (settings.Mode == "Desktop") AddText(panel, LocalizationManager.T("Wallpaper.DesktopIntro"));
+
+            if (settings.Mode is "Waves" or "Particles")
             {
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionThemeColors"));
             var themeCombo = new FlatComboBox { Width = 200, Margin = new Padding(0, 0, 0, 8) };
@@ -1147,6 +1459,9 @@ namespace MotionDesk.UI
                 v => WallpaperHostEngine.Instance.SetWaveTuning(WallpaperSettings.Load().WaveSpeed, WallpaperSettings.Load().GlowIntensity, v / 10.0)));
             }
 
+            BuildInfoOverlaySection(panel, settings);
+            BuildWallpaperScheduleSection(panel, settings);
+
             AddSection(panel, LocalizationManager.T("Wallpaper.SectionPerformance"));
             Dictionary<string, HoverButton>? perfButtons = null;
             perfButtons = AddToggleButtonGrid(panel,
@@ -1159,21 +1474,313 @@ namespace MotionDesk.UI
             SetPage("Page.Wallpaper.Title", panel);
         }
 
+        // ---- "Weather" wallpaper mode: location, live status, simulated weather/time, window-glass effect
+        private static readonly string[] WeatherSimIds = { "Auto", "Clear", "PartlyCloudy", "Cloudy", "Drizzle", "Rain", "HeavyRain", "Thunderstorm", "Snow", "Fog" };
+        private static readonly string[] TimeSimIds = { "Auto", "Dawn", "Day", "Dusk", "Night" };
+        private static readonly string[] WindSimIds = { "Auto", "Calm", "LightBreeze", "FreshBreeze", "Strong", "Gale" };
+
+        // Weather-mode only: simulated weather / wind / time of day + window-glass effect
+        private void BuildWeatherWallpaperSection(Panel panel, WallpaperSettings settings)
+        {
+            AddSection(panel, LocalizationManager.T("Wallpaper.SectionWeather"));
+            AddText(panel, LocalizationManager.T("Wallpaper.WeatherIntro"));
+
+            // simulated weather / time of day (Automatic = live)
+            FlowLayoutPanel ComboRow(string labelKey, string[] ids, string idPrefix, string currentId, Action<string> onChange)
+            {
+                var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+                row.Controls.Add(new Label { Text = LocalizationManager.T(labelKey), AutoSize = false, Width = 150, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody });
+                var labels = ids.Select(id => LocalizationManager.T(idPrefix + id)).ToArray();
+                var combo = new FlatComboBox { Width = 240 };
+                combo.SetItems(labels, labels[Math.Max(0, Array.IndexOf(ids, currentId))]);
+                combo.SelectedIndexChanged += (_, _) => { int i = combo.SelectedIndex; if (i >= 0 && i < ids.Length) onChange(ids[i]); };
+                row.Controls.Add(combo);
+                return row;
+            }
+            panel.Controls.Add(ComboRow("Wallpaper.WeatherSimLabel", WeatherSimIds, "Wallpaper.Sim.", settings.WeatherSimulation, id => WallpaperHostEngine.Instance.SetWeatherSimulation(id)));
+            panel.Controls.Add(ComboRow("Wallpaper.WindSimLabel", WindSimIds, "Wallpaper.Wind.", settings.WindSimulation, id => WallpaperHostEngine.Instance.SetWindSimulation(id)));
+            panel.Controls.Add(ComboRow("Wallpaper.TimeSimLabel", TimeSimIds, "Wallpaper.Time.", settings.TimeSimulation, id => WallpaperHostEngine.Instance.SetTimeSimulation(id)));
+
+            var glass = new FlatCheckBox { Text = LocalizationManager.T("Wallpaper.WeatherGlass"), AutoSize = true, Checked = settings.WeatherGlass, BackColor = UiTheme.Background, Margin = new Padding(0, 6, 0, 10) };
+            glass.CheckedChanged += (_, _) => WallpaperHostEngine.Instance.SetWeatherGlass(glass.Checked);
+            panel.Controls.Add(glass);
+        }
+
+        // ALL wallpaper modes (videos, Waves, Particles, Weather): live weather, location and the clock / date / temperature overlay
+        private void BuildInfoOverlaySection(Panel panel, WallpaperSettings settings)
+        {
+            AddSection(panel, LocalizationManager.T("Wallpaper.SectionInfo"));
+            AddText(panel, LocalizationManager.T("Wallpaper.InfoIntro"));
+
+            var liveLabel = new Label { Text = LocalizationManager.T("Wallpaper.WeatherLoading"), AutoSize = true, MaximumSize = new Size(740, 0), Font = UiTheme.FontBody, ForeColor = UiTheme.AccentCyan, Margin = new Padding(0, 0, 0, 12) };
+            panel.Controls.Add(liveLabel);
+            _ = RefreshLiveWeatherLabelAsync(liveLabel, settings.WeatherLat, settings.WeatherLon);
+
+            // location
+            string cityShown = string.IsNullOrWhiteSpace(settings.WeatherCity) ? LocalizationManager.T("Wallpaper.WeatherLocationDefault") : settings.WeatherCity;
+            var locLabel = new Label { Text = string.Format(LocalizationManager.T("Wallpaper.WeatherLocationCurrent"), cityShown), AutoSize = true, Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 0, 0, 4) };
+            panel.Controls.Add(locLabel);
+            var locRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 10) };
+            var cityBox = new TextBox { Width = 240, Text = settings.WeatherCity, BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary, BorderStyle = BorderStyle.FixedSingle, Font = UiTheme.FontBody, Margin = new Padding(0, 5, 10, 0) };
+            var setBtn = new HoverButton { Text = LocalizationManager.T("Wallpaper.WeatherLocationSet"), AutoSize = true, Padding = new Padding(16, 6, 16, 6), FlatStyle = FlatStyle.Flat, ForeColor = Color.White, BackColor = UiTheme.AccentBlue, BaseColor = UiTheme.AccentBlue, HoverBackColor = ControlPaint.Light(UiTheme.AccentBlue, 0.15f), TabStop = false, Cursor = Cursors.Hand, Margin = new Padding(0, 2, 0, 0) };
+            setBtn.FlatAppearance.BorderSize = 0;
+
+            // Ζητήθηκε ρητά μετά από αναφορά χρήστη ότι η αναζήτηση "δεν βγάζει επιλογές πόλεων" όταν
+            // υπάρχουν πολλές πόλεις με το ίδιο όνομα (π.χ. "Αθήνα, Ελλάδα" vs "Αθήνα, Ουκρανία") — πριν
+            // επιλεγόταν σιωπηλά η πρώτη. Τώρα, όταν το GeocodeMultipleAsync βρει περισσότερα από ένα
+            // αποτελέσματα, εμφανίζονται ως κλικαρίσμενες κάρτες εδώ αντί να μαντεύουμε.
+            var choicesPanel = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0, 0, 0, 10), BackColor = Color.Transparent, Visible = false };
+
+            // Controls.Clear() αφαιρεί τα child controls από τη συλλογή αλλά ΔΕΝ τα κάνει Dispose —
+            // ίδιο bug class με το SetPage() παραπάνω (βλ. σχόλιο εκεί). Χωρίς αυτό, κάθε νέα αναζήτηση
+            // τοποθεσίας θα άφηνε πίσω της ορφανά HoverButton handles.
+            void ClearChoices()
+            {
+                foreach (Control c in choicesPanel.Controls) c.Dispose();
+                choicesPanel.Controls.Clear();
+                choicesPanel.Visible = false;
+            }
+
+            void ApplyMatch(WeatherService.GeocodeMatch m)
+            {
+                WallpaperHostEngine.Instance.SetWeatherLocation(m.Name, m.Lat, m.Lon);
+                locLabel.Text = string.Format(LocalizationManager.T("Wallpaper.WeatherLocationCurrent"), m.Name);
+                cityBox.Text = m.Name;
+                ClearChoices();
+                _ = RefreshLiveWeatherLabelAsync(liveLabel, m.Lat, m.Lon);
+            }
+
+            async void ApplyCity()
+            {
+                var name = cityBox.Text.Trim();
+                if (name.Length == 0) return;
+                setBtn.Enabled = false;
+                ClearChoices();
+                try
+                {
+                    var found = await WeatherService.GeocodeMultipleAsync(name, 5);
+                    if (found.Count == 1)
+                    {
+                        ApplyMatch(found[0]);
+                    }
+                    else if (found.Count > 1)
+                    {
+                        locLabel.Text = LocalizationManager.T("Wallpaper.WeatherLocationChoose");
+                        foreach (var m in found)
+                        {
+                            var choiceBtn = new HoverButton
+                            {
+                                Text = string.IsNullOrEmpty(m.Country) ? m.Name : $"{m.Name}, {m.Country}",
+                                AutoSize = true, Padding = new Padding(10, 5, 10, 5), FlatStyle = FlatStyle.Flat,
+                                ForeColor = UiTheme.TextPrimary, BackColor = UiTheme.Surface, BaseColor = UiTheme.Surface,
+                                HoverBackColor = ControlPaint.Light(UiTheme.Surface, 0.15f), TabStop = false, Cursor = Cursors.Hand,
+                                Margin = new Padding(0, 0, 0, 4), TextAlign = ContentAlignment.MiddleLeft,
+                            };
+                            choiceBtn.FlatAppearance.BorderSize = 1;
+                            choiceBtn.FlatAppearance.BorderColor = UiTheme.Border;
+                            choiceBtn.Click += (_, _) => ApplyMatch(m);
+                            choicesPanel.Controls.Add(choiceBtn);
+                        }
+                        choicesPanel.Visible = true;
+                    }
+                    else locLabel.Text = LocalizationManager.T("Wallpaper.WeatherLocationNotFound");
+                }
+                catch (Exception) { locLabel.Text = LocalizationManager.T("Wallpaper.WeatherLocationNotFound"); }
+                finally { if (!setBtn.IsDisposed) setBtn.Enabled = true; }
+            }
+            setBtn.Click += (_, _) => ApplyCity();
+            cityBox.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ApplyCity(); } };
+            locRow.Controls.Add(cityBox);
+            locRow.Controls.Add(setBtn);
+            panel.Controls.Add(locRow);
+            panel.Controls.Add(choicesPanel);
+
+            // Ζητήθηκε ρητά: ρώτα μία φορά αν δεν έχει οριστεί ποτέ πόλη, αντί να δείχνουμε σιωπηλά
+            // τον καιρό της Αθήνας χωρίς ο χρήστης να το καταλάβει (έτσι βρέθηκε μια αναφορά "δείχνει
+            // συννεφιά ενώ βρέχει" που ήταν απλά λάθος τοποθεσία, όχι bug). BeginInvoke ώστε η σελίδα
+            // να έχει προλάβει να ζωγραφιστεί πριν εμφανιστεί το MessageBox.
+            if (string.IsNullOrWhiteSpace(settings.WeatherCity) && !settings.WeatherLocationPrompted)
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    WallpaperHostEngine.Instance.MarkWeatherLocationPrompted();
+                    var result = MessageBox.Show(this,
+                        LocalizationManager.T("Wallpaper.WeatherLocationPromptBody"),
+                        LocalizationManager.T("Wallpaper.WeatherLocationPromptTitle"),
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (result == DialogResult.Yes && !cityBox.IsDisposed) cityBox.Focus();
+                }));
+            }
+
+            // ---- clock / date / temperature overlay + its position (centre of the block, % of the screen)
+            FlatSlider? infoX = null, infoY = null, infoScale = null;
+            CheckBox? infoShow = null, infoF = null, infoAll = null;
+            void CommitInfo()
+            {
+                if (infoX == null || infoY == null || infoScale == null || infoShow == null || infoF == null || infoAll == null) return;
+                WallpaperHostEngine.Instance.SetWeatherInfo(infoShow.Checked, infoAll.Checked, infoX.Value, infoY.Value, infoScale.Value, infoF.Checked);
+            }
+            infoShow = new FlatCheckBox { Text = LocalizationManager.T("Wallpaper.WeatherInfo"), AutoSize = true, Checked = settings.WeatherShowInfo, BackColor = UiTheme.Background, Margin = new Padding(0, 8, 0, 4) };
+            infoF = new FlatCheckBox { Text = LocalizationManager.T("Wallpaper.Fahrenheit"), AutoSize = true, Checked = settings.WeatherFahrenheit, BackColor = UiTheme.Background, Margin = new Padding(0, 0, 0, 6) };
+            infoAll = new FlatCheckBox { Text = LocalizationManager.T("Wallpaper.InfoAllModes"), AutoSize = true, Checked = settings.InfoOnAllModes, BackColor = UiTheme.Background, Margin = new Padding(0, 0, 0, 4) };
+            infoShow.CheckedChanged += (_, _) => CommitInfo();
+            infoAll.CheckedChanged += (_, _) => CommitInfo();
+            infoF.CheckedChanged += (_, _) => CommitInfo();
+            panel.Controls.Add(infoShow);
+            panel.Controls.Add(infoAll);
+            panel.Controls.Add(infoF);
+            // ---- font of the overlay: common Windows fonts that are installed, plus "More…" for any other installed font
+            var fontRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
+            fontRow.Controls.Add(new Label { Text = LocalizationManager.T("Wallpaper.InfoFont"), AutoSize = false, Width = 150, Height = 28, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody });
+            var installed = new HashSet<string>(new System.Drawing.Text.InstalledFontCollection().Families.Select(f => f.Name), StringComparer.OrdinalIgnoreCase);
+            var fontNames = new List<string> { "Segoe UI Light", "Segoe UI", "Segoe UI Semibold", "Segoe UI Black", "Bahnschrift Light", "Bahnschrift", "Calibri Light", "Calibri", "Arial", "Arial Narrow", "Verdana", "Tahoma", "Trebuchet MS", "Georgia", "Cambria", "Consolas", "Courier New", "Impact", "Comic Sans MS", "Times New Roman" }
+                .Where(installed.Contains).ToList();
+            string currentFont = string.IsNullOrWhiteSpace(settings.InfoFont) ? "Segoe UI Light" : settings.InfoFont;
+            if (!fontNames.Contains(currentFont, StringComparer.OrdinalIgnoreCase)) fontNames.Insert(0, currentFont);
+            var fontCombo = new FlatComboBox { Width = 240 };
+            fontCombo.SetItems(fontNames, currentFont);
+            fontCombo.SelectedIndexChanged += (_, _) => { if (fontCombo.SelectedItem is { } f) WallpaperHostEngine.Instance.SetInfoFont(f); };
+            var moreFonts = NewHoverButton(LocalizationManager.T("Wallpaper.InfoFontMore"), () =>
+            {
+                using var dlg = new FontDialog { FontMustExist = true, ShowEffects = false, AllowScriptChange = false, Font = new Font(fontCombo.SelectedItem ?? "Segoe UI", 12f) };
+                if (dlg.ShowDialog() != DialogResult.OK) return;
+                var family = dlg.Font.FontFamily.Name;
+                if (!fontNames.Contains(family, StringComparer.OrdinalIgnoreCase)) fontNames.Insert(0, family);
+                fontCombo.SetItems(fontNames, family);
+                WallpaperHostEngine.Instance.SetInfoFont(family);
+            });
+            moreFonts.Margin = new Padding(10, 0, 0, 0);
+            fontRow.Controls.Add(fontCombo);
+            fontRow.Controls.Add(moreFonts);
+            panel.Controls.Add(fontRow);
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoX"), settings.WeatherInfoX, 0, 100, v => $"{v}%", CommitInfo, t => infoX = t));
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoY"), settings.WeatherInfoY, 0, 100, v => $"{v}%", CommitInfo, t => infoY = t));
+            panel.Controls.Add(BuildOptionSlider(LocalizationManager.T("Wallpaper.InfoScale"), settings.WeatherInfoScale, 40, 250, v => $"{v}%", CommitInfo, t => infoScale = t));
+            panel.Controls.Add(NewHoverButton(LocalizationManager.T("Wallpaper.InfoReset"), () =>
+            {
+                // back to the default position: centred horizontally, upper third of the screen (the size slider is left alone)
+                if (infoX != null) infoX.Value = 50;
+                if (infoY != null) infoY.Value = 34;
+            }));
+        }
+
+        private async System.Threading.Tasks.Task RefreshLiveWeatherLabelAsync(Label target, double lat, double lon)
+        {
+            string text;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(await WeatherService.GetWallpaperWeatherJsonAsync(lat, lon));
+                var root = doc.RootElement;
+                if (root.TryGetProperty("ok", out var ok) && ok.GetBoolean())
+                {
+                    int code = root.GetProperty("code").GetInt32();
+                    string cond = LocalizationManager.T("Wallpaper.Sim." + CodeToSimId(code));
+                    // Ζητήθηκε ρητά "η θερμοκρασία να είναι με 1 δεκαδικό" — "0.#" έδειχνε "18°C" όταν
+                    // η τιμή έτυχε να είναι ακέραια (παραλείπει το .0), ασυνεπές με την επικάλυψη του
+                    // wallpaper (που δείχνει πάντα 1 δεκαδικό). "0.0" δείχνει πάντα ακριβώς 1 δεκαδικό.
+                    text = string.Format(LocalizationManager.T("Wallpaper.WeatherLive"), root.GetProperty("temp").GetDouble().ToString("0.0"), root.GetProperty("wind").GetDouble().ToString("0"), cond, WeatherService.ToBeaufort(root.GetProperty("wind").GetDouble()));
+                }
+                else text = LocalizationManager.T("Wallpaper.WeatherLiveUnavailable");
+            }
+            catch (Exception) { text = LocalizationManager.T("Wallpaper.WeatherLiveUnavailable"); }
+            if (!target.IsDisposed) target.Text = text;
+        }
+
+        private static string CodeToSimId(int code) => code switch
+        {
+            0 => "Clear", 1 or 2 => "PartlyCloudy", 3 => "Cloudy", 45 or 48 => "Fog", 51 or 53 or 55 or 56 or 57 => "Drizzle",
+            61 or 66 or 67 or 80 => "Rain", 63 or 81 => "Rain", 65 or 82 => "HeavyRain", 71 or 73 or 75 or 77 or 85 or 86 => "Snow", 95 or 96 or 99 => "Thunderstorm", _ => "Clear"
+        };
+
+        private static async System.Threading.Tasks.Task LoadVideoRowMetaAsync(string path, PictureBox thumb, Label duration)
+        {
+            try
+            {
+                var bmp = await VideoMetaService.GetThumbnailAsync(path);
+                if (bmp != null && !thumb.IsDisposed) thumb.Image = bmp;      // the bitmap is shared/cached: never dispose it here
+                var len = await VideoMetaService.GetDurationAsync(path);
+                if (len != null && !duration.IsDisposed) duration.Text = len;
+            }
+            catch (Exception) { /* thumbnails/durations are decoration only */ }
+        }
+
+        // Slider with a live value readout that commits 500 ms after the last movement
+        private static Panel BuildOptionSlider(string label, int value, int min, int max, Func<int, string> format, Action commit, Action<FlatSlider> register)
+        {
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+            row.Controls.Add(new Label { Text = label, AutoSize = false, Width = 230, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody });
+            var track = new FlatSlider { Minimum = min, Maximum = max, Value = Math.Clamp(value, min, max), Width = 220 };
+            var readout = new Label { Text = format(track.Value), AutoSize = false, Width = 130, Height = 30, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.AccentCyan, Font = UiTheme.FontBody };
+            var timer = new System.Windows.Forms.Timer { Interval = 500 };
+            timer.Tick += (_, _) => { timer.Stop(); commit(); };
+            track.ValueChanged += (_, _) => { readout.Text = format(track.Value); timer.Stop(); timer.Start(); };
+            track.Disposed += (_, _) => timer.Dispose();
+            register(track);
+            row.Controls.Add(track);
+            row.Controls.Add(readout);
+            return row;
+        }
+
+        // Time-of-day schedule: up to 3 windows, each switching the wallpaper MODE
+        private static readonly string[] ScheduleModes = { "Waves", "Particles", "Weather", "Video", "Desktop" };
+
+        private void BuildWallpaperScheduleSection(Panel panel, WallpaperSettings settings)
+        {
+            AddSection(panel, LocalizationManager.T("Wallpaper.SectionSchedule"));
+            AddText(panel, LocalizationManager.T("Wallpaper.ScheduleNote"));
+
+            var rules = settings.Schedule.Count > 0
+                ? settings.Schedule.Select(r => new WallpaperScheduleRule { Enabled = r.Enabled, StartMinutes = r.StartMinutes, EndMinutes = r.EndMinutes, Mode = r.Mode }).ToList()
+                : new List<WallpaperScheduleRule>
+                {
+                    new() { Enabled = false, StartMinutes = 7 * 60, EndMinutes = 19 * 60, Mode = "Waves" },
+                    new() { Enabled = false, StartMinutes = 19 * 60, EndMinutes = 23 * 60, Mode = "Weather" },
+                    new() { Enabled = false, StartMinutes = 23 * 60, EndMinutes = 7 * 60, Mode = "Particles" },
+                };
+            while (rules.Count < 3) rules.Add(new WallpaperScheduleRule { Enabled = false, StartMinutes = 0, EndMinutes = 0, Mode = "Waves" });
+
+            var master = new FlatCheckBox { Text = LocalizationManager.T("Wallpaper.ScheduleEnable"), AutoSize = true, Checked = settings.ScheduleEnabled, BackColor = UiTheme.Background, Margin = new Padding(0, 2, 0, 8) };
+            panel.Controls.Add(master);
+
+            var times = Enumerable.Range(0, 48).Select(i => $"{i / 2:00}:{i % 2 * 30:00}").ToArray();
+            string Fmt(int m) => $"{m / 60 % 24:00}:{m % 60 / 30 * 30:00}";
+            void Commit() => WallpaperHostEngine.Instance.SetSchedule(master.Checked, rules.Select(r => new WallpaperScheduleRule { Enabled = r.Enabled, StartMinutes = r.StartMinutes, EndMinutes = r.EndMinutes, Mode = r.Mode }).ToList());
+
+            foreach (var rule in rules)
+            {
+                var rowPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 4) };
+                var on = new FlatCheckBox { Checked = rule.Enabled, AutoSize = false, Width = 26, Height = 28, BackColor = UiTheme.Background, Margin = new Padding(0, 2, 6, 0) };
+                var start = new FlatComboBox { Width = 90 }; start.SetItems(times, Fmt(rule.StartMinutes));
+                var end = new FlatComboBox { Width = 90, Margin = new Padding(8, 3, 3, 3) }; end.SetItems(times, Fmt(rule.EndMinutes));
+                var modeLabels = ScheduleModes.Select(m => m).ToArray();
+                var mode = new FlatComboBox { Width = 160, Margin = new Padding(16, 3, 3, 3) }; mode.SetItems(modeLabels, ScheduleModes.Contains(rule.Mode) ? rule.Mode : "Waves");
+                var arrow = new Label { Text = "→", AutoSize = false, Width = 24, Height = 28, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextSecondary, Margin = new Padding(6, 3, 0, 0) };
+                int ParseMinutes(string? t) => t != null && t.Length == 5 && int.TryParse(t[..2], out var h) && int.TryParse(t[3..], out var mi) ? h * 60 + mi : 0;
+                on.CheckedChanged += (_, _) => { rule.Enabled = on.Checked; Commit(); };
+                start.SelectedIndexChanged += (_, _) => { rule.StartMinutes = ParseMinutes(start.SelectedItem); Commit(); };
+                end.SelectedIndexChanged += (_, _) => { rule.EndMinutes = ParseMinutes(end.SelectedItem); Commit(); };
+                mode.SelectedIndexChanged += (_, _) => { rule.Mode = mode.SelectedItem ?? "Waves"; Commit(); };
+                rowPanel.Controls.Add(on); rowPanel.Controls.Add(start); rowPanel.Controls.Add(arrow); rowPanel.Controls.Add(end); rowPanel.Controls.Add(mode);
+                panel.Controls.Add(rowPanel);
+            }
+            master.CheckedChanged += (_, _) => Commit();
+        }
+
         private static string DescribeWallpaperState(WallpaperSettings s) =>
-            $"{(WallpaperHostEngine.Instance.IsEnabled ? "Ενεργό" : "Ανενεργό")}  •  Mode: {s.Mode}  •  Performance: {s.PerformanceMode}";
+            string.Format(LocalizationManager.T("Wallpaper.StateFormat"), WallpaperHostEngine.Instance.IsEnabled ? LocalizationManager.T("Wallpaper.EnabledShort") : LocalizationManager.T("Wallpaper.DisabledShort"), s.Mode, s.PerformanceMode);
 
         private static string DescribePlaylist(WallpaperSettings s)
         {
             var playable = s.VideoPaths.Where(File.Exists).ToList();
-            if (playable.Count == 0) return "Κενή — εμφανίζεται το MotionDesk Waves φόντο.";
-            return $"{playable.Count} βίντεο{(s.Shuffle ? " (shuffle)" : "")} — τρέχον: {Path.GetFileName(s.CurrentPlaylistFile() ?? "")}";
+            if (playable.Count == 0) return LocalizationManager.T("Wallpaper.PlaylistEmpty");
+            return string.Format(LocalizationManager.T("Wallpaper.PlaylistFormat"), playable.Count, s.Shuffle ? LocalizationManager.T("Wallpaper.ShuffleSuffix") : "", Path.GetFileName(s.CurrentPlaylistFile() ?? ""));
         }
 
         private static Panel BuildWaveSlider(string label, int value, int min, int max, Action<int> onChange)
         {
             var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 6) };
             row.Controls.Add(new Label { Text = label, AutoSize = true, ForeColor = UiTheme.TextSecondary, Width = 110, Padding = new Padding(0, 6, 8, 0) });
-            var track = new TrackBar { Minimum = min, Maximum = max, Value = Math.Clamp(value, min, max), Width = 220, TickStyle = TickStyle.None };
+            var track = new FlatSlider { Minimum = min, Maximum = max, Value = Math.Clamp(value, min, max), Width = 220 };
             track.ValueChanged += (_, _) => onChange(track.Value);
             row.Controls.Add(track);
             return row;
@@ -1186,8 +1793,8 @@ namespace MotionDesk.UI
             // γίνεται στο AddWallpaperVideosAsync.
             using var dialog = new OpenFileDialog
             {
-                Filter = "Video ή playlist (*.mp4;*.m4v;*.webm;*.mov;*.ogv;*.ogg;*.avi;*.mkv;*.wmv;*.mpeg;*.mpg;*.m2ts;*.ts;*.zip;*.7z)|*.mp4;*.m4v;*.webm;*.mov;*.ogv;*.ogg;*.avi;*.mkv;*.wmv;*.mpeg;*.mpg;*.m2ts;*.ts;*.zip;*.7z|All files (*.*)|*.*",
-                Title = "Προσθήκη βίντεο ή playlist (zip/7z) στο Wallpaper Library",
+                Filter = LocalizationManager.T("Filter.VideoPlaylist") + "|" + LocalizationManager.T("Filter.AllFiles"),
+                Title = LocalizationManager.T("Wallpaper.AddVideoTitle"),
                 Multiselect = true
             };
 
@@ -1217,14 +1824,14 @@ namespace MotionDesk.UI
                     anySevenZipMissing = true;
                     continue;
                 }
-                plainFiles.AddRange(ArchivePlaylistService.ExtractVideos(archive));
+                plainFiles.AddRange(await Task.Run(() => ArchivePlaylistService.ExtractVideos(archive))); // εκτός UI thread — η εξαγωγή μεγάλου αρχείου πάγωνε το παράθυρο
             }
 
             if (anySevenZipMissing)
             {
-                var choice = MessageBox.Show(
-                    "Ένα ή περισσότερα αρχεία .7z δεν μπόρεσαν να εξαχθούν — απαιτείται το δωρεάν εργαλείο 7-Zip, το οποίο δεν εντοπίστηκε στο σύστημα.\n\nΆνοιγμα της σελίδας λήψης τώρα; Μετά την εγκατάσταση, προσθέστε ξανά το αρχείο.",
-                    "Απαιτείται 7-Zip", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+var choice = MessageBox.Show(
+                    LocalizationManager.T("Dialog.SevenZipMissing"),
+                    LocalizationManager.T("Dialog.SevenZipTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
                 if (choice == DialogResult.Yes) ArchivePlaylistService.OpenSevenZipDownloadPage();
             }
 
@@ -1237,10 +1844,7 @@ namespace MotionDesk.UI
             {
                 if (!WmvConversionService.IsFfmpegAvailable)
                 {
-                    var choice = MessageBox.Show(
-                        $"Βρέθηκαν {wmvFiles.Length} αρχείο(α) .wmv. Ο ενσωματωμένος player δεν έχει decoder για αυτόν τον παλιό codec (WMV3/VC-1) — χρειάζεται αυτόματη μετατροπή σε .mp4 μέσω του δωρεάν εργαλείου FFmpeg, το οποίο δεν εντοπίστηκε στο σύστημα.\n\nΆνοιγμα της σελίδας λήψης του FFmpeg τώρα; Μετά την εγκατάσταση, προσθέστε ξανά το αρχείο.",
-                        "Απαιτείται FFmpeg για μετατροπή .wmv", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                    if (choice == DialogResult.Yes) WmvConversionService.OpenFfmpegDownloadPage();
+WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 }
                 else
                 {
@@ -1250,7 +1854,7 @@ namespace MotionDesk.UI
                         if (mp4 != null) finalPaths.Add(mp4);
                     }
                     if (finalPaths.Count == 0)
-                        MessageBox.Show("Η μετατροπή .wmv απέτυχε (δείτε αν το αρχείο είναι κατεστραμμένο).", "Σφάλμα μετατροπής", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show(LocalizationManager.T("Dialog.ConvertFailed"), LocalizationManager.T("Dialog.ConvertFailedTitle"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
 
@@ -1272,7 +1876,7 @@ namespace MotionDesk.UI
 
         private static void ChooseWallpaperFolder()
         {
-            using var dialog = new FolderBrowserDialog { Description = "Επιλογή φακέλου video library" };
+            using var dialog = new FolderBrowserDialog { Description = LocalizationManager.T("Wallpaper.ChooseFolder") };
             if (dialog.ShowDialog() == DialogResult.OK)
                 WallpaperHostEngine.Instance.AddVideoFolder(dialog.SelectedPath);
         }
@@ -1316,7 +1920,7 @@ namespace MotionDesk.UI
                 chooseBtn.FlatAppearance.BorderSize = 0;
                 chooseBtn.Click += (_, _) =>
                 {
-                    using var dlg = new OpenFileDialog { Filter = "Icon files (*.ico)|*.ico", Title = LocalizationManager.T("Personalization.ChooseIcon") };
+                    using var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Icons"), Title = LocalizationManager.T("Personalization.ChooseIcon") };
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
                         set(dlg.FileName);
@@ -1369,13 +1973,13 @@ namespace MotionDesk.UI
                     MessageBox.Show(this, LocalizationManager.T("Personalization.IconPackNotFound"), LocalizationManager.T("Personalization.IconPackTitle"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 ShowPersonalization();
-            }));
-
-            AddButtonGrid(panel, (LocalizationManager.T("Personalization.FolderIcon"), (_, _) =>
+            }),
+            // 1.7.8 - "Εισαγωγή icon pack" και "Ορισμός εικονιδίου φακέλου" στην ΙΔΙΑ γραμμή (ένα AddButtonGrid).
+            (LocalizationManager.T("Personalization.FolderIcon"), (_, _) =>
             {
                 using var folderDlg = new FolderBrowserDialog { Description = LocalizationManager.T("Personalization.FolderIcon") };
                 if (folderDlg.ShowDialog() != DialogResult.OK) return;
-                using var iconDlg = new OpenFileDialog { Filter = "Icon files (*.ico)|*.ico", Title = LocalizationManager.T("Personalization.ChooseIcon") };
+                using var iconDlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Icons"), Title = LocalizationManager.T("Personalization.ChooseIcon") };
                 if (iconDlg.ShowDialog(this) == DialogResult.OK)
                 {
                     IconAtlasEngine.SetFolderIcon(folderDlg.SelectedPath, iconDlg.FileName);
@@ -1399,7 +2003,7 @@ namespace MotionDesk.UI
                 string capturedRole = registryName;
                 browseBtn.Click += (_, _) =>
                 {
-                    using var dlg = new OpenFileDialog { Filter = "Cursor files (*.cur;*.ani)|*.cur;*.ani", Title = LocalizationManager.T("Personalization.Browse") };
+                    using var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Cursors"), Title = LocalizationManager.T("Personalization.Browse") };
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
                         DeskCursorsEngine.SetCursor(capturedRole, dlg.FileName);
@@ -1418,14 +2022,23 @@ namespace MotionDesk.UI
             AddSection(panel, LocalizationManager.T("Personalization.SectionDeskStrip"));
             AddText(panel, LocalizationManager.T("Personalization.DeskStripIntro"));
 
-            var deskStripToggle = new CheckBox { Text = LocalizationManager.T("Personalization.EnableDeskStrip"), AutoSize = true, Checked = DeskStripHostEngine.Instance.IsEnabled, ForeColor = UiTheme.TextPrimary, Font = UiTheme.FontBody, Margin = new Padding(0, 4, 0, 10) };
+            var deskStripToggle = new FlatCheckBox { Text = LocalizationManager.T("Personalization.EnableDeskStrip"), AutoSize = true, Checked = DeskStripHostEngine.Instance.IsEnabled, BackColor = UiTheme.Background, Margin = new Padding(0, 4, 0, 10) };
             panel.Controls.Add(deskStripToggle);
 
             var pinnedList = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
             panel.Controls.Add(pinnedList);
 
+            // Ίδια διόρθωση flicker με RefreshActiveList/RefreshActiveContainers: skip το rebuild
+            // όταν η λίστα δεν άλλαξε — πέρα από το flicker, γλιτώνει και το άσκοπο save/restore
+            // scroll σε κάθε tick.
+            string? lastPinnedSignature = null;
             void RefreshPinnedApps()
             {
+                var pinned = DeskStripHostEngine.Instance.GetPinnedApps();
+                string signature = string.Join("|", pinned);
+                if (signature == lastPinnedSignature) return;
+                lastPinnedSignature = signature;
+
                 // Bug fix: αυτή η συνάρτηση καλείται κάθε 2 δευτερόλεπτα από timer (βλ.
                 // deskStripRefreshTimer παρακάτω) ενώ ο χρήστης μπορεί να έχει ήδη κυλήσει
                 // ΠΟΛΥ πιο κάτω στη σελίδα (π.χ. στο "Φόντο οθόνης κλειδώματος"). Το
@@ -1436,8 +2049,7 @@ namespace MotionDesk.UI
                 // περιμένει θετικές — WinForms ιδιαιτερότητα).
                 var savedScroll = panel.AutoScrollPosition;
                 pinnedList.SuspendLayout();
-                pinnedList.Controls.Clear();
-                var pinned = DeskStripHostEngine.Instance.GetPinnedApps();
+                DisposeChildren(pinnedList);
                 if (pinned.Count == 0)
                 {
                     pinnedList.Controls.Add(new Label { AutoSize = true, Text = LocalizationManager.T("Common.NoPinnedApps"), ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody });
@@ -1466,7 +2078,7 @@ namespace MotionDesk.UI
 
             AddButtonGrid(panel, (LocalizationManager.T("Personalization.PinApp"), (_, _) =>
             {
-                using var dlg = new OpenFileDialog { Filter = "Applications (*.exe;*.lnk)|*.exe;*.lnk", Title = LocalizationManager.T("Personalization.PinApp") };
+                using var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Apps"), Title = LocalizationManager.T("Personalization.PinApp") };
                 if (dlg.ShowDialog(this) == DialogResult.OK)
                 {
                     DeskStripHostEngine.Instance.PinApp(dlg.FileName);
@@ -1501,7 +2113,7 @@ namespace MotionDesk.UI
                 browseBtn.FlatAppearance.BorderSize = 0;
                 browseBtn.Click += (_, _) =>
                 {
-                    using var dlg = new OpenFileDialog { Filter = "WAV files (*.wav)|*.wav", Title = LocalizationManager.T("Personalization.Browse") };
+                    using var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Wav"), Title = LocalizationManager.T("Personalization.Browse") };
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
                         DeskSoundsEngine.SetSound(capturedEvent, dlg.FileName);
@@ -1532,8 +2144,12 @@ namespace MotionDesk.UI
 
             void RefreshThemeList()
             {
+                // Ίδια διόρθωση scroll-reset με το RefreshActiveList (Widgets page) — καλείται ξανά
+                // μετά το "Αποθήκευση τρέχοντος θέματος", ενδεχομένως ενώ ο χρήστης είναι κυλισμένος
+                // κάτω σε αυτό το (μεγάλο) Personalization page.
+                var savedScroll = panel.AutoScrollPosition;
                 themeList.SuspendLayout();
-                themeList.Controls.Clear();
+                DisposeChildren(themeList);
                 var themes = ThemePackageEngine.ListAvailableThemes();
                 if (themes.Count == 0)
                 {
@@ -1553,17 +2169,19 @@ namespace MotionDesk.UI
                     themeList.Controls.Add(row);
                 }
                 themeList.ResumeLayout();
+                panel.AutoScrollPosition = new Point(-savedScroll.X, -savedScroll.Y);
             }
             RefreshThemeList();
 
             AddButtonGrid(panel, (LocalizationManager.T("Personalization.SaveCurrentTheme"), (_, _) =>
             {
                 using var dialog = new Form { Text = LocalizationManager.T("Personalization.ThemeNamePrompt"), StartPosition = FormStartPosition.CenterParent, Size = new Size(420, 150), FormBorderStyle = FormBorderStyle.FixedDialog, MinimizeBox = false, MaximizeBox = false };
-                var box = new TextBox { Text = "MotionDesk Custom", Dock = DockStyle.Top, Margin = new Padding(12) };
+                var box = new TextBox { Text = "Opsis Custom", Dock = DockStyle.Top, Margin = new Padding(12) };
                 var ok = new Button { Text = LocalizationManager.T("Common.OK"), DialogResult = DialogResult.OK, Dock = DockStyle.Bottom, Height = 34 };
                 dialog.Controls.Add(box);
                 dialog.Controls.Add(ok);
                 dialog.AcceptButton = ok;
+                dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
                 if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(box.Text))
                 {
                     ThemePackageEngine.SaveCurrentAsTheme(box.Text.Trim());
@@ -1577,7 +2195,7 @@ namespace MotionDesk.UI
             (LocalizationManager.T("Personalization.CreateTechGridTheme"), (_, _) =>
             {
                 string png = ThemePackageEngine.GenerateTechWallpaperPng();
-                ThemePackageEngine.SaveCurrentAsTheme("MotionDesk Tech Grid", png);
+                ThemePackageEngine.SaveCurrentAsTheme("Opsis Tech Grid", png);
                 RefreshThemeList();
                 _statusLabel.Text = LocalizationManager.T("Personalization.TechGridThemeCreatedStatus");
             }));
@@ -1587,12 +2205,57 @@ namespace MotionDesk.UI
             AddText(panel, LocalizationManager.T("Personalization.LockScreenIntro"));
             AddText(panel, string.Format(LocalizationManager.T("Personalization.LockScreenEditionNote"), LockScreenEngine.GetWindowsEdition()));
 
-            AddButtonGrid(panel, (LocalizationManager.T("Personalization.SetLockScreenImage"), (_, _) =>
+            AddButtonGrid(panel,
+            (LocalizationManager.T("Personalization.SetLockScreenImage"), async (_, _) =>
             {
-                using var dlg = new OpenFileDialog { Filter = "Images (*.jpg;*.jpeg;*.png;*.bmp)|*.jpg;*.jpeg;*.png;*.bmp", Title = LocalizationManager.T("Personalization.SetLockScreenImage") };
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-                bool ok = LockScreenEngine.TrySetLockScreenImageElevated(dlg.FileName, out var error);
+                string fileName;
+                using (var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Images"), Title = LocalizationManager.T("Personalization.SetLockScreenImage") })
+                {
+                    if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                    fileName = dlg.FileName;
+                }
+                // Εκτός UI thread: το helper περιμένει έως 15s (UAC prompt) — στο UI thread πάγωνε όλο το
+                // παράθυρο ΚΑΙ (λόγω του global mouse hook του quick-hide) το ποντίκι όλου του συστήματος.
+                string error = string.Empty;
+                bool ok = await Task.Run(() => LockScreenEngine.TrySetLockScreenImageElevated(fileName, out error));
+                if (IsDisposed) return;
+                var settings = AppSettings.Load();
+                settings.LockScreenFollowsWallpaper = false; // χειροκίνητη εικόνα -> σταματά να ακολουθεί το wallpaper
+                settings.Save();
                 if (ok) _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenSuccess");
+                else if (error == "cancelled") _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenCancelled");
+                else _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenFailed");
+            }),
+            // MD roadmap item: αντί για τυχαία επιλεγμένη εικόνα, ακριβές στιγμιότυπο του τρέχοντος
+            // ζωντανού wallpaper (waves/βίντεο + overlay) ως οθόνη κλειδώματος — με "self-heal" μέσω
+            // ενός Scheduled Task (βλ. LockScreenEngine.EnsureSelfHealTask) που το ξαναφαρμόζει αυτόματα
+            // σε κάθε logon αν τα Windows/ένα update επαναφέρουν το registry key.
+            (LocalizationManager.T("Personalization.MatchLockScreenToWallpaper"), async (_, _) =>
+            {
+                if (!WallpaperHostEngine.Instance.IsRunning)
+                {
+                    _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenNeedsWallpaper");
+                    return;
+                }
+                string snapshotPath = Path.Combine(AppPaths.AppDataFolder, "lockscreen_wallpaper.png");
+                bool captured = await WallpaperHostEngine.Instance.CaptureSnapshotAsync(snapshotPath);
+                if (IsDisposed) return;
+                if (!captured)
+                {
+                    _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenCaptureFailed");
+                    return;
+                }
+                string error = string.Empty;
+                bool ok = await Task.Run(() => LockScreenEngine.TrySetLockScreenImageElevated(snapshotPath, out error));
+                if (IsDisposed) return;
+                if (ok)
+                {
+                    var settings = AppSettings.Load();
+                    settings.LockScreenFollowsWallpaper = true;
+                    settings.LockScreenSnapshotPath = snapshotPath;
+                    settings.Save();
+                    _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenSuccess");
+                }
                 else if (error == "cancelled") _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenCancelled");
                 else _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenFailed");
             }));
@@ -1623,6 +2286,7 @@ namespace MotionDesk.UI
                 MinimizeBox = false
             };
             dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch (DllNotFoundException) { } };
+            dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
 
             var box = new TextBox
             {
@@ -1677,8 +2341,12 @@ namespace MotionDesk.UI
                 ("GamingProfile", string.Format(profileFmt, "Gaming")),
                 ("FocusProfile", string.Format(profileFmt, "Focus")),
             };
-            var idByLabel = commandDefs.ToDictionary(c => c.Label, c => c.Id, StringComparer.OrdinalIgnoreCase);
-            var allLabels = commandDefs.Select(c => c.Label).ToArray();
+            // Οι σελίδες των plugin (π.χ. News Crawler) εμφανίζονται κι εδώ.
+            var commandList = commandDefs.ToList();
+            foreach (var pluginPage in Services.PluginHost.Instance.GetNavigationItems())
+                commandList.Add(("plugin:" + pluginPage.Key, Services.PluginHost.TitleOf(pluginPage)));
+            var idByLabel = commandList.GroupBy(c => c.Label, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+            var allLabels = commandList.Select(c => c.Label).ToArray();
             list.Items.AddRange(allLabels);
             if (list.Items.Count > 0) list.SelectedIndex = 0;
 
@@ -1692,6 +2360,7 @@ namespace MotionDesk.UI
                     case "Personalization": NavigateTo("Personalization"); break; case "Settings": NavigateTo("Settings"); break;
                     case "About": NavigateTo("About"); break;
                     case "AudioEnhancement": NavigateTo("AudioEnhancement"); break;
+                    case string pluginId when pluginId.StartsWith("plugin:", StringComparison.Ordinal): NavigateTo(pluginId); break;
                     case "EnableWallpaper": WallpaperHostEngine.Instance.Enable(); break;
                     case "DisableWallpaper": WallpaperHostEngine.Instance.Disable(); break; case "WorkProfile": LoadProfileFromQuickButton("Work"); break;
                     case "GamingProfile": LoadProfileFromQuickButton("Gaming"); break; case "FocusProfile": LoadProfileFromQuickButton("Focus"); break;
@@ -1727,7 +2396,7 @@ namespace MotionDesk.UI
             AddIconButtonGrid(panel,
                 ("Save", LocalizationManager.T("Profiles.SaveCurrentAsProfile"), (_, _) => { if (!string.IsNullOrWhiteSpace(name.Text)) { WorkspaceProfileService.Save(name.Text.Trim()); Refresh(); } }),
                 ("Restore", LocalizationManager.T("Profiles.LoadSelected"), (_, _) => { if (list.SelectedItem is string p && WorkspaceProfileService.Load(p)) { NavigateTo("Dashboard"); } }),
-                ("Add", LocalizationManager.T("Profiles.CreateUpdateDefaults"), (_, _) => { foreach (var p in new[] { "Work", "Gaming", "Focus" }) WorkspaceProfileService.Save(p); Refresh(); }),
+                ("Add", LocalizationManager.T("Profiles.CreateUpdateDefaults"), (_, _) => { foreach (var p in new[] { "Work", "Gaming", "Focus" }) { if (!WorkspaceProfileService.ListProfiles().Contains(p, StringComparer.OrdinalIgnoreCase)) WorkspaceProfileService.Save(p); } Refresh(); }),
                 ("Delete", LocalizationManager.T("Profiles.DeleteSelected"), (_, _) => { if (list.SelectedItem is string p && !p.Equals("Last Session", StringComparison.OrdinalIgnoreCase)) { WorkspaceProfileService.Delete(p); Refresh(); } }));
             SetPage("Page.Profiles.Title", panel);
         }
@@ -1757,12 +2426,49 @@ namespace MotionDesk.UI
             panel.Controls.Add(procs);
             var powerCard = AddCard(panel, LocalizationManager.T("Performance.PowerLabel"), "");
 
+            // 1.7.8: οι κάρτες ιστορικού "CPU & RAM"/"GPU" στο τέλος της σελίδας αφαιρέθηκαν (ζητήθηκε ρητά) - το ποσοστό RAM
+            // φαίνεται πλέον μέσα στη γραμμή "Μνήμη" επάνω, τα CPU/GPU στις δικές τους γραμμές.
+
+            // top 5 memory users (refreshed every ~6 s on a background thread)
+            AddSection(panel, LocalizationManager.T("Performance.TopMemory"));
+            var topLabel = new Label { Text = "…", AutoSize = true, MaximumSize = new Size(740, 0), Font = new Font("Consolas", 10f), ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 0, 0, 10) };
+            panel.Controls.Add(topLabel);
+            int topTick = 0; bool topBusy = false;
+
+            // notification when CPU/RAM stay above 90% for a minute (works while the app lives in the tray)
+            var alertsCheck = new FlatCheckBox { Text = LocalizationManager.T("Performance.AlertsEnable"), AutoSize = true, Checked = AppSettings.Load().UsageAlertsEnabled, BackColor = UiTheme.Background, Margin = new Padding(0, 4, 0, 10) };
+            alertsCheck.CheckedChanged += (_, _) => { var a = AppSettings.Load(); a.UsageAlertsEnabled = alertsCheck.Checked; a.Save(); };
+            panel.Controls.Add(alertsCheck);
+
             var timer = new System.Windows.Forms.Timer { Interval = 2000 };
             timer.Tick += (_, _) => {
                 var m = AdvancedSystemMonitorService.Instance.GetSnapshot();
+                if (topTick++ % 3 == 0 && !topBusy)
+                {
+                    topBusy = true;
+                    _ = System.Threading.Tasks.Task.Run(() => TopProcessesService.TopByMemory(5)).ContinueWith(t =>
+                    {
+                        topBusy = false;
+                        if (t.IsCompletedSuccessfully && !topLabel.IsDisposed)
+                            topLabel.BeginInvoke(new Action(() =>
+                            {
+                                // ΔΙΟΡΘΩΣΗ "όταν ενημερώνονται τα στοιχεία το παράθυρο scrollάρει
+                                // κάτω": το topLabel είναι AutoSize μέσα σε ένα AutoScroll
+                                // FlowLayoutPanel — αλλαγή κειμένου (νέα top-5 διεργασίες,
+                                // διαφορετικό μήκος) αλλάζει το μετρημένο μέγεθός του και προκαλεί
+                                // layout pass που το WinForms AutoScroll επαναφέρει σιωπηλά στην
+                                // κορυφή. Ίδια τεχνική διάσωσης/επαναφοράς θέσης με το
+                                // RefreshPinnedApps (DeskStrip page), εδώ γύρω μόνο από την αλλαγή
+                                // που πραγματικά προκαλεί το resize.
+                                var savedScroll = panel.AutoScrollPosition;
+                                topLabel.Text = string.Join("\n", t.Result.Select((x, i) => $"{i + 1}. {x.Name,-28} {(x.Mb >= 1024 ? (x.Mb / 1024).ToString("0.0") + " GB" : x.Mb.ToString("0") + " MB"),9}"));
+                                panel.AutoScrollPosition = new Point(-savedScroll.X, -savedScroll.Y);
+                            }));
+                    });
+                }
                 cpu.SetValue(m.CpuPercent, $"{m.CpuPercent:0.0}%");
                 double ramPercent = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
-                ram.SetValue(ramPercent, string.Format(LocalizationManager.T("Performance.MemoryValueFormat"), $"{m.AvailableMemoryMb:0}", $"{m.TotalMemoryMb:0}"));
+                ram.SetValue(ramPercent, string.Format(LocalizationManager.T("Performance.MemoryValueFormat"), $"{m.AvailableMemoryMb:0}", $"{m.TotalMemoryMb:0}", RamUsedPercent(m.AvailableMemoryMb, m.TotalMemoryMb)));
                 if (gpuReady)
                 {
                     var g = GpuMonitorService.Instance.GetSnapshot();
@@ -1786,7 +2492,7 @@ namespace MotionDesk.UI
             foreach (var rule in AutomationService.Instance.Rules)
             {
                 var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 4) };
-                var check = new CheckBox { Text = $"{rule.Name}  ·  {rule.TriggerProcess}  →  {rule.Profile}", Checked = rule.Enabled, AutoSize = true, ForeColor = UiTheme.TextPrimary, Padding = new Padding(0, 4, 0, 0) };
+                var check = new FlatCheckBox { Text = $"{rule.Name}  ·  {rule.TriggerProcess}  →  {rule.Profile}", Checked = rule.Enabled, AutoSize = true, BackColor = UiTheme.Background, Padding = new Padding(0, 4, 0, 0) };
                 check.CheckedChanged += (_, _) => { rule.Enabled = check.Checked; AutomationService.Instance.Save(); };
                 row.Controls.Add(check);
 
@@ -1856,6 +2562,7 @@ namespace MotionDesk.UI
             dialog.Controls.Add(profileLabel); dialog.Controls.Add(profileBox);
             dialog.Controls.Add(okBtn); dialog.Controls.Add(cancelBtn);
             dialog.AcceptButton = okBtn; dialog.CancelButton = cancelBtn;
+            dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
 
             if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(nameBox.Text)) return false;
             rule.Name = nameBox.Text.Trim();
@@ -1873,29 +2580,14 @@ namespace MotionDesk.UI
         }
 
         // Ιστορικό εκδόσεων — απλή, in-code λίστα· ανοίγει σε ξεχωριστό (δευτερεύον) παράθυρο.
-        private static readonly (string Version, string Date, string Notes)[] VersionHistory =
+        // Οι σημειώσεις κάθε έκδοσης ζουν στα locale αρχεία (κλειδί "VersionNotes.<έκδοση>") ώστε να
+        // ακολουθούν την επιλεγμένη γλώσσα — πριν ήταν hardcoded και μισές ελληνικά / μισές αγγλικά.
+        // ΥΠΕΝΘΥΜΙΣΗ για κάθε μελλοντικό version bump: αυτός ο πίνακας ΔΕΝ ενημερώνεται αυτόματα από
+        // το VersionNotes.* κλειδί — ξεχάστηκε 3 φορές στη σειρά (1.9.1/1.9.2/1.9.3), ο χρήστης το
+        // έπιασε ζωντανά ("το ιστορικό μένει στην 1.9.0"). Πρόσθεσε ΚΑΙ εδώ τη νέα έκδοση.
+        private static readonly (string Version, string Date)[] VersionHistory =
         {
-            ("1.6.2", "2026-10", "FancyWM-style πλοήγηση ζωνών με πληκτρολόγιο (Ctrl+Alt+Shift+βελάκι — το απλό Ctrl+Alt+βελάκι βρέθηκε ήδη δεσμευμένο από οδηγούς γραφικών σε πολλά μηχανήματα), μετακινεί το ενεργό παράθυρο στη γειτονική DeskZone χωρίς ποντίκι. Πραγματικές σημαίες γλώσσας (όχι πια unicode emoji που αποδίδονταν ως \"GR\"/\"GB\"). Διορθώθηκε πραγματικό bug όπου η αναπαραγωγή wallpaper playlist μπορούσε να κολλήσει μετά την πρώτη μετάβαση αντί να προχωράει βίντεο-βίντεο (race condition στο crossfade μεταξύ δύο video layers). Επιβεβαιώθηκε ζωντανά ότι η αυτόματη μετατροπή .wmv→.mp4 και η εισαγωγή πολλαπλών βίντεο ταυτόχρονα δουλεύουν σωστά. Η \"Σχετικά\" μετακινήθηκε κάτω από τη \"Διαχείριση Ήχου\" στο μενού. Ολοκληρώθηκε η μετάφραση της Παλέτας Εντολών (πριν έδειχνε πάντα αγγλικά ανεξάρτητα από τη γλώσσα)."),
-            ("1.6.1", "2026-10", "Απόδοση + ολοκλήρωση μετάφρασης. Η σελίδα \"Απόδοση\" απέκτησε μετρητή GPU (φόρτος/θερμοκρασία, το ίδιο live hardware sensor με το widget System Monitor) δίπλα στο CPU/Μνήμη. Επιβεβαιώθηκε ότι το hitch στο άνοιγμα του System Monitor widget ήταν ήδη διορθωμένο (ζέσταμα GPU sensors σε background thread). Ολοκληρώθηκε η μετάφραση (ελληνικά/αγγλικά) στις σελίδες Widgets, Προφίλ, Αυτοματισμοί, Εξατομίκευση, Ρυθμίσεις, και Απόδοση — ζωντανά επιβεβαιωμένο με πλήρη εναλλαγή γλώσσας και στις δύο κατευθύνσεις."),
-            ("1.6.0", "2026-09", "Σταθερότητα + DeskZones snap engine. Διορθώθηκε crash-loop στο Audio Enhancement (leaked Timer μετά από αλλαγή σελίδας — το SetPage τώρα κάνει σωστά Dispose στην παλιά σελίδα). Νέο: πραγματικός ισοσταθμιστής (bass/mid/treble/ένταση) πάνω στον ήχο του ίδιου του βίντεο wallpaper, μέσω Web Audio API — χωρίς εξωτερικό εργαλείο, δεν επηρεάζει τον ήχο άλλων εφαρμογών. Widget Δίσκοι: διορθώθηκε ο κύκλος να μην επικαλύπτεται πλέον από τα κουμπιά ◀/▶, και το κείμενο μέσα στον κύκλο πλέον σμικραίνει αυτόματα ώστε να χωράει πάντα (ακόμα και σε δίσκους με μεγάλα μεγέθη). Μερική διόρθωση μικτών Ελληνικών/Αγγλικών κειμένων (μενού tray, Πίνακας Ελέγχου, μερικά παράθυρα διαλόγου) ώστε να ακολουθούν πραγματικά την επιλεγμένη γλώσσα. DeskZones: ξαναχτίστηκε ολόκληρη η μηχανή \"κουμπώματος\" παραθύρων — αντί για το παλιό, αναξιόπιστο heuristic πάνω σε raw mouse hook, χρησιμοποιεί πλέον το ίδιο δημόσιο, τεκμηριωμένο σήμα των Windows (SetWinEventHook/EVENT_SYSTEM_MOVESIZESTART) που λένε τα ίδια τα Windows σε κάθε εργαλείο προσβασιμότητας πότε ΠΡΑΓΜΑΤΙΚΑ ξεκίνησε μετακίνηση παραθύρου. Διορθώθηκε επίσης πραγματικό bug στη γεωμετρία των ζωνών όπου ζώνες ακουμπισμένες στην άκρη της οθόνης ποτέ δεν έφταναν την πραγματική άκρη. Το ημιδιάφανο overlay των ζωνών έγινε πραγματικά ημιδιάφανο (πραγματικό per-pixel alpha layered window αντί για αδιαφανές chroma-key). Νέο: μαγνητικό snap στα πρότυπα του AquaSnap — χωρίς Shift, σέρνοντας ένα παράθυρο κοντά σε άκρη/γωνία της οθόνης εμφανίζεται αυτόματα προεπισκόπηση μισού/τετάρτου της οθόνης· το πλήρες πλέγμα ζωνών DeskZones συνεχίζει να χρειάζεται Shift όπως πριν."),
-            ("1.5.0", "2026-09", "Μεγάλο πέρασμα κατόπιν feedback χρήστη. DeskZones: διορθώθηκε bug όπου η επιλογή αριθμού σειρών/στηλών σε ένα preset εφάρμοζε πάντα πλήρες πλέγμα αντί για καθαρές σειρές/στήλες· επίσης διόρθωση στο snap-to-zone ώστε τα παράθυρα να τεντώνουν μέχρι τις πραγματικές άκρες της οθόνης (αντιστάθμιση αόρατου περιθωρίου DWM). DeskContainers: διπλό-κλικ στον τίτλο μετονομάζει. Widgets: Clock με θέματα analog (Classic/Neon/Minimal) + γραμματοσειρά/χρώμα digital, Δίσκοι ξαναχτίστηκε ως κυκλικό ring ανά δίσκο με ◀/▶ σελιδοποίηση, νέο στυλ wallpaper \"TechGrid\" (κύκλωμα, tech-themed). Wallpaper: smooth crossfade ανάμεσα σε βίντεο (χωρίς μαύρο/λευκό flash), δυνατότητα φόρτωσης playlist από .zip/.7z, checkbox ενεργοποίησης/απενεργοποίησης ανά βίντεο στη βιβλιοθήκη. Νέα σελίδα \"Διαχείριση Ήχου\" (πρώην Audio Visualizer): πραγματική system-wide ενίσχυση ήχου μέσω ενσωμάτωσης με το Equalizer APO (ανοιχτού κώδικα, ήδη υπογεγραμμένο) όταν είναι εγκατεστημένο — presets Flat/Bass Boost/Treble Boost/Vocal Boost/Loudness, μαζί με ζωντανό visualizer. Η σελίδα \"Βοήθεια\" ενσωματώθηκε στη Σχετικά (είχαν διπλή πληροφορία). Προστέθηκε ενότητα \"Εξαρτήσεις συστήματος\" στις Ρυθμίσεις (FFmpeg/WebView2 Runtime, εγκατάσταση μέσω winget). Το κουμπί άδειας χρήσης δείχνει πλέον το κείμενο της άδειας σε παράθυρο εντός της εφαρμογής (πριν άνοιγε λάθος τον επιλογέα \"Άνοιγμα με\" των Windows, αφού το LICENSE δεν έχει επέκταση). PE metadata (Company/Copyright/Description) προστέθηκαν για λιγότερα false-positive antivirus flags."),
-            ("1.4.1", "2026-09", "ΣΟΒΑΡΗ διόρθωση στο κινούμενο wallpaper, ειδικά σε Windows 11: εντοπίστηκε ότι στη νεότερη \"raised desktop\" διάταξη (Progman με WS_EX_NOREDIRECTIONBITMAP, από Windows 11 24H2 και μετά) το κλασικό μήνυμα 0x052C (wParam=0, lParam=0) που ζητά από το Progman να φτιάξει το αδερφό WorkerW πίσω από τα εικονίδια ΔΕΝ κάνει τίποτα — χρειάζεται wParam=0xD, lParam=1. Χωρίς αυτό, σε επηρεαζόμενα Windows 11 builds το attach απλά δεν έβρισκε ποτέ ξεχωριστό WorkerW και έπεφτε πάντα στο εφεδρικό μονοπάτι (Progman απευθείας), εξηγώντας γιατί το πρόβλημα επέμενε παρά τις προηγούμενες διορθώσεις. Προστέθηκε ρητή ανίχνευση αυτής της διάταξης και αποστολή ΚΑΙ των δύο παραλλαγών του μηνύματος. Επίσης η επαλήθευση \"πέτυχε το SetParent\" άλλαξε από GetParent σε GetAncestor(GA_PARENT) — το GetParent μπορεί να γυρίσει λάθος τιμή (owner αντί για parent) όσο ένα παράθυρο κουβαλάει ταυτόχρονα WS_POPUP, ενώ το GetAncestor λέει πάντα την αλήθεια. Bug fix: το widget \"Δίσκοι\" δεν γέμιζε καθόλου το δικό του φόντο σε κάθε γραμμή δίσκου (μοναδικό custom control του project που το ξέχασε) — εμφανιζόταν ως ανοιχτό γκρι κουτί μέσα στο σκούρο θέμα· τώρα γεμίζει UiTheme.Surface όπως όλα τα υπόλοιπα. Διερευνήθηκε ρητά αν το K-Lite Mega Codec Pack θα βοηθούσε στο .wmv: όχι — το Chromium/WebView2 γράφει δικό του, αυτόνομο media pipeline (βασισμένο σε FFmpeg) και ΔΕΝ περνάει ποτέ από DirectShow/Media Foundation filters που εγκαθιστά ένα codec pack συστήματος, οπότε η εγκατάσταση K-Lite δεν θα άλλαζε τίποτα για το ενσωματωμένο player. Το FFmpeg (που ήδη χρησιμοποιεί το WmvConversionService) έχει ήδη δικό του, ενσωματωμένο VC-1/WMV3 decoder — δεν χρειάζεται κανένα codec pack, μόνο να υπάρχει το ίδιο το FFmpeg στο σύστημα."),
-            ("1.4.0", "2026-09", "Μεγάλο πέρασμα κατόπιν λεπτομερούς feedback χρήστη. Clock: η ώρα κεντράρεται πλέον πραγματικά μέσα στο widget (και στα δύο δύο variants), ξεχωριστή γραμμή ημερομηνίας κάτω από το αναλογικό ρολόι, νέες επιλογές 12/24ωρη μορφή και εμφάνιση/απόκρυψη δευτερολέπτων από το μενού ☰. System Monitor: προστέθηκαν Δίκτυο και GPU (φόρτος/τάση/θερμοκρασία, μέσω της νέας ανοιχτού-κώδικα βιβλιοθήκης LibreHardwareMonitorLib) — το κείμενο δεν κόβεται πια (Dock=Fill αντί για σταθερό ύψος). Weather: προστέθηκε ποσοστό υγρασίας και κλίμακα Μποφόρ δίπλα στην ταχύτητα ανέμου, μεγαλύτερο κινούμενο εικονίδιο καιρού. Νέο widget \"Δίσκοι\" (χρήση/χωρητικότητα κάθε μονάδας δίσκου). Audio Visualizer: δεύτερο στυλ απεικόνισης \"Winamp\" (gradient μπάρες + αντανάκλαση) δίπλα στο υπάρχον \"WMP Legacy\", επιλέξιμο από το μενού ☰. Drag & drop αρχείων/φακέλων προστέθηκε σε ΟΛΑ τα widgets (πριν υπήρχε μόνο στα DeskContainers). Τα DeskContainers μπορούν πλέον να κλειδωθούν στη θέση τους (🔒/🔓, όπως ήδη τα widgets) και θυμούνται/επανανοίγουν αυτόματα σε κάθε session μαζί με τα widgets (πριν μόνο τα widgets αποθηκεύονταν στο \"Last Session\"). Η αυτόματη εκκίνηση με τα Windows ανοίγει πλέον στο παρασκήνιο (μόνο tray icon, χωρίς αναδυόμενο κύριο παράθυρο) όταν υπάρχουν αποθηκευμένα widgets/DeskContainers. ΣΟΒΑΡΟ bug διορθώθηκε στη ζωντανή προεπισκόπηση της σκουρότητας θέματος: το slider ενημέρωνε ζωντανά μόνο τα owner-draw κομμάτια (πλευρικό μενού/λογότυπο), όχι το κυρίως περιεχόμενο, μέχρι να αφεθεί το slider — τώρα ενημερώνεται ζωντανά όλο το παράθυρο· προστέθηκε επίσης SuspendLayout/DoubleBuffered γύρω από την πλήρη ανακατασκευή σελίδας για να εξαφανιστούν τα στιγμιαία λευκά τετραγωνάκια. Νέα ενότητες \"Οδηγίες χρήσης\" και \"Άδεια χρήσης\" στη σελίδα Σχετικά (πριν υπήρχαν μόνο συντομεύσεις) — προστέθηκε αρχείο LICENSE (MIT). Ο installer (Inno Setup) απέκτησε δομή όπως το GearWin: σελίδα \"Πληροφορίες\" πριν την εγκατάσταση, υποχρεωτική σελίδα άδειας, μήνυμα ανίχνευσης ενημέρωσης. Νέο: διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας κρύβει/επαναφέρει όλα τα εικονίδια εκτός από Ο Υπολογιστής μου/φάκελος χρήστη/Πίνακας Ελέγχου/Κάδος Ανακύκλωσης (στυλ Stardock Fences) — χρειάζεται δοκιμή σε πραγματική επιφάνεια εργασίας. Το \"Flip 3D\" μετονομάστηκε σε \"DeskFlip\" (αποφυγή της επίσημης ονομασίας λειτουργίας της Microsoft) και ξαναχτίστηκε: πραγματική διαγώνια στοίβα σε βάθος (όχι πια αριστερό/δεξί fan) με πραγματικό οπτικό \"γείρισμα\" (parallelogram warp πάνω σε στιγμιότυπο) στα παράθυρα πίσω από το επιλεγμένο, το οποίο παραμένει ζωντανό DWM thumbnail — η πλήρης, ζωντανή 3D απόδοση του αυθεντικού Vista Flip 3D δεν είναι εφικτή από δημόσιο API (μόνο ο ίδιος ο DWM compositor της Microsoft την είχε), αυτή είναι η πλησιέστερη δυνατή προσέγγιση. Το .wmv πλέον μετατρέπεται ΑΥΤΟΜΑΤΑ σε .mp4 μέσω FFmpeg (WmvConversionService) πριν προστεθεί στο Wallpaper Studio, αντί για απλή προειδοποίηση — αν το FFmpeg δεν εντοπιστεί στο σύστημα, προσφέρεται άμεσο άνοιγμα της σελίδας λήψης του. Το μενού (☰) των DeskContainers ξαναχτίστηκε ώστε να ταιριάζει επακριβώς στη διάρθρωση/λειτουργίες του πραγματικού Stardock Fences (μετά από screenshots του χρήστη): Rename, View (Roll-up container, Exclude from quick-hide, Opacity 25-100%, Copy/Edit color), Sort by (Name/Size/Item type/Date modified/Date created/Date added/Number of times opened) με υπο-μενού Organize ('Place all new icons in this container by default', 'Manage sorting rules'), Configure container. Το διπλό-κλικ που κρύβει τα εικονίδια της επιφάνειας εργασίας κρύβει/ξαναδείχνει πλέον και τα DeskContainers μαζί (εκτός όσων έχουν 'Exclude from quick-hide'), όπως τα πραγματικά Fences. Εξατομίκευση: νέο κουμπί 'Εισαγωγή icon pack (depot)…' που σαρώνει έναν φάκελο για έτοιμα ζευγάρια εικονιδίων Κάδου Ανακύκλωσης με τη σύμβαση ονοματοδοσίας \"-empty\"/\"-full\" (π.χ. sdushantha/recycle-bin-themes στο GitHub) και τα εφαρμόζει αυτόματα. Wallpaper Waves/Aurora/Particles: το πλάτος/η λάμψη/η ταχύτητα αντιδρούν πλέον πραγματικά στην ένταση του ήχου συστήματος (attack γρήγορο, release αργό), όχι μόνο το ξεχωριστό radial glow overlay που υπήρχε ήδη."),
-            ("1.3.0", "2026-09", "Πλήρες πέρασμα στα native widgets (Clock/Network/Audio Visualizer/Weather) — δεν είναι πια \"μόνο μαύρα\": θεματισμένο, στρογγυλεμένο κέλυφος με ζωντανή αντίδραση σε αλλαγή θέματος/σκουρότητας. Clock: επιλογή Digital/Analog (χειροποίητο ρολόι με δείκτες) από το μενού ☰. Network: ζωντανό mini-sparkline download/upload κάτω από τα στατιστικά. Audio Visualizer: αντικαταστάθηκε το ASCII κείμενο με πραγματικό multi-band equalizer (WASAPI loopback + FFT μέσω NAudio.Dsp, ήδη διαθέσιμο dependency) σε στυλ WMP Legacy — segmented LED μπάρες με peak-hold καπάκι που πέφτει αργά. Weather: επιλογή τοποθεσίας (μενού ☰ → \"Set location…\", γεωκωδικοποίηση μέσω Open-Meteo), χειροποίητα κινούμενα εικονίδια καιρού ανάλογα με τη συνθήκη (ήλιος με περιστρεφόμενες ακτίνες, σύννεφο, βροχή/χιόνι που πέφτει, κεραυνός), και αυτόματο fallback σε δεύτερο δωρεάν πάροχο (wttr.in, χωρίς API key) αν ο πρώτος (Open-Meteo) αποτύχει. ΣΟΒΑΡΟ bug βρέθηκε και διορθώθηκε: το URL του καιρού χτιζόταν με πλωτούς αριθμούς χωρίς ρητό InvariantCulture — σε κουλτούρες με κόμμα ως δεκαδικό (π.χ. el-GR) το 37.9838 γινόταν \"37,9838\" μέσα στο URL, το Open-Meteo επέστρεφε σιωπηλά JSON σφάλματος (όχι HTTP error) και το widget έδειχνε μόνιμα \"Weather unavailable\" χωρίς κανένα exception να καταγραφεί."),
-            ("1.2.9", "2026-09", "Κρίσιμη διόρθωση του κινούμενου wallpaper (Waves/Particles/Video), δανεισμένη από τον τρόπο που το κάνει το Lively Wallpaper: το WinForms παράθυρο του wallpaper δημιουργείται πάντα με native style WS_POPUP, ακόμη κι όταν είναι FormBorderStyle.None. Το SetParent προς το WorkerW/Progman άλλαζε μόνο τον λογικό parent — ΔΕΝ μετέτρεπε αυτόματα το WS_POPUP σε WS_CHILD, με αποτέλεσμα σε πολλά builds Windows 10/11 το παράθυρο να μην συμμετέχει σωστά στο compositing/z-order του νέου parent (να παραμένει αόρατο ή να συμπεριφέρεται σαν προστασία οθόνης πάνω από την επιφάνεια εργασίας), ακόμη κι όταν το ίδιο το SetParent \"πετύχαινε\" τυπικά. Προστέθηκε ρητή μετατροπή WS_POPUP→WS_CHILD (SetWindowLongPtr + SWP_FRAMECHANGED) πριν από κάθε SetParent. Επιβεβαιώθηκε ζωντανά ότι το παράθυρο πλέον γίνεται πραγματικό child του Progman στο σωστό μέγεθος οθόνης."),
-            ("1.2.8", "2026-09", "UI polish πέρασμα: (1) Τα ελληνικά κεφαλαία σε τίτλους ενοτήτων/καρτών δεν έχουν πλέον τόνους (σωστή ορθογραφική σύμβαση — π.χ. \"ΕΞΑΤΟΜΙΚΕΥΣΗ\" όχι \"ΕΞΑΤΟΜΙΚΕΥΣΉ\"). (2) Όλα τα HoverButton της εφαρμογής έγιναν πλήρως στρογγυλεμένα (\"pills\") καθολικά, με τον ίδιο μηχανισμό (Selectable=false) που ήδη διόρθωσε το ορατό focus-rectangle bug στο PillButton του DeskZones editor. (3) Τα κουμπιά DeskSounds (Αναζήτηση/Προεπισκόπηση/Καθαρισμός) έκοβαν κείμενο — φαρδύτερα + μετατοπισμένα δεξιά. (4) Bug fix: όσο ο χρήστης ήταν στο \"Φόντο οθόνης κλειδώματος\", η σελίδα \"autoscroll-άριζε\" πίσω στα DeskSounds κάθε 2 δευτερόλεπτα — αιτία ήταν ο περιοδικός timer του DeskStrip που ανακατασκεύαζε τη δική του λίστα μέσα σε ΑΥΤΟ-scroll container, επαναφέροντας σιωπηλά τη θέση κύλισης της ΣΕΛΙΔΑΣ. Διορθώθηκε με αποθήκευση/επαναφορά της θέσης κύλισης γύρω από κάθε ανανέωση."),
-            ("1.2.7", "2026-09", "Τα DeskZones έγιναν ΠΡΑΓΜΑΤΙΚΑ FancyZones-style (μετά από screenshots του πραγματικού PowerToys Editor) — όχι πια μόνιμα ορατά bordered παράθυρα στην επιφάνεια εργασίας. Κράτα Shift ενώ σέρνεις ένα παράθυρο για να δεις τις ζώνες και να κουμπώσεις (χωρίς Shift, το σύρσιμο είναι απολύτως κανονικό). Νέος επεξεργαστής διάταξης (Ctrl+Shift+N) με 7 templates (No layout/Focus/Columns/Rows/Grid/Priority Grid/Custom) — ρυθμιζόμενο πλήθος στηλών/σειρών ΜΟΝΟ στο Custom, τα presets κρατούν σταθερό σχήμα. ΣΟΒΑΡΟ bug βρέθηκε και διορθώθηκε πριν προλάβει να κυκλοφορήσει: ένα self-referential Click handler (this.Click καλούσε το OnClick() που ακριβώς πυροδοτεί το ίδιο το Click) προκαλούσε άπειρη αναδρομή σε κάθε κλικ πάνω σε template card — StackOverflowException, μη-πιάσιμο από το .NET, τερμάτιζε αμέσως όλη την εφαρμογή χωρίς κανένα exception log. Εντοπίστηκε με προσωρινό debug logging που αποκάλυψε ότι ο handler δεν πρόλαβε καν να τρέξει μία φορά. Επίσης διορθώθηκε ξεχωριστό bug στη χαρτογράφηση παραμέτρων του template \"Rows\" (διάβαζε λάθος μεταβλητή για το πλήθος σειρών) και οπτικό bug όπου το keyboard-focus-rectangle ενός στρογγυλεμένου (\"pill\") κουμπιού πρόβαλλε έξω από το στρογγυλεμένο περίγραμμά του."),
-            ("1.2.6", "2026-09", "Bugfix πέρασμα κατόπιν αναφορών: (1) Τα DeskZones \"άνοιγαν μόνα τους\" στην εκκίνηση — αιτία ήταν ρυπασμένο saved \"Last Session\" προφίλ από εσωτερικά test runs, καθαρίστηκε· το smoke test script τώρα καθαρίζει μόνο του τα test zones. (2) Αφαιρέθηκε η Fences-style λειτουργία roll-up/hover-collapse από τα DeskZones — η πραγματική τους λειτουργία (snap-on-drop, στυλ FancyZones) παρέμενε ήδη σωστή, το roll-up ήταν το πιο \"Fences\" κομμάτι. (3) Διορθώθηκε ΣΟΒΑΡΟ bug όπου η ενεργοποίηση wallpaper (ειδικά η πρώτη σε φρέσκια συνεδρία) μπλόκαρε συγχρονισμένα το UI thread έως ~8.5 δευτερόλεπτα ανά οθόνη (WorkerW attach retry loop) — \"κολλούσε\" όλη η εφαρμογή. Τρέχει πλέον σε background thread. (4) Οι ενότητες Video Library/Theme&Colors/Wave Tuning στη σελίδα Wallpaper ήταν ΠΑΝΤΑ ορατές ανεξάρτητα από το επιλεγμένο Mode — τώρα εμφανίζονται μόνο όταν είναι σχετικές. (5) Διορθώθηκε bug όπου η εναλλαγή Dark→Light \"δεν αποκρινόταν\" (re-entrancy στο popup του theme dropdown). (6) Διορθώθηκε \"τρεμόπαιγμα\" στο slider σκουρότητας θέματος — ζωντανή προεπισκόπηση χωρίς ανακατασκευή σελίδας, πλήρης εφαρμογή μόνο στην αποδέσμευση του slider. (7) Το ιστορικό εκδόσεων έκοβε κείμενο σε μεγάλες καταχωρήσεις — τα cards παίρνουν πλέον το πραγματικό ύψος που χρειάζονται. (8) Η πιο πρόσφατη έκδοση στο ιστορικό ξεχωρίζει τώρα με χρωματιστό πλαίσιο."),
-            ("1.2.5", "2026-09", "Νέο slider \"Σκουρότητα σκούρου θέματος\" στις Ρυθμίσεις (0-100%, 50% = η αρχική βάση, αμετάβλητη) — ζωντανή προεπισκόπηση καθώς σέρνεις, όπως το ήδη υπάρχον Window Opacity. Βρέθηκε και διορθώθηκε bug πριν προλάβει να κυκλοφορήσει: η πρώτη υλοποίηση έκανε όλα τα επίπεδα (φόντο/sidebar/κάρτες/hover/περιγράμματα) να συγκλίνουν σε πανομοιότυπο καθαρό μαύρο στο 100% — τώρα κάθε επίπεδο έχει δικό του ρητό \"floor\" χρώμα, διατηρώντας οπτικό διαχωρισμό σε όλο το εύρος."),
-            ("1.2.4", "2026-09", "Ολοκληρώθηκαν τα \"μερικώς εφικτά\" στοιχεία του Customization Vision, στη σελίδα Εξατομίκευση: πακέτα .theme (gallery έτοιμων θεμάτων Windows + αποθήκευση τρέχουσας ρύθμισης ως νέο .theme, μέσω του ίδιου του OS handler) και φόντο οθόνης κλειδώματος (Personalization CSP, με elevation μόνο για τη μία ενέργεια — καμία ολόκληρη elevated εκκίνηση της εφαρμογής). Ο installer μεταγλωττίστηκε για πρώτη φορά ρητά κατόπιν αιτήματος."),
-            ("1.2.3", "2026-09", "Νέα σελίδα \"Εξατομίκευση\" (Ctrl+0) με τα ασφαλή (registry/native API μόνο) κομμάτια του Customization Vision — όλα τα ονόματα ελέγχθηκαν για συγκρούσεις επωνυμίας πριν επιλεγούν: IconAtlas (εικονίδιο This PC / Κάδος Ανακύκλωσης άδειος-γεμάτος / ανά φάκελο), DeskCursors (προσαρμοσμένο σχήμα δείκτη ποντικιού), DeskStrip (πλωτό dock καρφιτσωμένων εφαρμογών με live ένδειξη \"τρέχει τώρα\"), DeskSounds (πλήρες σχήμα ήχων συστήματος πέρα από τα stock cues). Ένα visual-style engine και η επαναφορά classic Start Menu/taskbar εξετάστηκαν και αποκλείστηκαν ρητά — και τα δύο θα απαιτούσαν patch προστατευμένων αρχείων συστήματος."),
-            ("1.2.2", "2026-09", "Sidebar nav tooltips now always show the keyboard shortcut (e.g. \"Widgets (Ctrl+2)\"), not just in collapsed mode. New Quick Look preview for DeskContainers — press Space or right-click → Quick Look on a file icon to instantly preview images and text files, or browse a folder's contents, without opening any external app."),
-            ("1.2.1", "2026-09", "Flip 3D: real keyboard cycling (←/→/Tab/Enter), angled tilted-card layout with the selected window centered. Fixed the sidebar logo showing a stray gray box in compact mode and added a glossy highlight. DeskZones layouts now cover every connected screen, not just the primary one. Wallpaper auto-pauses when another app goes fullscreen. Keyboard shortcuts for every major function (Ctrl+1…9 navigate pages, Ctrl+K palette, Ctrl+B collapse sidebar, Ctrl+E toggle wallpaper, Ctrl+Shift+N new DeskZone — full list in About). Uninstaller now offers to remove saved settings. Installer explicitly declared x64-only."),
-            ("1.2.0", "2026-09", "DeskZones reworked as FancyZones-style window snapping (drag any window into a zone to fill it); new DeskContainers feature for grouping files/folders/shortcuts on the desktop. Fixed the wallpaper hiding desktop icons when the WorkerW attach silently failed. Custom rounded dropdowns everywhere (replacing classic ComboBoxes) — and fixed a real crash where opening one closed instantly (context-menu disposal bug affecting every popup menu in the app). Collapsible sidebar (icon-only, animated, square tiles). Window opacity setting. Animated wave header background. Sparkline charts for Network/Processes. Nav reorder, bigger logo/title with version number, active-state highlighting on toggle buttons, more icons app-wide."),
-            ("1.1.2", "2026-09", "Fixed a real crash where creating any DeskZone layout threw a NullReferenceException. Vector icons (no font-glyph dependency) across the sidebar and Widget Gallery. Removed duplicate page titles app-wide. Merged Performance/System Monitor into one tab. Widgets and DeskZones now both show visible ✕ close and ☰ settings-menu buttons instead of relying on right-click."),
-            ("1.1.1", "2026-09", "Fixed Dashboard sidebar entry being invisible (Home icon added), richer gradient/glow wallpaper wave rendering, Performance page redesigned as a distinct wallpaper-performance control center (no longer duplicates System Monitor's live stats)."),
-            ("1.1.0", "2026-09", "Theme system (Light/Dark/Follow Windows), localization (EL/EN), colored System Monitor meters, DeskZones/Profiles two-column layouts with layout icons, visible widget Close/Lock buttons, animated sidebar logo, fixed invisible-text rendering bugs (NavButton, StatCard)."),
-            ("1.0.0", "2026-09", "Initial unified build: Dashboard, Widget Gallery, DeskZones, Wallpaper Studio (video playlist + MotionDesk Waves), System Monitor, Profiles, Performance, Automation, Command Palette, tray integration, global hotkeys."),
+            ("1.9.8", "2026-10"), ("1.9.7", "2026-10"), ("1.9.6", "2026-10"), ("1.9.5", "2026-10"), ("1.9.4", "2026-10"), ("1.9.3", "2026-10"), ("1.9.2", "2026-10"), ("1.9.1", "2026-10"), ("1.9.0", "2026-10"), ("1.8.9", "2026-10"), ("1.8.8", "2026-10"), ("1.8.7", "2026-10"), ("1.8.6", "2026-10"), ("1.8.5", "2026-10"), ("1.7.8", "2026-10"), ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
         };
 
 
@@ -1961,7 +2653,7 @@ namespace MotionDesk.UI
                     if (apoInstalled)
                     {
                         var (ok, msg) = EqualizerApoService.ApplyPreset(p.Name);
-                        _statusLabel.Text = ok ? $"Audio Enhancement: {p.Name} (system-wide)" : $"Equalizer APO: {msg}";
+                        _statusLabel.Text = ok ? string.Format(LocalizationManager.T("Status.AudioPresetSystemWideFormat"), p.Name) : $"Equalizer APO: {msg}";
                     }
                 }))).ToArray();
             presetButtons = AddToggleButtonGrid(panel, presetItems);
@@ -2006,7 +2698,7 @@ namespace MotionDesk.UI
             _currentPageKey = "About";
             var panel = CreatePagePanel();
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            AddText(panel, $"Version {version?.ToString(3) ?? "1.0.0"}   •   .NET 8 Windows desktop workspace manager.");
+            AddText(panel, string.Format(LocalizationManager.T("About.VersionLine"), version?.ToString(3) ?? "1.0.0"));
             AddText(panel, LocalizationManager.T("About.Body"));
 
             // Κάρτες ανά θέμα (πρώην ξεχωριστή σελίδα "Βοήθεια") — ζητήθηκε ρητά να ενσωματωθεί
@@ -2032,14 +2724,91 @@ namespace MotionDesk.UI
 
             AddSection(panel, LocalizationManager.T("About.SectionCapabilities"));
             AddText(panel, LocalizationManager.T("About.CapabilitiesList"));
-            AddText(panel, $"Runtime: .NET 8 / WinForms / win-x64   •   WebView2: lazy-loaded   •   Active widgets: {WidgetHostEngine.Instance.GetActiveWidgets().Count}");
-            AddButton(panel, "Version History…", (_, _) => ShowVersionHistory());
+            AddText(panel, string.Format(LocalizationManager.T("About.RuntimeLine"), WidgetHostEngine.Instance.GetActiveWidgets().Count));
+            AddButton(panel, LocalizationManager.T("VersionHistory.Button"), (_, _) => ShowVersionHistory());
+
+            // ---- plugins (π.χ. News Crawler): ιδιότητες, βοήθεια, οδηγίες, ιστορικό και άδεια ζουν ΕΔΩ, όχι στη σελίδα του plugin
+            var pluginInfos = Services.PluginHost.Instance.GetAboutInfos();
+            if (pluginInfos.Count > 0)
+            {
+                AddSection(panel, LocalizationManager.T("About.SectionPlugins"));
+                bool greek = LocalizationManager.CurrentLanguage == "el";
+                foreach (var (id, info) in pluginInfos)
+                {
+                    var captured = info;
+                    var capturedId = id;
+                    AddText(panel, $"{captured.Name}  v{captured.Version}\n{(greek ? captured.DescriptionEl : captured.DescriptionEn)}\n{captured.Author} · {captured.License}");
+
+                    // Ζητήθηκε ρητά: ξεχωριστό κουμπί ενεργοποίησης/απενεργοποίησης ΓΙΑ ΑΥΤΟ το plugin
+                    // (όχι μόνο ο γενικός διακόπτης "Φόρτωση plugins" στις Ρυθμίσεις). Αλλαγές στα
+                    // στοιχεία πλοήγησης/tray χρειάζονται επανεκκίνηση· το ίδιο το plugin σταματά/ξεκινά αμέσως.
+                    var enableToggle = new FlatCheckBox
+                    {
+                        Text = LocalizationManager.T("About.PluginEnabled"),
+                        AutoSize = true,
+                        Checked = Services.PluginHost.Instance.IsPluginEnabled(capturedId),
+                        BackColor = UiTheme.Background,
+                        Margin = new Padding(0, 0, 0, 6)
+                    };
+                    enableToggle.CheckedChanged += (_, _) => Services.PluginHost.Instance.SetPluginEnabled(capturedId, enableToggle.Checked);
+                    panel.Controls.Add(enableToggle);
+
+                    var row = new FlowLayoutPanel { AutoSize = true, WrapContents = true, MaximumSize = new Size(740, 0), Margin = new Padding(0, 0, 0, 12) };
+                    foreach (var section in captured.Sections)
+                    {
+                        var s = section;
+                        var title = greek ? s.TitleEl : s.TitleEn;
+                        row.Controls.Add(NewHoverButton(title, () => ShowTextDialog(captured.Name + " — " + title, captured.Name + " v" + captured.Version, s.Text)));
+                    }
+                    panel.Controls.Add(row);
+                }
+            }
+
+            // ---- updates (GitHub releases; nothing is downloaded automatically)
+            AddSection(panel, LocalizationManager.T("About.UpdateHeading"));
+            var updateStatus = new Label { Text = "", AutoSize = true, MaximumSize = new Size(740, 0), Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, Margin = new Padding(0, 0, 0, 6) };
+            var autoUpdate = new FlatCheckBox { Text = LocalizationManager.T("About.UpdateAuto"), AutoSize = true, Checked = AppSettings.Load().UpdateCheckEnabled, BackColor = UiTheme.Background, Margin = new Padding(0, 2, 0, 6) };
+            autoUpdate.CheckedChanged += (_, _) => { var a = AppSettings.Load(); a.UpdateCheckEnabled = autoUpdate.Checked; a.Save(); };
+            panel.Controls.Add(autoUpdate);
+            var updateRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 14) };
+            string? updateUrl = null;
+            var openUpdate = NewHoverButton(LocalizationManager.T("About.UpdateOpen"), () =>
+            {
+                if (updateUrl != null && updateUrl.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase))
+                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(updateUrl) { UseShellExecute = true }); } catch (Exception) { }
+            });
+            openUpdate.Visible = false;
+            var checkNow = NewHoverButton(LocalizationManager.T("About.UpdateCheckNow"), async () =>
+            {
+                updateStatus.Text = LocalizationManager.T("About.UpdateChecking");
+                var result = await UpdateCheckService.CheckAsync();
+                if (updateStatus.IsDisposed) return;
+                if (!result.Succeeded) updateStatus.Text = LocalizationManager.T("About.UpdateFailed");
+                else if (result.Update != null)
+                {
+                    updateUrl = result.Update.Url;
+                    updateStatus.Text = string.Format(LocalizationManager.T("About.UpdateNewer"), result.Update.Latest.ToString(3));
+                    openUpdate.Visible = true;
+                }
+                else updateStatus.Text = string.Format(LocalizationManager.T("About.UpdateUpToDate"), UpdateCheckService.CurrentVersion.ToString(3));
+
+                // Ζητήθηκε ρητά: ο έλεγχος ενημερώσεων του Opsis να ελέγχει ΚΑΙ τα dependencies
+                // (FFmpeg/WebView2) στο ίδιο πέρασμα, αντί ο χρήστης να πρέπει να θυμάται να πάει
+                // ξεχωριστά στις Ρυθμίσεις. Δεν κατεβάζει τίποτα αυτόματα εδώ — μόνο ενημερώνει.
+                var missing = DependencyManagerService.All.Where(d => !d.IsInstalled()).Select(d => d.Name).ToList();
+                if (missing.Count > 0 && !updateStatus.IsDisposed)
+                    updateStatus.Text += "\n" + string.Format(LocalizationManager.T("About.UpdateDependenciesMissing"), string.Join(", ", missing));
+            });
+            updateRow.Controls.Add(checkNow);
+            updateRow.Controls.Add(openUpdate);
+            panel.Controls.Add(updateRow);
+            panel.Controls.Add(updateStatus);
 
             AddSection(panel, LocalizationManager.T("About.SectionInstructions"));
             AddText(panel, LocalizationManager.T("About.InstructionsList"));
 
             AddSection(panel, LocalizationManager.T("About.SectionShortcuts"));
-            AddText(panel, LocalizationManager.T("About.ShortcutsList"));
+            panel.Controls.Add(new ShortcutsCard(LocalizationManager.T("About.ShortcutsList")) { Margin = new Padding(0, 0, 0, 14) });
 
             AddSection(panel, LocalizationManager.T("About.SectionLicense"));
             AddText(panel, LocalizationManager.T("About.LicenseSummary"));
@@ -2082,6 +2851,50 @@ namespace MotionDesk.UI
             SetPage("Page.About.Title", panel);
         }
 
+        // Ζητήθηκε ρητά "βελτίωσε το κείμενο και την εμφάνιση του παραθύρου άδειας χρήσης" — πριν
+        // ήταν ένα flat TextBox με το LICENSE file χυμένο μέσα ως ένα αδιαφοροποίητο μπλοκ μονοσπέικ
+        // κειμένου (χωρίς ιεραρχία ανάμεσα στην περίληψη, τη νομική ρήτρα και τα third-party
+        // components). Τώρα: επικεφαλίδα με εικονίδιο+τίτλο, RichTextBox που ξεχωρίζει οπτικά τις 4
+        // ενότητες του LICENSE (διαχωρισμένες ήδη με "----" γραμμές στο ίδιο το αρχείο) — επικεφαλίδα
+        // κάθε ενότητας σε accent χρώμα/bold, το ίδιο το νομικό κείμενο MIT σε μικρότερη γραμματοσειρά
+        // (είναι το λιγότερο σημαντικό για τον μέσο χρήστη να διαβάσει προσεκτικά) — plus pill κουμπί
+        // συνεπές με το υπόλοιπο MediaPlayerPro-style πέρασμα της εφαρμογής.
+        // Γενικό themed παράθυρο κειμένου (βοήθεια/οδηγίες/ιστορικό/άδεια plugin). Ίδια αισθητική με το παράθυρο άδειας.
+        private void ShowTextDialog(string title, string subtitle, string text)
+        {
+            using var dialog = new Form
+            {
+                Text = title,
+                StartPosition = FormStartPosition.CenterParent,
+                Size = new Size(720, 640),
+                BackColor = UiTheme.Background,
+                ForeColor = UiTheme.TextPrimary,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false
+            };
+            dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch (DllNotFoundException) { } };
+
+            var header = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = UiTheme.Surface };
+            header.Controls.Add(new Label { Text = title, Font = new Font("Segoe UI Semibold", 13f, FontStyle.Bold), ForeColor = UiTheme.TextPrimary, AutoSize = true, Location = new Point(20, 8) });
+            header.Controls.Add(new Label { Text = subtitle, Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, AutoSize = true, Location = new Point(20, 34) });
+
+            var box = new RichTextBox
+            {
+                Dock = DockStyle.Fill, ReadOnly = true, BorderStyle = BorderStyle.None, BackColor = UiTheme.Background,
+                ForeColor = UiTheme.TextPrimary, Font = new Font("Segoe UI", 10f), DetectUrls = false, Text = text.Replace("\r\n", "\n")
+            };
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 56, BackColor = UiTheme.Background };
+            var ok = new HoverButton { Text = "OK", Width = 110, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = UiTheme.AccentCyan, ForeColor = Color.White, Cursor = Cursors.Hand, DialogResult = DialogResult.OK, Location = new Point(590, 10) };
+            ok.FlatAppearance.BorderSize = 0;
+            footer.Controls.Add(ok);
+            dialog.Controls.Add(box);
+            dialog.Controls.Add(footer);
+            dialog.Controls.Add(header);
+            dialog.AcceptButton = ok;
+            dialog.ShowDialog(this);
+        }
+
         private void ShowLicenseDialog()
         {
             var licensePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LICENSE");
@@ -2093,7 +2906,7 @@ namespace MotionDesk.UI
             {
                 Text = LocalizationManager.T("About.LicenseButton"),
                 StartPosition = FormStartPosition.CenterParent,
-                Size = new Size(620, 560),
+                Size = new Size(640, 600),
                 BackColor = UiTheme.Background,
                 ForeColor = UiTheme.TextPrimary,
                 FormBorderStyle = FormBorderStyle.FixedDialog,
@@ -2101,89 +2914,276 @@ namespace MotionDesk.UI
                 MinimizeBox = false
             };
             dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch (DllNotFoundException) { } };
+            dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
 
-            var textBox = new TextBox
+            var header = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = UiTheme.Surface, Padding = new Padding(20, 0, 20, 0) };
+            var headerIcon = new Label { Text = "⚖", Font = new Font("Segoe UI", 20f), ForeColor = UiTheme.AccentCyan, AutoSize = true, Location = new Point(20, 14) };
+            var headerTitle = new Label { Text = "MIT License", Font = new Font("Segoe UI Semibold", 13f, FontStyle.Bold), ForeColor = UiTheme.TextPrimary, AutoSize = true, Location = new Point(54, 10) };
+            var headerSub = new Label { Text = "Opsis — free, open-source, no warranty", Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, AutoSize = true, Location = new Point(54, 34) };
+            header.Controls.Add(headerIcon); header.Controls.Add(headerTitle); header.Controls.Add(headerSub);
+
+            var rtb = new RichTextBox
             {
                 Dock = DockStyle.Fill,
-                Multiline = true,
                 ReadOnly = true,
-                ScrollBars = ScrollBars.Vertical,
-                Font = new Font("Consolas", 9.5f),
-                BackColor = UiTheme.Surface,
-                ForeColor = UiTheme.TextPrimary,
                 BorderStyle = BorderStyle.None,
-                Text = text.Replace("\n", "\r\n").Replace("\r\r\n", "\r\n")
+                BackColor = UiTheme.Background,
+                ForeColor = UiTheme.TextPrimary,
+                Margin = new Padding(20),
+                DetectUrls = false
             };
-            var closeBtn = new Button { Text = "OK", Dock = DockStyle.Bottom, Height = 36, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat, BackColor = UiTheme.Surface, ForeColor = UiTheme.TextPrimary };
-            closeBtn.FlatAppearance.BorderSize = 0;
+            rtb.HandleCreated += (_, _) => GlassBlur.ApplyScrollbarTheme(rtb, UiTheme.Background.GetBrightness() < 0.5f);
+            PopulateLicenseRichText(rtb, text);
 
-            dialog.Controls.Add(textBox);
-            dialog.Controls.Add(closeBtn);
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 60, BackColor = UiTheme.Background, Padding = new Padding(20, 0, 20, 14) };
+            var closeBtn = new HoverButton { Text = "OK", Width = 110, Height = 34, FlatStyle = FlatStyle.Flat, BackColor = UiTheme.AccentCyan, ForeColor = Color.White, Cursor = Cursors.Hand, DialogResult = DialogResult.OK, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.Location = new Point(footer.ClientSize.Width - closeBtn.Width - 20, 12);
+            closeBtn.HandleCreated += (_, _) => UiTheme.ApplyRoundedRegion(closeBtn, closeBtn.Height / 2);
+            footer.Resize += (_, _) => closeBtn.Location = new Point(footer.ClientSize.Width - closeBtn.Width - 20, 12);
+            footer.Controls.Add(closeBtn);
+
+            var bodyWrap = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20, 12, 20, 0) };
+            bodyWrap.Controls.Add(rtb);
+
+            dialog.Controls.Add(bodyWrap);
+            dialog.Controls.Add(footer);
+            dialog.Controls.Add(header);
             dialog.AcceptButton = closeBtn;
             dialog.CancelButton = closeBtn;
             dialog.ShowDialog(this);
+        }
+
+        private void PopulateLicenseRichText(RichTextBox rtb, string text)
+        {
+            rtb.Clear();
+            var headingFont = new Font("Segoe UI Semibold", 11f, FontStyle.Bold);
+            var bodyFont = UiTheme.FontBody;
+            var legalFont = new Font("Consolas", 8.5f);
+            // Το ίδιο το LICENSE αρχείο χωρίζεται ήδη σε 4 ενότητες με γραμμές "----" — η πρώτη
+            // (περίληψη/αποποίηση ευθύνης) μένει στη βασική γραμματοσειρά, η 2η (το ίδιο το νομικό
+            // κείμενο MIT) μικραίνει (μονοσπέικ, λιγότερο σημαντικό να διαβαστεί λέξη-λέξη), οι
+            // επόμενες (Third-Party Components, Weather data) ξαναγυρνούν στη βασική γραμματοσειρά.
+            var sections = text.Replace("\r\n", "\n").Split(new[] { "----------------------------------------------------------------------" }, StringSplitOptions.None);
+            for (int i = 0; i < sections.Length; i++)
+            {
+                string section = sections[i].Trim('\n');
+                if (section.Length == 0) continue;
+                var lines = section.Split('\n');
+                bool isLegalBlock = i == 1; // the raw MIT boilerplate block
+                for (int li = 0; li < lines.Length; li++)
+                {
+                    string line = lines[li];
+                    bool looksLikeHeading = li == 0 && !isLegalBlock && line.Length < 40 && !line.Contains('.');
+                    rtb.SelectionFont = looksLikeHeading ? headingFont : (isLegalBlock ? legalFont : bodyFont);
+                    rtb.SelectionColor = looksLikeHeading ? UiTheme.AccentCyan : (isLegalBlock ? UiTheme.TextSecondary : UiTheme.TextPrimary);
+                    rtb.AppendText(line + "\n");
+                }
+                if (i < sections.Length - 1) rtb.AppendText("\n");
+            }
+            rtb.SelectionStart = 0;
+        }
+
+        private void ShowChangelogAfterUpdate()
+        {
+            try
+            {
+                var a = AppSettings.Load();
+                string cur = UpdateCheckService.CurrentVersion.ToString(3);
+                if (a.LastRunVersion == cur) return;
+                bool upgraded = !string.IsNullOrEmpty(a.LastRunVersion);       // first ever run: nothing to show
+                a.LastRunVersion = cur;
+                a.Save();
+                if (upgraded) BeginInvoke(new Action(ShowVersionHistory));
+            }
+            catch (Exception) { /* cosmetic */ }
         }
 
         private void ShowVersionHistory()
         {
             using var dialog = new Form
             {
-                Text = "Version History",
+                Text = LocalizationManager.T("VersionHistory.Title"),
                 StartPosition = FormStartPosition.CenterParent,
-                Size = new Size(560, 460),
+                Size = new Size(720, 680),
                 BackColor = UiTheme.Background,
                 ForeColor = UiTheme.TextPrimary,
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 MaximizeBox = false,
                 MinimizeBox = false
             };
-            dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch (DllNotFoundException) { } };
+            dialog.HandleCreated += (_, _) => { int d = UiTheme.Background.GetBrightness() < 0.5f ? 1 : 0; try { DwmSetWindowAttribute(dialog.Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref d, sizeof(int)); } catch { } };
+            dialog.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dialog.Handle);
 
-            var list = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(16), BackColor = UiTheme.Background };
+            const int contentWidth = 630;
+            var list = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, Padding = new Padding(22, 18, 22, 18), BackColor = UiTheme.Background };
+            GlassBlur.ApplyScrollbarTheme(list, UiTheme.Background.GetBrightness() < 0.5f);
+            list.Controls.Add(new Label { Text = LocalizationManager.T("VersionHistory.Title"), Font = new Font("Segoe UI", 16f, FontStyle.Bold), ForeColor = UiTheme.TextPrimary, AutoSize = true, Margin = new Padding(0, 0, 0, 2) });
+            list.Controls.Add(new Label { Text = LocalizationManager.T("VersionHistory.Subtitle"), Font = UiTheme.FontBody, ForeColor = UiTheme.TextSecondary, MaximumSize = new Size(contentWidth, 0), AutoSize = true, Margin = new Padding(0, 0, 0, 14) });
+
+            // Στυλ GearWin: η τρέχουσα έκδοση σε κάρτα γεμάτη με το accent (λευκό κείμενο), οι παλιότερες σε απλές κάρτες που ανοίγουν με κλικ.
             bool isLatest = true;
             foreach (var entry in VersionHistory)
             {
-                // Bug fix: το card είχε ΣΤΑΘΕΡΟ Height=110 ανεξάρτητα από το πόσο κείμενο είχε το
-                // κάθε entry — καθώς οι σημειώσεις έκδοσης μεγάλωναν, το κείμενο έκοβε στο κάτω
-                // άκρο. Τώρα μετριέται το πραγματικό ύψος που χρειάζεται το κείμενο (στο ίδιο
-                // πλάτος 470px που ήδη όριζε το MaximumSize του label) και το card παίρνει ακριβώς
-                // όσο ύψος χρειάζεται, όχι ένα άκαμπτο νούμερο.
-                var notesFont = UiTheme.FontBody;
-                var notesSize = TextRenderer.MeasureText(entry.Notes, notesFont, new Size(470, int.MaxValue), TextFormatFlags.WordBreak);
-                int cardHeight = Math.Max(80, 34 + notesSize.Height + 18);
-
-                var card = new Panel { Width = 500, Height = cardHeight, BackColor = UiTheme.Surface, Padding = new Padding(14), Margin = new Padding(0, 0, 0, 10) };
-                UiTheme.ApplyRoundedRegion(card, 8);
-
-                // Ζητήθηκε ρητά: η πιο πρόσφατη έκδοση (πάντα το πρώτο entry — νέα προστίθενται
-                // στην κορυφή) να ξεχωρίζει οπτικά από τις προηγούμενες με χρωματιστό πλαίσιο.
-                if (isLatest)
-                {
-                    card.Paint += (_, e) =>
-                    {
-                        using var pen = new Pen(UiTheme.AccentCyan, 2f);
-                        e.Graphics.DrawRectangle(pen, 1, 1, card.Width - 3, card.Height - 3);
-                    };
-                }
-
-                string header = $"v{entry.Version}   •   {entry.Date}" + (isLatest ? "   •   τρέχουσα" : "");
-                card.Controls.Add(new Label { Text = header, Font = new Font("Segoe UI", 11f, FontStyle.Bold), ForeColor = UiTheme.AccentCyan, AutoSize = true, Location = new Point(14, 10) });
-                card.Controls.Add(new Label { Text = entry.Notes, Font = notesFont, ForeColor = UiTheme.TextSecondary, MaximumSize = new Size(470, 0), AutoSize = true, Location = new Point(14, 34) });
-                list.Controls.Add(card);
+                list.Controls.Add(BuildVersionCard(entry.Version, entry.Date, isLatest, contentWidth));
                 isLatest = false;
             }
             dialog.Controls.Add(list);
             dialog.ShowDialog(this);
         }
 
-        private FlowLayoutPanel CreatePagePanel() => new()
+        // Σημειώσεις έκδοσης: κάθε γραμμή του locale κλειδιού ξεκινά με "+ " (προσθήκη), "~ " (βελτίωση/διόρθωση) ή "= " (σημείωση που δεν μετράται).
+        private static (int Added, int Improved, string? Summary, List<(char Type, string Text)> Items) ParseVersionNotes(string notes)
         {
-            AutoScroll = true,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            Padding = new Padding(4),
-            BackColor = UiTheme.Background
-        };
+            int added = 0, improved = 0;
+            string? summary = null;
+            var items = new List<(char, string)>();
+            foreach (var raw in notes.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var line = raw.Trim();
+                if (line.Length < 3 || line[1] != ' ') { summary = summary == null ? line : summary + " " + line; continue; }
+                var text = line[2..].Trim();
+                switch (line[0])
+                {
+                    case '+': added++; items.Add(('+', text)); break;
+                    case '~': improved++; items.Add(('~', text)); break;
+                    default: summary = summary == null ? text : summary + " " + text; break;
+                }
+            }
+            return (added, improved, summary, items);
+        }
+
+        private static string VersionCount(int n, string oneKey, string manyKey) =>
+            string.Format(LocalizationManager.T(n == 1 ? oneKey : manyKey), n);
+
+        private static Control BuildVersionCard(string version, string date, bool isLatest, int width)
+        {
+            var parsed = ParseVersionNotes(LocalizationManager.T("VersionNotes." + version));
+            var bg = isLatest ? UiTheme.AccentCyan : UiTheme.Surface;
+            var titleColor = isLatest ? Color.White : UiTheme.TextPrimary;
+            var textColor = isLatest ? Color.FromArgb(240, 255, 255, 255) : UiTheme.TextSecondary;
+            var addColor = isLatest ? Color.White : Color.FromArgb(76, 175, 80);
+            var impColor = isLatest ? Color.White : UiTheme.AccentCyan;
+            const int pad = 16;
+            int inner = width - pad * 2;
+
+            var card = new FlowLayoutPanel
+            {
+                FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize = new Size(width, 0), MaximumSize = new Size(width, 0),
+                BackColor = bg, Padding = new Padding(pad, 12, pad, 14), Margin = new Padding(0, 0, 0, 10)
+            };
+            card.SizeChanged += (_, _) => UiTheme.ApplyRoundedRegion(card, 8);
+
+            // ----- επικεφαλίδα (κλικ = άνοιγμα/κλείσιμο για παλιότερες εκδόσεις) -----
+            var header = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0), BackColor = Color.Transparent };
+            string prefix = LocalizationManager.T("VersionHistory.VersionPrefix");
+            var arrow = new Label { Text = isLatest ? "" : "▸", AutoSize = true, Font = new Font("Segoe UI", 11f, FontStyle.Bold), ForeColor = UiTheme.AccentCyan, Margin = new Padding(0, 0, 6, 0) };
+            var title = new Label
+            {
+                Text = $"{prefix} {version}   •   {date}" + (isLatest ? "   •   " + LocalizationManager.T("VersionHistory.Current") : ""),
+                AutoSize = true, Font = new Font("Segoe UI", 12f, FontStyle.Bold), ForeColor = titleColor, Margin = new Padding(0)
+            };
+            var titleRow = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0), BackColor = Color.Transparent };
+            if (!isLatest) titleRow.Controls.Add(arrow);
+            titleRow.Controls.Add(title);
+            header.Controls.Add(titleRow);
+
+            var counts = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 4, 0, 0), BackColor = Color.Transparent };
+            if (parsed.Added > 0)
+                counts.Controls.Add(new Label { Text = "✚ " + VersionCount(parsed.Added, "VersionHistory.AddedOne", "VersionHistory.AddedMany"), AutoSize = true, Font = new Font("Segoe UI Symbol", 9.5f, FontStyle.Bold), ForeColor = addColor, Margin = new Padding(0, 0, 18, 0) });
+            if (parsed.Improved > 0)
+                counts.Controls.Add(new Label { Text = "▲ " + VersionCount(parsed.Improved, "VersionHistory.ImprovedOne", "VersionHistory.ImprovedMany"), AutoSize = true, Font = new Font("Segoe UI Symbol", 9.5f, FontStyle.Bold), ForeColor = impColor, Margin = new Padding(0) });
+            if (counts.Controls.Count > 0) header.Controls.Add(counts);
+            card.Controls.Add(header);
+
+            // ----- σώμα: περίληψη + δύο ομάδες (Προστέθηκαν / Βελτιώθηκαν) -----
+            var body = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = new Padding(0, 10, 0, 0), BackColor = Color.Transparent, Visible = isLatest };
+            if (!string.IsNullOrWhiteSpace(parsed.Summary))
+                body.Controls.Add(new Label { Text = parsed.Summary, AutoSize = true, MaximumSize = new Size(inner, 0), Font = new Font("Segoe UI", 9.5f, FontStyle.Italic), ForeColor = textColor, Margin = new Padding(0, 0, 0, 6) });
+
+            void AddGroup(char type, string sectionKey, Color glyphColor, string glyph)
+            {
+                var group = parsed.Items.Where(i => i.Type == type).ToList();
+                if (group.Count == 0) return;
+                body.Controls.Add(new Label { Text = UiTheme.UpperNoAccents(LocalizationManager.T(sectionKey)), AutoSize = true, Font = new Font("Segoe UI", 8.5f, FontStyle.Bold), ForeColor = glyphColor, Margin = new Padding(0, 6, 0, 3) });
+                foreach (var item in group)
+                {
+                    var row = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, WrapContents = false, AutoSize = true, Margin = new Padding(0, 0, 0, 3), BackColor = Color.Transparent };
+                    row.Controls.Add(new Label { Text = glyph, AutoSize = false, Size = new Size(20, 20), Font = new Font("Segoe UI Symbol", 8f), ForeColor = glyphColor, Margin = new Padding(0, 1, 0, 0) });
+                    row.Controls.Add(new Label { Text = item.Text, AutoSize = true, MaximumSize = new Size(inner - 26, 0), Font = UiTheme.FontBody, ForeColor = textColor, Margin = new Padding(0) });
+                    body.Controls.Add(row);
+                }
+            }
+            AddGroup('+', "VersionHistory.SectionAdded", addColor, "✚");
+            AddGroup('~', "VersionHistory.SectionImproved", impColor, "▲");
+            card.Controls.Add(body);
+
+            if (!isLatest)
+            {
+                void Toggle()
+                {
+                    body.Visible = !body.Visible;
+                    arrow.Text = body.Visible ? "▾" : "▸";
+                }
+                foreach (Control c in new Control[] { card, header, titleRow, title, arrow, counts })
+                {
+                    c.Cursor = Cursors.Hand;
+                    c.Click += (_, _) => Toggle();
+                }
+                foreach (Control c in counts.Controls) { c.Cursor = Cursors.Hand; c.Click += (_, _) => Toggle(); }
+            }
+            return card;
+        }
+
+        private FlowLayoutPanel CreatePagePanel()
+        {
+            var panel = new FlowLayoutPanel
+            {
+                AutoScroll = true,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                Padding = new Padding(4),
+                BackColor = UiTheme.Background
+            };
+            // Ζητήθηκε ρητά "να μην είναι το scrollbar λευκό στο dark mode".
+            GlassBlur.ApplyScrollbarTheme(panel, UiTheme.Background.GetBrightness() < 0.5f);
+            // ΔΙΟΡΘΩΣΗ πραγματικού bug, live-verified ("scroll up issues στις καρτέλες"): τα Windows
+            // στέλνουν WM_MOUSEWHEEL στο control ΚΑΤΩ από τον κέρσορα, όχι απαραίτητα στο
+            // AutoScroll FlowLayoutPanel της σελίδας — μόλις ο κέρσορας βρεθεί πάνω από ένα Button/
+            // CheckBox/Label (πρακτικά αναπόφευκτο σε μια σελίδα γεμάτη κουμπιά), η κύλιση φαινόταν
+            // να "κολλάει" εκεί, ενώ στην πραγματικότητα απλώς δεν έφτανε ΠΟΤΕ στο panel. Λύση:
+            // προώθηση του MouseWheel από ΚΑΘΕ child control (καθώς προστίθεται, αναδρομικά) πίσω
+            // στο scroll του page panel — εκτός από controls με δικό τους νόημα για το wheel
+            // (TextBox/ComboBox/NumericUpDown, ή ήδη ξεχωριστά AutoScroll containers).
+            EnableWheelPassthrough(panel);
+            return panel;
+        }
+
+        private static void EnableWheelPassthrough(ScrollableControl scrollHost)
+        {
+            void Hook(Control c)
+            {
+                bool hasOwnWheelMeaning = c is TextBoxBase || c is ListControl || c is NumericUpDown
+                    || (c is ScrollableControl inner && !ReferenceEquals(inner, scrollHost) && inner.AutoScroll);
+                if (!ReferenceEquals(c, scrollHost) && !hasOwnWheelMeaning)
+                {
+                    c.MouseWheel += (_, e) =>
+                    {
+                        if (e is HandledMouseEventArgs hme) hme.Handled = true;
+                        var pos = scrollHost.AutoScrollPosition;
+                        int newY = Math.Max(0, -pos.Y - e.Delta);
+                        scrollHost.AutoScrollPosition = new Point(-pos.X, newY);
+                    };
+                }
+                if (!hasOwnWheelMeaning)
+                {
+                    c.ControlAdded += (_, ce) => { if (ce.Control != null) Hook(ce.Control); };
+                    foreach (Control child in c.Controls) Hook(child);
+                }
+            }
+            Hook(scrollHost);
+        }
 
         private static void AddHeading(Control parent, string text)
         {
@@ -2245,6 +3245,86 @@ namespace MotionDesk.UI
         // Πλήρως owner-draw στατιστική κάρτα (τίτλος + τιμή) — τα παιδιά-Label μέσα σε
         // Panel/FlowLayoutPanel εμφάνιζαν σποραδικά αόρατο κείμενο σε αυτό το build/runtime
         // (ίδιας οικογένειας quirk με το NavButton), οπότε ζωγραφίζουμε το κείμενο απευθείας.
+        // Συντομεύσεις πληκτρολογίου σε ΕΝΑ ενιαίο στοιχείο: ομάδες, "πλήκτρα" (keycaps) αριστερά και περιγραφή ευθυγραμμισμένη δεξιά.
+        // Πηγή: το locale κλειδί About.ShortcutsList — γραμμή "# Τίτλος" = νέα ομάδα, αλλιώς "Πλήκτρα  Περιγραφή" (διπλό κενό ως διαχωριστικό).
+        private sealed class ShortcutsCard : Control
+        {
+            private readonly List<(bool IsHeader, string Left, string Right)> _rows = new();
+            private const int CardWidth = 760, KeysX = 20, DescX = 330, RowH = 32, HeaderH = 36, PadTop = 12, PadBottom = 14;
+
+            public ShortcutsCard(string source)
+            {
+                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+                foreach (var raw in source.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var line = raw.Trim();
+                    if (line.StartsWith("# ")) { _rows.Add((true, line[2..].Trim(), "")); continue; }
+                    int sep = line.IndexOf("  ", StringComparison.Ordinal);
+                    if (sep <= 0) continue;
+                    _rows.Add((false, line[..sep].Trim(), line[(sep + 2)..].Trim()));
+                }
+                int h = PadTop + PadBottom + _rows.Sum(r => r.IsHeader ? HeaderH : RowH);
+                Size = new Size(CardWidth, h);
+            }
+
+            protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e); UiTheme.ApplyRoundedRegion(this, 8); }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                g.Clear(UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
+
+                using var headerFont = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+                using var keyFont = new Font("Segoe UI Semibold", 9f);
+                using var descFont = new Font("Segoe UI", 10f);
+                using var accent = new SolidBrush(UiTheme.AccentCyan);
+                using var descBrush = new SolidBrush(UiTheme.TextSecondary);
+                using var keyText = new SolidBrush(UiTheme.TextPrimary);
+                using var keyFill = new SolidBrush(UiTheme.Background);
+                using var keyBorder = new Pen(UiTheme.Border, 1f);
+                using var plusBrush = new SolidBrush(UiTheme.TextMuted);
+                using var sepPen = new Pen(Color.FromArgb(40, UiTheme.TextMuted), 1f);
+                var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+                int y = PadTop;
+                bool first = true;
+                foreach (var row in _rows)
+                {
+                    if (row.IsHeader)
+                    {
+                        if (!first) g.DrawLine(sepPen, KeysX, y + 2, Width - KeysX, y + 2);
+                        g.DrawString(UiTheme.UpperNoAccents(row.Left), headerFont, accent, KeysX, y + 12);
+                        y += HeaderH;
+                        first = false;
+                        continue;
+                    }
+                    first = false;
+                    // keycaps: κάθε κομμάτι πριν/μετά το '+' ως ξεχωριστό "πλήκτρο"
+                    int x = KeysX;
+                    var parts = row.Left.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (row.Left.EndsWith("+,")) parts = row.Left[..^2].Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Append(",").ToArray();
+                    for (int i = 0; i < parts.Length; i++)
+                    {
+                        var size = TextRenderer.MeasureText(parts[i], keyFont, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding);
+                        int w = Math.Max(26, size.Width + 16);
+                        var capRect = new Rectangle(x, y + 3, w, RowH - 8);
+                        using (var path = UiTheme.RoundedPath(capRect, 6))
+                        {
+                            g.FillPath(keyFill, path);
+                            g.DrawPath(keyBorder, path);
+                        }
+                        g.DrawString(parts[i], keyFont, keyText, new RectangleF(capRect.X, capRect.Y, capRect.Width, capRect.Height), sf);
+                        x += w;
+                        if (i < parts.Length - 1) { g.DrawString("+", descFont, plusBrush, x + 1, y + 5); x += 16; }
+                    }
+                    g.DrawString(row.Right, descFont, descBrush, new RectangleF(DescX, y + 3, Width - DescX - KeysX, RowH - 6), new StringFormat { LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap });
+                    y += RowH;
+                }
+            }
+        }
+
         private sealed class StatCard : Panel
         {
             private readonly string _title;
@@ -2269,8 +3349,7 @@ namespace MotionDesk.UI
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-                using (var bg = new SolidBrush(UiTheme.Surface))
-                    g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
 
                 using (var accent = new SolidBrush(UiTheme.AccentCyan))
                     g.FillRectangle(accent, 0, 0, 3, Height);
@@ -2326,8 +3405,7 @@ namespace MotionDesk.UI
             {
                 var g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                using (var bg = new SolidBrush(UiTheme.Surface))
-                    g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
                 using (var accent = new SolidBrush(UiTheme.AccentCyan))
                     g.FillRectangle(accent, 0, 0, 3, Height);
 
@@ -2420,18 +3498,21 @@ namespace MotionDesk.UI
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-                using (var bg = new SolidBrush(UiTheme.Surface))
-                    g.FillRectangle(bg, ClientRectangle);
+                g.Clear(UiTheme.Surface); // Clear, not an antialiased FillRectangle: that leaves a faint line on the edge pixels
                 using (var accent = new SolidBrush(UiTheme.AccentCyan))
                     g.FillRectangle(accent, 0, 0, 3, Height);
 
+                // Ζητήθηκε ρητά "τα στατιστικά απόδοσης δίπλα στον τίτλο και όχι από κάτω" —
+                // τίτλος αριστερά, τιμή δεξιά-στοιχισμένη, στην ΙΔΙΑ γραμμή αντί για από κάτω.
                 using var titleFont = new Font("Segoe UI", 8.5f, FontStyle.Bold);
                 using (var titleBrush = new SolidBrush(UiTheme.TextMuted))
-                    g.DrawString(_title, titleFont, titleBrush, 18, 12);
+                    g.DrawString(_title, titleFont, titleBrush, 18, 14);
 
                 using var valueFont = new Font("Segoe UI", 13f);
+                using var valueFormat = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+                var valueRect = new RectangleF(18, 2, Width - 36, 28);
                 using (var valueBrush = new SolidBrush(UiTheme.TextPrimary))
-                    g.DrawString(_valueText, valueFont, valueBrush, 18, 34);
+                    g.DrawString(_valueText, valueFont, valueBrush, valueRect, valueFormat);
 
                 var barRect = new Rectangle(18, Height - 22, Width - 36, 8);
                 using (var track = new SolidBrush(UiTheme.SurfaceHover))
@@ -2474,7 +3555,7 @@ namespace MotionDesk.UI
                     Cursor = Cursors.Hand
                 };
                 button.FlatAppearance.BorderSize = 0;
-                UiTheme.ApplyRoundedRegion(button, 8);
+                UiTheme.ApplyRoundedRegion(button, button.Height / 2);
                 button.Click += (sender, e) => action(sender, e);
                 grid.Controls.Add(button);
             }
@@ -2503,7 +3584,7 @@ namespace MotionDesk.UI
                     Cursor = Cursors.Hand
                 };
                 button.FlatAppearance.BorderSize = 0;
-                UiTheme.ApplyRoundedRegion(button, 8);
+                UiTheme.ApplyRoundedRegion(button, button.Height / 2);
                 button.Click += (sender, e) => action(sender, e);
                 grid.Controls.Add(button);
                 map[text] = button;
@@ -2512,16 +3593,18 @@ namespace MotionDesk.UI
             return map;
         }
 
-        // Εφαρμόζει οπτική σήμανση (accent χρώμα + ✓) στο ενεργό κουμπί ενός AddToggleButtonGrid.
+        // Εφαρμόζει οπτική σήμανση στο ενεργό κουμπί ενός AddToggleButtonGrid — ζητήθηκε ρητά
+        // "ενσωμάτωσε την παρουσίαση ενός media player": το ενεργό κουμπί γεμίζει πλήρως με το
+        // accent χρώμα (λευκό κείμενο), ίδιο "hero button" στυλ με το γεμάτο Play/Pause κουμπί
+        // του MediaPlayerPro, αντί για το προηγούμενο ημιδιάφανο tint + λεπτό περίγραμμα.
         private static void MarkActive(Dictionary<string, HoverButton> buttons, string? activeKey)
         {
             foreach (var (key, btn) in buttons)
             {
                 bool active = key == activeKey;
-                btn.BackColor = active ? UiTheme.AccentSoft : UiTheme.Surface;
-                btn.ForeColor = active ? UiTheme.AccentCyan : UiTheme.TextPrimary;
-                btn.FlatAppearance.BorderSize = active ? 1 : 0;
-                btn.FlatAppearance.BorderColor = UiTheme.AccentCyan;
+                btn.BackColor = active ? UiTheme.AccentCyan : UiTheme.Surface;
+                btn.ForeColor = active ? Color.White : UiTheme.TextPrimary;
+                btn.FlatAppearance.BorderSize = 0;
                 btn.Text = active ? "✓  " + key : key;
             }
         }
@@ -2569,8 +3652,12 @@ namespace MotionDesk.UI
             {
                 var g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
+                // Ζητήθηκε ρητά "pill-shaped κουμπιά" (MediaPlayerPro / Orama Media Suite) σε ΟΛΕΣ
+                // τις καρτέλες — αυτό το IconButton τροφοδοτεί το AddIconButtonGrid, που
+                // χρησιμοποιείται σχεδόν παντού (Dashboard, Widgets, Wallpaper, DeskZones,
+                // Εξατομίκευση κ.λπ.), γι' αυτό ήταν το πιο ορατό σημείο που είχε ξεφύγει.
                 using (var bgBrush = new SolidBrush(_hover ? UiTheme.SurfaceHover : UiTheme.Surface))
-                using (var path = UiTheme.RoundedPath(new Rectangle(0, 0, Width, Height), 8))
+                using (var path = UiTheme.RoundedPath(new Rectangle(0, 0, Width, Height), Height / 2))
                     g.FillPath(bgBrush, path);
 
                 IconRenderer.Draw(g, _iconKey, new RectangleF(14, (Height - 22) / 2f, 22, 22), UiTheme.AccentCyan);
@@ -2597,7 +3684,7 @@ namespace MotionDesk.UI
                 Cursor = Cursors.Hand
             };
             button.FlatAppearance.BorderSize = 0;
-            UiTheme.ApplyRoundedRegion(button, 8);
+            UiTheme.ApplyRoundedRegion(button, button.Height / 2);
             button.Click += (sender, e) => action(sender, e);
             parent.Controls.Add(button);
         }
@@ -2647,8 +3734,12 @@ namespace MotionDesk.UI
         private void UpdateStatus()
         {
             var m = SystemMonitorService.Instance.GetSnapshot();
-            _statusLabel.Text = $"CPU {m.CpuPercent:0.0}%  •  RAM {m.AvailableMemoryMb:0} MB free";
+            _statusLabel.Text = string.Format(LocalizationManager.T("Status.SystemFormat"), m.CpuPercent.ToString("0.0"), m.AvailableMemoryMb.ToString("0"), RamUsedPercent(m.AvailableMemoryMb, m.TotalMemoryMb));
         }
+
+        // Ποσοστό χρήσης RAM (χρησιμοποιούμενη/συνολική) — εμφανίζεται δίπλα στα MB στην Αρχική, στη γραμμή κατάστασης, στο Performance και στο widget.
+        private static string RamUsedPercent(double availableMb, double totalMb) =>
+            totalMb > 0 ? Math.Clamp((totalMb - availableMb) / totalMb * 100.0, 0, 100).ToString("0") : "0";
 
         private sealed class SettingsView : Panel
         {
@@ -2659,6 +3750,7 @@ namespace MotionDesk.UI
                 _openWallpaperStudio = openWallpaperStudio;
                 BackColor = UiTheme.Background;
                 AutoScroll = true;
+                GlassBlur.ApplyScrollbarTheme(this, UiTheme.Background.GetBrightness() < 0.5f);
                 var stack = new FlowLayoutPanel
                 {
                     Dock = DockStyle.Fill,
@@ -2668,12 +3760,15 @@ namespace MotionDesk.UI
                     Padding = new Padding(4),
                     BackColor = UiTheme.Background
                 };
+                GlassBlur.ApplyScrollbarTheme(stack, UiTheme.Background.GetBrightness() < 0.5f);
                 Controls.Add(stack);
 
                 AddText(stack, LocalizationManager.T("Settings.Intro"));
 
                 AddSection(stack, LocalizationManager.T("Settings.Appearance"));
                 stack.Controls.Add(BuildThemeRow());
+                stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.FollowWindowsAccent"), AppSettings.Load().FollowWindowsAccent,
+                    v => ThemeManager.SetFollowWindowsAccent(v)));
                 stack.Controls.Add(BuildLanguageRow());
                 stack.Controls.Add(BuildOpacityRow());
                 stack.Controls.Add(BuildDarkIntensityRow());
@@ -2713,7 +3808,25 @@ namespace MotionDesk.UI
                 stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.RestoreLastSession"), AppSettings.Load().RestoreLastSession,
                     v => { var a = AppSettings.Load(); a.RestoreLastSession = v; a.Save(); }));
                 stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.EnableAnimations"), AppSettings.Load().EnableAnimations,
-                    v => { var a = AppSettings.Load(); a.EnableAnimations = v; a.Save(); }));
+                    v => { var a = AppSettings.Load(); a.EnableAnimations = v; a.Save(); AnimationsSettingChanged?.Invoke(); }));
+                stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.MinimizeToTray"), AppSettings.Load().MinimizeToTray,
+                    v => { var a = AppSettings.Load(); a.MinimizeToTray = v; a.Save(); }));
+                // Plugins (π.χ. News Crawler): ισχύει στην επόμενη εκκίνηση.
+                stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.PluginsEnabled"), AppSettings.Load().PluginsEnabled,
+                    v => { var a = AppSettings.Load(); a.PluginsEnabled = v; a.Save(); }));
+
+                // Ζητήθηκε ρητά "ρύθμιση για διαφάνεια παραθύρων των Windows και γρήγορη εκκίνηση
+                // στον πίνακα ελέγχου" — πραγματικές ρυθμίσεις των ίδιων των Windows (μητρώο),
+                // όχι δικές μας· βλ. WindowsSystemSettings.cs.
+                AddSection(stack, LocalizationManager.T("Settings.SectionWindows"));
+                stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.TransparencyEffects"), WindowsSystemSettings.GetTransparencyEffectsEnabled(),
+                    v => WindowsSystemSettings.SetTransparencyEffectsEnabled(v)));
+                stack.Controls.Add(Checkbox(LocalizationManager.T("Settings.FastStartup"), WindowsSystemSettings.GetFastStartupEnabled(),
+                    v =>
+                    {
+                        if (!WindowsSystemSettings.TrySetFastStartupEnabled(v))
+                            MessageBox.Show(this, LocalizationManager.T("Settings.FastStartupAdminRequired"), LocalizationManager.T("Page.Settings.Title"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }));
 
                 // Ζητήθηκε ρητά: ανεξάρτητο θέμα widgets/DeskContainers από αυτό της εφαρμογής,
                 // ενιαίο προεπιλεγμένο μέγεθος νέων widgets, και επιλέξιμος φάκελος αποθήκευσης
@@ -2728,7 +3841,7 @@ namespace MotionDesk.UI
                 stack.Controls.Add(sizeRow);
                 stack.Controls.Add(BuildWmvOutputRow());
 
-                // Ζητήθηκε ρητά: ο installer εγκαθιστά ήδη το WebView2 Runtime/.NET 8 Runtime μία
+                // Ζητήθηκε ρητά: ο installer εγκαθιστά ήδη το WebView2 Runtime/.NET 10 Runtime μία
                 // φορά, αλλά ο χρήστης πρέπει να μπορεί να δει/εγκαταστήσει ξανά τα εξωτερικά
                 // dependencies (π.χ. FFmpeg για .wmv) και από μέσα από την εφαρμογή, χωρίς να
                 // ξανατρέξει τον installer.
@@ -2773,7 +3886,7 @@ namespace MotionDesk.UI
                         installBtn.Text = LocalizationManager.T(nowInstalled ? "Settings.DependencyReinstall" : "Settings.DependencyInstall");
                         installBtn.Enabled = true;
                         if (!success && !nowInstalled)
-                            MessageBox.Show(string.Format(LocalizationManager.T("Settings.DependencyInstallFailedFormat"), dep.Name, output), "MotionDesk", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            MessageBox.Show(string.Format(LocalizationManager.T("Settings.DependencyInstallFailedFormat"), dep.Name, output), "Opsis", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     };
                     row.Controls.Add(installBtn);
                 }
@@ -2840,42 +3953,42 @@ namespace MotionDesk.UI
             // Πραγματικές emoji σημαίες: χρειάζονται τη γραμματοσειρά "Segoe UI Emoji" για να
             // αποδοθούν ως έγχρωμα εικονίδια αντί για γράμματα περιφερειακού δείκτη (GR/GB) —
             // αυτό ήταν το ζητούμενο πρόβλημα ("δεν έχεις βάλει τις σημαίες στο dropdown").
-            private static readonly string[] LanguageCodes = { "Follow", "el", "en" };
-
             private static Panel BuildLanguageRow()
             {
                 var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 10) };
                 row.Controls.Add(new Label { Text = LocalizationManager.T("Settings.Language") + ":", AutoSize = true, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody, Padding = new Padding(0, 6, 8, 0) });
-                // ΔΙΟΡΘΩΣΗ πραγματικού bug ("θέλω σημαίες"): τα unicode emoji σημαίες (🇬🇷/🇬🇧) μέσα
-                // στο κείμενο αποδίδονταν ως απλά γράμματα περιφερειακού δείκτη σε πλαισιάκι
-                // ("GR"/"GB"), όχι ως έγχρωμες σημαίες — ούτε το GDI (ToolStripMenuItem text) ούτε
-                // το GDI+ (Graphics.DrawString) υποστηρίζουν πραγματικά έγχρωμες (COLR/CPAL) emoji
-                // γραμματοσειρές σε WinForms, ανεξάρτητα από τη γραμματοσειρά. Τώρα πραγματικά,
-                // ζωγραφισμένα bitmap (βλ. FlagIcons.cs) μέσω του νέου Image-aware SetItems.
-                var combo = new FlatComboBox { Width = 220 };
-                var labels = new[]
+                // Σημαίες ως πραγματικά bitmap (βλ. FlagIcons.cs) - τα unicode emoji σημαίες δεν αποδίδονται έγχρωμα σε WinForms.
+                // 1.7.8: ΟΛΕΣ οι 14 γλώσσες του GearWin + "Follow Windows" (πρώτη θέση).
+                var combo = new FlatComboBox { Width = 240 };
+                var codes = new List<string> { "Follow" };
+                var labels = new List<string> { LocalizationManager.T("Settings.LanguageFollow") };
+                var icons = new List<Image> { FlagIcons.Globe() };
+                foreach (var (code, _, native) in LocalizationManager.Supported)
                 {
-                    LocalizationManager.T("Settings.LanguageFollow"),
-                    LocalizationManager.T("Settings.LanguageGreek"),
-                    LocalizationManager.T("Settings.LanguageEnglish")
-                };
-                var icons = new Image[] { FlagIcons.Globe(), FlagIcons.Greece(), FlagIcons.UnitedKingdom() };
+                    codes.Add(code);
+                    labels.Add(native);
+                    icons.Add(FlagIcons.For(code));
+                }
                 var currentLang = AppSettings.Load().Language;
-                combo.SetItems(labels, icons, labels[currentLang switch { "el" => 1, "en" => 2, _ => 0 }]);
-                combo.SelectedIndexChanged += (_, _) => LocalizationManager.SetLanguage(LanguageCodes[combo.SelectedIndex]);
+                var idx = codes.IndexOf(currentLang);
+                combo.SetItems(labels, icons, labels[idx < 0 ? 0 : idx]);
+                combo.SelectedIndexChanged += (_, _) => LocalizationManager.SetLanguage(codes[combo.SelectedIndex]);
                 row.Controls.Add(combo);
                 return row;
             }
 
+            // Ζητήθηκε ρητά "ενσωμάτωσε την παρουσίαση ενός media player" (MediaPlayerPro, αδελφό
+            // project) στα checkboxes/κουμπιά — FlatCheckBox (custom-σχεδιασμένο, στο ίδιο πνεύμα)
+            // αντικαθιστά εδώ το προεπιλεγμένο CheckBox των Windows σε ΟΛΗ τη σελίδα Ρυθμίσεων με
+            // μία αλλαγή, αφού κάθε checkbox της σελίδας περνάει από αυτό το ίδιο helper.
             private static CheckBox Checkbox(string text, bool initial, Action<bool> onChange)
             {
-                var box = new CheckBox
+                var box = new FlatCheckBox
                 {
                     Text = text,
                     AutoSize = true,
                     Checked = initial,
-                    ForeColor = UiTheme.TextPrimary,
-                    Font = UiTheme.FontBody,
+                    BackColor = UiTheme.Background,
                     Margin = new Padding(0, 4, 0, 4)
                 };
                 box.CheckedChanged += (_, _) => onChange(box.Checked);
@@ -2888,17 +4001,19 @@ namespace MotionDesk.UI
             private FlowLayoutPanel BuildOpacityRow()
             {
                 var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 4) };
-                row.Controls.Add(new Label { Text = "Window opacity:", AutoSize = true, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody, Padding = new Padding(0, 6, 8, 0) });
+                row.Controls.Add(new Label { Text = LocalizationManager.T("Settings.WindowOpacityLabel"), AutoSize = true, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody, Padding = new Padding(0, 6, 8, 0) });
                 int initial = Math.Clamp((int)Math.Round(AppSettings.Load().WindowOpacity * 100), 60, 100);
-                var track = new TrackBar { Minimum = 60, Maximum = 100, Value = initial, Width = 200, TickFrequency = 10, SmallChange = 1, LargeChange = 5 };
+                var track = new FlatSlider { Minimum = 60, Maximum = 100, Value = initial, Width = 200, SmallChange = 1, LargeChange = 5 };
                 var valueLabel = new Label { Text = $"{initial}%", AutoSize = true, ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody, Padding = new Padding(8, 6, 0, 0) };
                 track.Scroll += (_, _) =>
                 {
                     valueLabel.Text = $"{track.Value}%";
-                    double opacity = track.Value / 100.0;
-                    var a = AppSettings.Load(); a.WindowOpacity = opacity; a.Save();
-                    if (FindForm() is { } form) form.Opacity = opacity;
+                    // Ζωντανή προεπισκόπηση μόνο — η αποθήκευση γίνεται στο άφημα (πριν: εγγραφή αρχείου σε κάθε tick).
+                    if (FindForm() is { } form) form.Opacity = track.Value / 100.0;
                 };
+                void SaveOpacity() { var a = AppSettings.Load(); a.WindowOpacity = track.Value / 100.0; a.Save(); }
+                track.MouseUp += (_, _) => SaveOpacity();
+                track.KeyUp += (_, _) => SaveOpacity();
                 row.Controls.Add(track);
                 row.Controls.Add(valueLabel);
                 return row;
@@ -2918,7 +4033,7 @@ namespace MotionDesk.UI
                 var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 4) };
                 row.Controls.Add(new Label { Text = LocalizationManager.T("Settings.DarkIntensity") + ":", AutoSize = true, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody, Padding = new Padding(0, 6, 8, 0) });
                 int initial = Math.Clamp((int)Math.Round(AppSettings.Load().DarkIntensity * 100), 0, 100);
-                var track = new TrackBar { Minimum = 0, Maximum = 100, Value = initial, Width = 200, TickFrequency = 10, SmallChange = 1, LargeChange = 5 };
+                var track = new FlatSlider { Minimum = 0, Maximum = 100, Value = initial, Width = 200, SmallChange = 1, LargeChange = 5 };
                 var valueLabel = new Label { Text = $"{initial}%", AutoSize = true, ForeColor = UiTheme.TextMuted, Font = UiTheme.FontBody, Padding = new Padding(8, 6, 0, 0) };
                 track.Scroll += (_, _) =>
                 {
@@ -2946,7 +4061,7 @@ namespace MotionDesk.UI
 
         private static Icon LoadApplicationIcon()
         {
-            var path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "MotionDesk.ico");
+            var path = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "Opsis.ico");
             return File.Exists(path) ? new Icon(path) : SystemIcons.Application;
         }
     }

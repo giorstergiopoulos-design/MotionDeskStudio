@@ -243,6 +243,10 @@ namespace MotionDesk.Widgets
         private Panel? _themedPanel;
         private Action? _themeHandler;
         private Label? _titleLabelRef;
+        // ΔΙΟΡΘΩΣΗ "η διαφάνεια να αφορά το παράθυρο όχι το περιεχόμενο" — βλ. ίδιο σχόλιο στο
+        // DeskContainerWindow.cs. Δεν χρησιμοποιούμε πια Form.Opacity (ξεθωριάζει μαζί και το
+        // κείμενο/εικονίδια)· το MotionDesk.UI.GlassBlur θολώνει μόνο ό,τι είναι πίσω από το widget.
+        private double _backgroundOpacity = 1.0;
 
         public WidgetWindow(string widgetId, int defaultX, int defaultY, int width, int height)
         {
@@ -285,6 +289,8 @@ namespace MotionDesk.Widgets
                 InitializeNativeWeather();
             else if (string.Equals(widgetId, "disk", StringComparison.OrdinalIgnoreCase))
                 InitializeNativeDisk();
+            else if (string.Equals(widgetId, "quicksettings", StringComparison.OrdinalIgnoreCase))
+                InitializeNativeQuickSettings();
             else
                 _ = InitializeWebViewAsync();
         }
@@ -302,6 +308,21 @@ namespace MotionDesk.Widgets
                 _themeHandler = null;
             }
             base.Dispose(disposing);
+        }
+
+        // ΔΙΟΡΘΩΣΗ "το λευκό πλαίσιο widget ΔΕΝ διορθώθηκε" (ο χρήστης επιβεβαίωσε με πριν/μετά
+        // screenshot): το DisableNativeBorderAccent καλούνταν μόνο μέσα στο ApplyRoundedShell
+        // (constructor/resize/theme-change) — ΟΧΙ σε OnHandleCreated. Αν το WinForms αναδημιουργήσει
+        // ΚΑΠΟΤΕ το native handle του widget (π.χ. αλλαγή DPI/οθόνης), το νέο HWND δεν είχε ΠΟΤΕ
+        // εφαρμοσμένο το DWMWA_BORDER_COLOR="none" και το προεπιλεγμένο λευκό περίγραμμα των Windows
+        // 11 επανεμφανιζόταν — ακριβώς το ίδιο πρότυπο με το ήδη-σωστό DeskContainerWindow.
+        // OnHandleCreated (βλ. DeskContainerWindow.cs), τώρα αντιγραμμένο εδώ 1-προς-1. Επίσης
+        // επιτρέπει drag&drop να περνάει σωστά ακόμα κι αν η εφαρμογή τρέχει elevated (UIPI).
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            GlassBlur.DisableNativeBorderAccent(Handle);
+            GlassBlur.AllowDragDropAcrossUipi(Handle);
         }
 
         public void BeginNativeDrag()
@@ -349,10 +370,10 @@ namespace MotionDesk.Widgets
                     WidgetId = WidgetId, X = Location.X, Y = Location.Y, Width = Width, Height = Height, IsLocked = IsLocked,
                     Variant = Variant, Latitude = Latitude, Longitude = Longitude, LocationName = LocationName,
                     Clock24Hour = Clock24Hour, ClockShowSeconds = ClockShowSeconds, AudioStyle = AudioStyle,
-                    Opacity = Opacity, NetworkStyle = NetworkStyle,
+                    Opacity = _backgroundOpacity, NetworkStyle = NetworkStyle,
                     AnalogTheme = AnalogTheme, DigitalFontFamily = DigitalFontFamily, DigitalColorArgb = DigitalColorArgb
                 };
-                File.WriteAllText(configPath, JsonSerializer.Serialize(state));
+                MotionDesk.Services.AtomicFile.WriteAllText(configPath, JsonSerializer.Serialize(state));
             }
             catch (IOException) { }
         }
@@ -364,7 +385,7 @@ namespace MotionDesk.Widgets
             {
                 try
                 {
-                    var state = JsonSerializer.Deserialize<WidgetState>(File.ReadAllText(configPath));
+                    var state = JsonSerializer.Deserialize<WidgetState>(MotionDesk.Services.AtomicFile.ReadAllText(configPath));
                     if (state != null)
                     {
                         if (state.Width > 120 && state.Height > 80) Size = new Size(Math.Clamp(state.Width, 160, 1200), Math.Clamp(state.Height, 100, 900));
@@ -378,7 +399,7 @@ namespace MotionDesk.Widgets
                         ClockShowSeconds = state.ClockShowSeconds;
                         AudioStyle = string.IsNullOrWhiteSpace(state.AudioStyle) ? "WMP" : state.AudioStyle;
                         NetworkStyle = string.IsNullOrWhiteSpace(state.NetworkStyle) ? "Sparkline" : state.NetworkStyle;
-                        Opacity = state.Opacity is > 0.2 and <= 1.0 ? state.Opacity : 1.0;
+                        _backgroundOpacity = state.Opacity is > 0.2 and <= 1.0 ? state.Opacity : 1.0;
                         AnalogTheme = string.IsNullOrWhiteSpace(state.AnalogTheme) ? "Classic" : state.AnalogTheme;
                         DigitalFontFamily = string.IsNullOrWhiteSpace(state.DigitalFontFamily) ? "Segoe UI" : state.DigitalFontFamily;
                         DigitalColorArgb = state.DigitalColorArgb;
@@ -401,8 +422,7 @@ namespace MotionDesk.Widgets
         }
 
         private string GetConfigFilePath() =>
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "MotionDeskStudio", "widgets", $"{WidgetId}_config.json");
+            Path.Combine(AppPaths.AppDataFolder, "widgets", $"{WidgetId}_config.json");
 
         private async System.Threading.Tasks.Task InitializeWebViewAsync()
         {
@@ -413,13 +433,14 @@ namespace MotionDesk.Widgets
                 Controls.Add(_webView);
                 await _webView.EnsureCoreWebView2Async(await WebView2Support.CreateEnvironmentAsync());
                 if (IsDisposed || _webView.CoreWebView2 == null) return;
+                WebView2Support.Harden(_webView.CoreWebView2);
                 _webView.CoreWebView2.AddHostObjectToScript("motionDesk", new WidgetBridge(this));
                 string htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "widgets", WidgetId, "index.html");
                 if (File.Exists(htmlPath)) _webView.CoreWebView2.Navigate(htmlPath);
             }
             catch (Exception ex)
             {
-                if (!IsDisposed) Text = $"MotionDesk - {WidgetId}";
+                if (!IsDisposed) Text = $"Opsis - {WidgetId}";
                 System.Diagnostics.Debug.WriteLine($"WebView2 widget initialization failed: {ex}");
             }
         }
@@ -437,10 +458,10 @@ namespace MotionDesk.Widgets
                 menu.Items.Add(digital);
                 menu.Items.Add(analog);
                 menu.Items.Add(new ToolStripSeparator());
-                var h24 = new ToolStripMenuItem("24ωρη μορφή", null, (_, _) => SetClockOption(o => Clock24Hour = true)) { Checked = Clock24Hour };
-                var h12 = new ToolStripMenuItem("12ωρη μορφή (πμ/μμ)", null, (_, _) => SetClockOption(o => Clock24Hour = false)) { Checked = !Clock24Hour };
-                var secsOn = new ToolStripMenuItem("Με δευτερόλεπτα", null, (_, _) => SetClockOption(o => ClockShowSeconds = true)) { Checked = ClockShowSeconds };
-                var secsOff = new ToolStripMenuItem("Χωρίς δευτερόλεπτα", null, (_, _) => SetClockOption(o => ClockShowSeconds = false)) { Checked = !ClockShowSeconds };
+                var h24 = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.Hour24"), null, (_, _) => SetClockOption(o => Clock24Hour = true)) { Checked = Clock24Hour };
+                var h12 = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.Hour12"), null, (_, _) => SetClockOption(o => Clock24Hour = false)) { Checked = !Clock24Hour };
+                var secsOn = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.SecondsOn"), null, (_, _) => SetClockOption(o => ClockShowSeconds = true)) { Checked = ClockShowSeconds };
+                var secsOff = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.SecondsOff"), null, (_, _) => SetClockOption(o => ClockShowSeconds = false)) { Checked = !ClockShowSeconds };
                 menu.Items.Add(h24);
                 menu.Items.Add(h12);
                 menu.Items.Add(secsOn);
@@ -449,8 +470,8 @@ namespace MotionDesk.Widgets
 
                 // Ζητήθηκε ρητά "analog clock διαφορετικά θέματα, digital clock με διαφορετικές
                 // γραμματοσειρές & χρώματα".
-                var analogThemeMenu = new ToolStripMenuItem("Θέμα (Analog)");
-                foreach (var themeName in new[] { "Classic", "Neon", "Minimal" })
+                var analogThemeMenu = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.AnalogTheme"));
+                foreach (var themeName in new[] { "Classic", "Neon", "Minimal", "Mono", "Retro" })
                 {
                     var item = new ToolStripMenuItem(themeName) { Checked = AnalogTheme == themeName };
                     item.Click += (_, _) => SetClockOption(o => AnalogTheme = themeName);
@@ -458,8 +479,8 @@ namespace MotionDesk.Widgets
                 }
                 menu.Items.Add(analogThemeMenu);
 
-                var fontMenu = new ToolStripMenuItem("Γραμματοσειρά (Digital)");
-                foreach (var fam in new[] { "Segoe UI", "Consolas", "Arial", "Times New Roman", "Comic Sans MS" })
+                var fontMenu = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.DigitalFont"));
+                foreach (var fam in new[] { "Segoe UI", "Consolas", "Arial", "Times New Roman", "Comic Sans MS", "Georgia", "Verdana" })
                 {
                     var item = new ToolStripMenuItem(fam) { Checked = DigitalFontFamily == fam };
                     item.Click += (_, _) => SetClockOption(o => DigitalFontFamily = fam);
@@ -467,15 +488,17 @@ namespace MotionDesk.Widgets
                 }
                 menu.Items.Add(fontMenu);
 
-                var colorMenu = new ToolStripMenuItem("Χρώμα (Digital)");
+                var colorMenu = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.DigitalColor"));
                 var colorOptions = new (string Name, int Argb)[]
                 {
-                    ("Προεπιλογή θέματος", -1),
-                    ("Λευκό", Color.White.ToArgb()),
-                    ("Κυανό", Color.FromArgb(0, 210, 255).ToArgb()),
-                    ("Πράσινο", Color.FromArgb(60, 220, 140).ToArgb()),
-                    ("Πορτοκαλί", Color.FromArgb(255, 150, 60).ToArgb()),
-                    ("Ροζ", Color.FromArgb(255, 90, 180).ToArgb()),
+                    (LocalizationManager.T("WidgetMenu.ColorDefault"), -1),
+                    (LocalizationManager.T("WidgetMenu.ColorWhite"), Color.White.ToArgb()),
+                    (LocalizationManager.T("WidgetMenu.ColorCyan"), Color.FromArgb(0, 210, 255).ToArgb()),
+                    (LocalizationManager.T("WidgetMenu.ColorGreen"), Color.FromArgb(60, 220, 140).ToArgb()),
+                    (LocalizationManager.T("WidgetMenu.ColorOrange"), Color.FromArgb(255, 150, 60).ToArgb()),
+                    (LocalizationManager.T("WidgetMenu.ColorPink"), Color.FromArgb(255, 90, 180).ToArgb()),
+                    (LocalizationManager.T("WidgetMenu.ColorRed"), Color.FromArgb(235, 70, 60).ToArgb()),
+                    (LocalizationManager.T("WidgetMenu.ColorGold"), Color.FromArgb(230, 180, 60).ToArgb()),
                 };
                 foreach (var (name, argb) in colorOptions)
                 {
@@ -488,8 +511,8 @@ namespace MotionDesk.Widgets
             }
             else if (string.Equals(WidgetId, "audio", StringComparison.OrdinalIgnoreCase))
             {
-                var wmp = new ToolStripMenuItem("WMP Legacy (LED μπάρες)", null, (_, _) => SetAudioStyle("WMP")) { Checked = AudioStyle == "WMP" };
-                var winamp = new ToolStripMenuItem("Winamp (gradient + αντανάκλαση)", null, (_, _) => SetAudioStyle("Winamp")) { Checked = AudioStyle == "Winamp" };
+                var wmp = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.AudioWmp"), null, (_, _) => SetAudioStyle("WMP")) { Checked = AudioStyle == "WMP" };
+                var winamp = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.AudioWinamp"), null, (_, _) => SetAudioStyle("Winamp")) { Checked = AudioStyle == "Winamp" };
                 menu.Items.Add(wmp);
                 menu.Items.Add(winamp);
                 menu.Items.Add(new ToolStripSeparator());
@@ -497,7 +520,7 @@ namespace MotionDesk.Widgets
                 // "Audio Enhancement" presets (εμπνευσμένο από τη λογική του FXSound — βλ. σχόλιο
                 // στο AudioSpectrumService.Presets) — κοινό preset με τη σελίδα Audio Enhancement.
                 var currentPreset = AppSettings.Load().AudioEnhancementPreset;
-                var presetMenu = new ToolStripMenuItem("Ενίσχυση (preset)");
+                var presetMenu = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.EnhancePreset"));
                 foreach (var (name, _) in AudioSpectrumService.Presets)
                 {
                     var item = new ToolStripMenuItem(name) { Checked = currentPreset == name };
@@ -514,13 +537,13 @@ namespace MotionDesk.Widgets
             }
             else if (string.Equals(WidgetId, "weather", StringComparison.OrdinalIgnoreCase))
             {
-                menu.Items.Add("Set location…", null, (_, _) => PromptWeatherLocation());
+                menu.Items.Add(LocalizationManager.T("WidgetMenu.SetLocation"), null, (_, _) => PromptWeatherLocation());
                 menu.Items.Add(new ToolStripSeparator());
             }
             else if (string.Equals(WidgetId, "network", StringComparison.OrdinalIgnoreCase))
             {
-                var sparklineItem = new ToolStripMenuItem("Γράφημα (Sparkline)", null, (_, _) => SetNetworkStyle("Sparkline")) { Checked = NetworkStyle == "Sparkline" };
-                var barsItem = new ToolStripMenuItem("Μπάρες σήματος", null, (_, _) => SetNetworkStyle("Bars")) { Checked = NetworkStyle == "Bars" };
+                var sparklineItem = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.NetSparkline"), null, (_, _) => SetNetworkStyle("Sparkline")) { Checked = NetworkStyle == "Sparkline" };
+                var barsItem = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.NetBars"), null, (_, _) => SetNetworkStyle("Bars")) { Checked = NetworkStyle == "Bars" };
                 menu.Items.Add(sparklineItem);
                 menu.Items.Add(barsItem);
                 menu.Items.Add(new ToolStripSeparator());
@@ -529,20 +552,20 @@ namespace MotionDesk.Widgets
             // Ρύθμιση διαφάνειας — ζητήθηκε ρητά "στα widgets & containers προσθεσε ρυθμιση για
             // opacity οπως στην εφαρμογη", ίδιο σύνολο ποσοστών με το ήδη υπάρχον μενού των
             // DeskContainers για συνέπεια.
-            var opacityMenu = new ToolStripMenuItem("Opacity");
+            var opacityMenu = new ToolStripMenuItem(LocalizationManager.T("WidgetMenu.Opacity"));
             foreach (int pct in new[] { 100, 85, 70, 55, 40, 25 })
             {
-                var opacityItem = new ToolStripMenuItem($"{pct}%") { Checked = Math.Abs(Opacity * 100 - pct) < 1 };
-                opacityItem.Click += (_, _) => { Opacity = pct / 100.0; SaveWidgetState(); };
+                var opacityItem = new ToolStripMenuItem($"{pct}%") { Checked = Math.Abs(_backgroundOpacity * 100 - pct) < 1 };
+                opacityItem.Click += (_, _) => { _backgroundOpacity = pct / 100.0; ApplyGlassBlur(); SaveWidgetState(); };
                 opacityMenu.DropDownItems.Add(opacityItem);
             }
             menu.Items.Add(opacityMenu);
 
-            var lockItem = new ToolStripMenuItem(IsLocked ? "Unlock widget" : "Lock widget");
+            var lockItem = new ToolStripMenuItem(IsLocked ? LocalizationManager.T("WidgetMenu.Unlock") : LocalizationManager.T("WidgetMenu.Lock"));
             lockItem.Click += (_, _) => { IsLocked = !IsLocked; SaveWidgetState(); };
             menu.Items.Add(lockItem);
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Close widget", null, (_, _) => Close());
+            menu.Items.Add(LocalizationManager.T("WidgetMenu.Close"), null, (_, _) => Close());
             menu.Show(owner, owner.PointToClient(Cursor.Position));
         }
 
@@ -589,7 +612,7 @@ namespace MotionDesk.Widgets
         {
             using var dlg = new Form
             {
-                Text = "Set weather location",
+                Text = LocalizationManager.T("Weather.SetLocationTitle"),
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent,
                 ClientSize = new Size(320, 120),
@@ -597,12 +620,13 @@ namespace MotionDesk.Widgets
                 MinimizeBox = false,
                 BackColor = UiTheme.Surface
             };
-            var label = new Label { Text = "City name:", Location = new Point(14, 14), AutoSize = true, ForeColor = UiTheme.TextPrimary };
+            var label = new Label { Text = LocalizationManager.T("Weather.CityName"), Location = new Point(14, 14), AutoSize = true, ForeColor = UiTheme.TextPrimary };
             var textBox = new TextBox { Location = new Point(14, 36), Width = 290, Text = LocationName ?? "" };
-            var okBtn = new Button { Text = "OK", Location = new Point(140, 74), DialogResult = DialogResult.OK };
-            var cancelBtn = new Button { Text = "Cancel", Location = new Point(228, 74), DialogResult = DialogResult.Cancel };
+            var okBtn = new Button { Text = LocalizationManager.T("Common.OK"), Location = new Point(140, 74), DialogResult = DialogResult.OK };
+            var cancelBtn = new Button { Text = LocalizationManager.T("Common.Cancel"), Location = new Point(228, 74), DialogResult = DialogResult.Cancel };
             dlg.Controls.Add(label); dlg.Controls.Add(textBox); dlg.Controls.Add(okBtn); dlg.Controls.Add(cancelBtn);
             dlg.AcceptButton = okBtn; dlg.CancelButton = cancelBtn;
+            dlg.HandleCreated += (_, _) => GlassBlur.ApplyWindowDropShadow(dlg.Handle);
 
             if (dlg.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(textBox.Text))
             {
@@ -708,7 +732,11 @@ namespace MotionDesk.Widgets
         private void ApplyRoundedShell()
         {
             if (Width > 0 && Height > 0) UiTheme.ApplyRoundedRegion(this, 12);
+            ApplyGlassBlur();
+            GlassBlur.DisableNativeBorderAccent(Handle);
         }
+
+        private void ApplyGlassBlur() => GlassBlur.Apply(Handle, UiTheme.AccentCyan, _backgroundOpacity);
 
         private void InitializeNativeClock()
         {
@@ -783,7 +811,7 @@ namespace MotionDesk.Widgets
             ApplyVariant();
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
         }
 
@@ -810,13 +838,13 @@ namespace MotionDesk.Widgets
             void Update()
             {
                 var m = AdvancedSystemMonitorService.Instance.GetSnapshot();
-                values.Text = $"↓ {m.NetworkDownKbps:0.0} KB/s   ↑ {m.NetworkUpKbps:0.0} KB/s   ·   {m.ProcessCount} διεργασίες";
+                values.Text = $"↓ {m.NetworkDownKbps:0.0} KB/s   ↑ {m.NetworkUpKbps:0.0} KB/s   ·   " + string.Format(LocalizationManager.T("WidgetText.ProcessesFormat"), m.ProcessCount);
                 sparkline.Push(m.NetworkDownKbps, m.NetworkUpKbps);
                 bars.Push(m.NetworkDownKbps, m.NetworkUpKbps);
             }
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
         }
 
@@ -839,13 +867,95 @@ namespace MotionDesk.Widgets
             {
                 var bands = spectrum.GetBands();
                 equalizer.PushBands(bands);
-                values.Text = spectrum.IsAvailable ? "" : "Δεν εντοπίστηκε συσκευή ήχου εξόδου";
+                values.Text = spectrum.IsAvailable ? "" : LocalizationManager.T("WidgetText.NoAudioDevice");
             }
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 40 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
             FormClosed += (_, _) => spectrum.Dispose();
+        }
+
+        // Νέο widget "Quick Settings" — SeelenUI-inspired (το δικό τους αντίστοιχο popup συνδυάζει
+        // ήχο/φωτεινότητα/δίκτυο σε ένα πάνελ). Ήχος μέσω NAudio (ήδη εξάρτηση), φωτεινότητα μέσω
+        // WMI (μόνο αν η οθόνη το υποστηρίζει — συνήθως laptop panel, κρύβεται αλλιώς), σχέδιο
+        // ενέργειας μέσω powercfg. Καμία λειτουργία δεν χρειάζεται elevation.
+        private void InitializeNativeQuickSettings()
+        {
+            var panel = CreateNativePanel(LocalizationManager.T("Widgets.QuickSettings"), out var values);
+            values.Visible = false;
+
+            var stack = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent, Padding = new Padding(10, 6, 10, 6) };
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            panel.Controls.Add(stack);
+            stack.BringToFront();
+
+            // ---- Ήχος: κουμπί σίγασης + slider ----
+            var volumeRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Top };
+            var muteBtn = new Label { Text = "🔊", Width = 28, Height = 24, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextPrimary, Font = new Font("Segoe UI", 12), Cursor = Cursors.Hand };
+            var volumeSlider = new FlatSlider { Width = 150, Height = 24, Minimum = 0, Maximum = 100, Margin = new Padding(6, 0, 6, 0) };
+            var volumeLabel = new Label { Width = 36, Height = 24, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody };
+            volumeRow.Controls.Add(muteBtn);
+            volumeRow.Controls.Add(volumeSlider);
+            volumeRow.Controls.Add(volumeLabel);
+            stack.Controls.Add(volumeRow, 0, 0);
+
+            void RefreshVolumeUi()
+            {
+                bool muted = SystemControlService.GetMute();
+                muteBtn.Text = muted ? "🔇" : "🔊";
+                int pct = (int)Math.Round(SystemControlService.GetVolume() * 100);
+                volumeSlider.Value = pct;
+                volumeLabel.Text = muted ? LocalizationManager.T("WidgetText.Muted") : $"{pct}%";
+            }
+            muteBtn.Click += (_, _) => { SystemControlService.SetMute(!SystemControlService.GetMute()); RefreshVolumeUi(); };
+            volumeSlider.ValueChanged += (_, _) => { SystemControlService.SetVolume(volumeSlider.Value / 100f); if (volumeSlider.Value > 0 && SystemControlService.GetMute()) SystemControlService.SetMute(false); RefreshVolumeUi(); };
+
+            // ---- Φωτεινότητα: μόνο αν υποστηρίζεται από την οθόνη ----
+            bool brightnessSupported = SystemControlService.IsBrightnessSupported();
+            var brightnessRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Top, Visible = brightnessSupported };
+            var brightnessIcon = new Label { Text = "☀", Width = 28, Height = 24, TextAlign = ContentAlignment.MiddleCenter, ForeColor = UiTheme.TextPrimary, Font = new Font("Segoe UI", 12) };
+            var brightnessSlider = new FlatSlider { Width = 150, Height = 24, Minimum = 0, Maximum = 100, Margin = new Padding(6, 0, 6, 0) };
+            var brightnessLabel = new Label { Width = 36, Height = 24, TextAlign = ContentAlignment.MiddleLeft, ForeColor = UiTheme.TextSecondary, Font = UiTheme.FontBody };
+            brightnessRow.Controls.Add(brightnessIcon);
+            brightnessRow.Controls.Add(brightnessSlider);
+            brightnessRow.Controls.Add(brightnessLabel);
+            stack.Controls.Add(brightnessRow, 0, 1);
+            if (brightnessSupported)
+            {
+                brightnessSlider.Value = SystemControlService.GetBrightness();
+                brightnessLabel.Text = $"{brightnessSlider.Value}%";
+                brightnessSlider.ValueChanged += (_, _) => { SystemControlService.SetBrightness(brightnessSlider.Value); brightnessLabel.Text = $"{brightnessSlider.Value}%"; };
+            }
+
+            // ---- Σχέδιο ενέργειας: ένα κουμπί ανά διαθέσιμο σχέδιο, το ενεργό τονισμένο ----
+            var powerPanel = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Dock = DockStyle.Top, Margin = new Padding(0, 6, 0, 0) };
+            stack.Controls.Add(powerPanel, 0, 2);
+            void RefreshPowerPlans()
+            {
+                powerPanel.Controls.Clear();
+                foreach (var plan in SystemControlService.GetPowerPlans())
+                {
+                    var btn = new Label
+                    {
+                        Text = plan.Name, AutoSize = true, Padding = new Padding(8, 3, 8, 3), Margin = new Padding(0, 0, 6, 6),
+                        Cursor = Cursors.Hand, Font = UiTheme.FontBody,
+                        ForeColor = plan.IsActive ? Color.White : UiTheme.TextSecondary,
+                        BackColor = plan.IsActive ? UiTheme.AccentCyan : UiTheme.Surface,
+                    };
+                    var guid = plan.Guid;
+                    btn.Click += (_, _) => { SystemControlService.SetActivePowerPlan(guid); RefreshPowerPlans(); };
+                    powerPanel.Controls.Add(btn);
+                }
+            }
+
+            RefreshVolumeUi();
+            RefreshPowerPlans();
+            _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) { RefreshVolumeUi(); RefreshPowerPlans(); } };
+            _nativeMonitorTimer.Start();
         }
 
         // Νέο widget: χρήση/χωρητικότητα δίσκων συστήματος — ζητήθηκε ρητά.
@@ -855,7 +965,7 @@ namespace MotionDesk.Widgets
         // φορά + ◀/▶ σελιδοποίηση, αντί για FlowLayoutPanel με scroll.
         private void InitializeNativeDisk()
         {
-            var panel = CreateNativePanel("Δίσκοι", out var values);
+            var panel = CreateNativePanel(LocalizationManager.T("Widgets.Disk"), out var values);
             values.Visible = false;
 
             // ΔΙΟΡΘΩΣΗ πραγματικού bug ("ο κύκλος κόβεται από τα κουμπιά"): το πραγματικό root
@@ -895,7 +1005,7 @@ namespace MotionDesk.Widgets
 
             void Render()
             {
-                if (drives.Count == 0) { ring.SetData("—", "Δεν βρέθηκαν δίσκοι", 0, 0, 0); pageLabel.Text = ""; return; }
+                if (drives.Count == 0) { ring.SetData("—", LocalizationManager.T("WidgetText.NoDrives"), 0, 0, 0); pageLabel.Text = ""; return; }
                 index = ((index % drives.Count) + drives.Count) % drives.Count;
                 var drive = drives[index];
                 try
@@ -904,7 +1014,7 @@ namespace MotionDesk.Widgets
                     double freeGb = drive.AvailableFreeSpace / 1073741824.0;
                     double usedGb = totalGb - freeGb;
                     double pct = totalGb > 0 ? usedGb / totalGb : 0;
-                    string label = string.IsNullOrWhiteSpace(drive.VolumeLabel) ? "Τοπικός δίσκος" : drive.VolumeLabel;
+                    string label = string.IsNullOrWhiteSpace(drive.VolumeLabel) ? LocalizationManager.T("WidgetText.LocalDisk") : drive.VolumeLabel;
                     ring.SetData(drive.Name.TrimEnd('\\'), label, usedGb, totalGb, pct);
                 }
                 catch (IOException) { }
@@ -933,23 +1043,24 @@ namespace MotionDesk.Widgets
 
         private void InitializeNativeWeather()
         {
-            var panel = CreateNativePanel(LocationName != null ? $"Weather · {LocationName}" : "Weather · Athens (default)", out var values);
+            var panel = CreateNativePanel(LocationName != null ? string.Format(LocalizationManager.T("WidgetText.WeatherTitleFormat"), LocationName) : LocalizationManager.T("WidgetText.WeatherDefaultTitle"), out var values);
             values.TextAlign = ContentAlignment.MiddleCenter;
             values.Font = new Font("Segoe UI", 9.5f);
             values.Height = 44;
-            values.Text = "Loading…";
+            values.Text = LocalizationManager.T("WidgetText.Loading");
 
             var icon = new WeatherIconControl { Dock = DockStyle.Fill };
             panel.Controls.Add(icon);
             icon.BringToFront();
 
             var animTimer = new System.Windows.Forms.Timer { Interval = 60 };
-            animTimer.Tick += (_, _) => icon.AdvancePhase();
+            animTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) icon.AdvancePhase(); };
             animTimer.Start();
             FormClosed += (_, _) => animTimer.Dispose();
 
             async void Update()
             {
+                bool ok = true;
                 try
                 {
                     double lat = Latitude ?? 37.9838;
@@ -963,11 +1074,14 @@ namespace MotionDesk.Widgets
                         icon.Condition = result.Condition;
                         int beaufort = WeatherService.ToBeaufort(result.WindKmh);
                         string humidityText = result.HumidityPercent.HasValue ? $"{result.HumidityPercent:0}%" : "—";
-                        values.Text = $"{result.TemperatureC:0.#} °C   ·   Άνεμος {result.WindKmh:0.#} km/h (Bf {beaufort})\nΥγρασία {humidityText}";
+                        values.Text = string.Format(LocalizationManager.T("WidgetText.WeatherLineFormat"), result.TemperatureC, result.WindKmh, beaufort, humidityText);
                     }
-                    else values.Text = "Weather unavailable";
+                    else { values.Text = LocalizationManager.T("WidgetText.WeatherUnavailable"); ok = false; }
                 }
-                catch { values.Text = "Weather unavailable"; }
+                catch { values.Text = LocalizationManager.T("WidgetText.WeatherUnavailable"); ok = false; }
+                // Αν ο καιρός απέτυχε (π.χ. καμία σύνδεση στην εκκίνηση), ξαναδοκιμάζουμε σε 1 λεπτό αντί να
+                // περιμένουμε 15 λεπτά με "μη διαθέσιμο"· μετά την επιτυχία επιστρέφει στο κανονικό διάστημα.
+                if (!IsDisposed && _nativeMonitorTimer != null) _nativeMonitorTimer.Interval = ok ? 900000 : 60000;
             }
             OnGeocodeRequested(async cityName =>
             {
@@ -978,13 +1092,13 @@ namespace MotionDesk.Widgets
                     Longitude = result.Value.Lon;
                     LocationName = result.Value.Name;
                     SaveWidgetState();
-                    if (_titleLabelRef != null) _titleLabelRef.Text = $"Weather · {LocationName}";
+                    if (_titleLabelRef != null) _titleLabelRef.Text = string.Format(LocalizationManager.T("WidgetText.WeatherTitleFormat"), LocationName);
                     Update();
                 }
             });
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 900000 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
         }
 
@@ -1025,19 +1139,19 @@ namespace MotionDesk.Widgets
                 var net = AdvancedSystemMonitorService.Instance.GetSnapshot();
                 double ramUsedPct = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
                 rows.SetCpu(m.CpuPercent);
-                rows.SetRam(ramUsedPct, $"{m.AvailableMemoryMb:0} / {m.TotalMemoryMb:0} MB ελεύθερα");
+                rows.SetRam(ramUsedPct, string.Format(LocalizationManager.T("WidgetText.RamFreeFormat"), m.AvailableMemoryMb.ToString("0"), m.TotalMemoryMb.ToString("0"), ramUsedPct.ToString("0")));
                 rows.SetNetwork(net.NetworkDownKbps, net.NetworkUpKbps);
                 if (gpuReady)
                 {
                     var gpu = GpuMonitorService.Instance.GetSnapshot();
                     rows.SetGpu(gpu.Available ? gpu.LoadPercent : null,
-                        gpu.Available ? $"{(gpu.TemperatureC.HasValue ? $"{gpu.TemperatureC:0}°C" : "—")}" : "μη διαθέσιμο");
+                        gpu.Available ? $"{(gpu.TemperatureC.HasValue ? $"{gpu.TemperatureC:0}°C" : "—")}" : LocalizationManager.T("WidgetText.GpuNA"));
                 }
-                else rows.SetGpu(null, "φόρτωση…");
+                else rows.SetGpu(null, LocalizationManager.T("WidgetText.GpuLoading"));
             }
             Update();
             _nativeMonitorTimer = new System.Windows.Forms.Timer { Interval = 2000 };
-            _nativeMonitorTimer.Tick += (_, _) => Update();
+            _nativeMonitorTimer.Tick += (_, _) => { if (!AppActivity.IsFullscreenAppActive) Update(); };
             _nativeMonitorTimer.Start();
         }
 
@@ -1070,11 +1184,15 @@ namespace MotionDesk.Widgets
             float radius = size / 2f;
             bool minimal = Theme == "Minimal";
             bool neon = Theme == "Neon";
+            // Ζητήθηκε ρητά "περισσότερα θέματα για τα analog ρολόγια": Mono (καθαρά
+            // ασπρόμαυρο/χωρίς χρώμα accent) και Retro (πιο χοντρά χέρια, accent χρώμα στο face/hub).
+            bool mono = Theme == "Mono";
+            bool retro = Theme == "Retro";
 
-            using (var facePen = new Pen(UiTheme.Border, 2f))
+            using (var facePen = new Pen(retro ? UiTheme.AccentBlue : UiTheme.Border, retro ? 3f : 2f))
                 g.DrawEllipse(facePen, center.X - radius, center.Y - radius, radius * 2, radius * 2);
 
-            using var tickPen = new Pen(UiTheme.TextMuted, 2f);
+            using var tickPen = new Pen(retro ? UiTheme.AccentBlue : UiTheme.TextMuted, retro ? 3f : 2f);
             for (int i = 0; i < 12; i++)
             {
                 bool isMajor = i % 3 == 0;
@@ -1088,8 +1206,10 @@ namespace MotionDesk.Widgets
             }
 
             var now = DateTime.Now;
-            Color handColor = neon ? UiTheme.AccentCyan : UiTheme.TextPrimary;
-            float widthScale = minimal ? 0.7f : 1f;
+            Color handColor = mono ? UiTheme.TextPrimary : neon ? UiTheme.AccentCyan : retro ? UiTheme.AccentBlue : UiTheme.TextPrimary;
+            Color secondHandColor = mono ? UiTheme.TextMuted : UiTheme.AccentCyan;
+            Color hubColor = mono ? UiTheme.TextMuted : retro ? UiTheme.AccentBlue : UiTheme.AccentCyan;
+            float widthScale = minimal ? 0.7f : retro ? 1.3f : 1f;
             if (neon)
             {
                 // Glow: το ίδιο χέρι ξαναζωγραφίζεται πιο φαρδύ/διάφανο από πίσω — φτηνή προσομοίωση
@@ -1101,9 +1221,9 @@ namespace MotionDesk.Widgets
             }
             DrawHand(g, center, radius * 0.5f, 5f * widthScale, (now.Hour % 12 + now.Minute / 60.0) * 30.0, handColor);
             DrawHand(g, center, radius * 0.72f, 3.5f * widthScale, now.Minute * 6.0, handColor);
-            if (!minimal) DrawHand(g, center, radius * 0.82f, 1.5f, now.Second * 6.0, UiTheme.AccentCyan);
+            if (!minimal) DrawHand(g, center, radius * 0.82f, 1.5f, now.Second * 6.0, secondHandColor);
 
-            using var hubBrush = new SolidBrush(UiTheme.AccentCyan);
+            using var hubBrush = new SolidBrush(hubColor);
             g.FillEllipse(hubBrush, center.X - 4, center.Y - 4, 8, 8);
         }
 
@@ -1518,7 +1638,9 @@ namespace MotionDesk.Widgets
             var inset = ringRect;
             inset.Inflate(-thickness / 2f, -thickness / 2f);
 
-            using (var trackPen = new Pen(UiTheme.Border, thickness) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            // Πιο διακριτικό "άδειο" κομμάτι του δακτυλίου (ζητήθηκε ρητά "μη εμφάνιση λευκού
+            // πλαισίου") — το πλήρες UiTheme.Border ήταν πολύ έντονο/φωτεινό σε ανοιχτόχρωμα θέματα.
+            using (var trackPen = new Pen(Color.FromArgb(70, UiTheme.Border), thickness) { StartCap = LineCap.Round, EndCap = LineCap.Round })
                 g.DrawEllipse(trackPen, inset);
 
             Color ringColor = _pct > 0.9 ? Color.FromArgb(235, 76, 66) : _pct > 0.75 ? Color.FromArgb(240, 200, 60) : UiTheme.AccentCyan;
@@ -1597,44 +1719,76 @@ namespace MotionDesk.Widgets
 
         public void SetCpu(double pct) { _cpuPct = pct; Invalidate(); }
         public void SetRam(double pct, string sub) { _ramPct = pct; _ramSub = sub; Invalidate(); }
-        public void SetNetwork(double downKbps, double upKbps) { _netDown = downKbps; _netUp = upKbps; _netPeak = Math.Max(_netPeak * 0.98, Math.Max(downKbps, upKbps)); Invalidate(); }
+        public void SetNetwork(double downKbps, double upKbps)
+        {
+            _netDown = downKbps; _netUp = upKbps; _netPeak = Math.Max(_netPeak * 0.98, Math.Max(downKbps, upKbps));
+            Invalidate();
+        }
         public void SetGpu(double? pct, string sub) { _gpuPct = pct; _gpuSub = sub; Invalidate(); }
 
+        // ΑΝΑΣΧΕΔΙΑΣΜΟΣ (ζητήθηκε ρητά "δεν είναι όμορφο, δες τι προτάσεις υπάρχουν στο web") — οι
+        // 4 στοιβαγμένες γραμμές μπάρας+sparkline αντικαταστάθηκαν από πλέγμα 2x2 δακτυλίων
+        // (ring gauges), ίδια ακριβώς οπτική γλώσσα με το ήδη αποδεδειγμένα όμορφο widget Δίσκοι
+        // (DiskRingControl παρακάτω) — συνεπές ύφος σε όλα τα native widgets αντί για δύο
+        // διαφορετικά στυλ μετρητή. Κοινό μοτίβο σε εργαλεία όπως το Rainmeter: ένας κυκλικός
+        // μετρητής ανά μέτρηση, τιμή στο κέντρο, ετικέτα από κάτω.
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.None;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
             using (var bg = new SolidBrush(UiTheme.Surface)) g.FillRectangle(bg, ClientRectangle);
-            if (Width < 20 || Height < 40) return;
+            if (Width < 40 || Height < 40) return;
 
-            float rowHeight = Height / 4f;
-            // Διευκρινίστηκε ρητά μετά το προηγούμενο πέρασμα: "οι μπάρες να είναι με χρώματα, όχι
-            // τα γράμματα" — το κείμενο (ετικέτα+τιμή) μένει πάντα μαύρο/ουδέτερο (TextPrimary),
-            // ΜΟΝΟ η μπάρα-μετρητής παίρνει χρώμα ανάλογα με το επίπεδο (πράσινο/κίτρινο/κόκκινο).
-            DrawRow(g, 0 * rowHeight, rowHeight, "CPU", $"{_cpuPct:0.0}%", _cpuPct / 100.0, MeterColor(_cpuPct));
-            DrawRow(g, 1 * rowHeight, rowHeight, "RAM", _ramSub, _ramPct / 100.0, MeterColor(_ramPct));
+            float cellW = Width / 2f, cellH = Height / 2f;
             double netLevel = _netPeak > 0 ? Math.Clamp(Math.Max(_netDown, _netUp) / _netPeak, 0, 1) : 0;
-            DrawRow(g, 2 * rowHeight, rowHeight, "ΔΙΚΤΥΟ", $"↓{_netDown:0.0} ↑{_netUp:0.0} KB/s", netLevel, UiTheme.AccentCyan);
-            DrawRow(g, 3 * rowHeight, rowHeight, "GPU", _gpuPct.HasValue ? $"{_gpuPct:0}% · {_gpuSub}" : _gpuSub, (_gpuPct ?? 0) / 100.0, MeterColor(_gpuPct ?? 0));
+
+            DrawRingCell(g, new RectangleF(0, 0, cellW, cellH), "CPU", $"{_cpuPct:0}%", _cpuPct / 100.0, MeterColor(_cpuPct));
+            DrawRingCell(g, new RectangleF(cellW, 0, cellW, cellH), "RAM", $"{_ramPct:0}%", _ramPct / 100.0, MeterColor(_ramPct));
+            DrawRingCell(g, new RectangleF(0, cellH, cellW, cellH), LocalizationManager.T("WidgetText.NetLabel"), $"↓{_netDown:0.0}\n↑{_netUp:0.0}", netLevel, UiTheme.AccentCyan);
+            DrawRingCell(g, new RectangleF(cellW, cellH, cellW, cellH), "GPU", _gpuPct.HasValue ? $"{_gpuPct:0}%" : "—", (_gpuPct ?? 0) / 100.0, MeterColor(_gpuPct ?? 0), _gpuSub);
         }
 
         private static Color MeterColor(double pct) => pct > 85 ? Color.FromArgb(235, 76, 66) : pct > 65 ? Color.FromArgb(240, 200, 60) : Color.FromArgb(60, 210, 140);
 
-        private void DrawRow(Graphics g, float top, float rowHeight, string label, string valueText, double level, Color barColor)
+        private void DrawRingCell(Graphics g, RectangleF cell, string label, string valueText, double level01, Color ringColor, string? footnote = null)
         {
-            using var labelFont = new Font("Segoe UI", 8f, FontStyle.Bold);
-            using var valueFont = new Font("Segoe UI", 11f, FontStyle.Bold);
+            using var labelFont = new Font("Segoe UI", Math.Max(7f, cell.Height * 0.085f), FontStyle.Bold);
             using var labelBrush = new SolidBrush(UiTheme.TextMuted);
+            var labelSize = g.MeasureString(label, labelFont);
+            float labelY = cell.Bottom - labelSize.Height - 2;
+            g.DrawString(label, labelFont, labelBrush, cell.X + (cell.Width - labelSize.Width) / 2f, labelY);
+
+            float ringAreaH = labelY - cell.Y;
+            float size = Math.Min(cell.Width, ringAreaH) * 0.78f;
+            if (size < 24) return;
+            float cx = cell.X + cell.Width / 2f, cy = cell.Y + ringAreaH / 2f;
+            float thickness = Math.Max(4f, size * 0.12f);
+            var ringRect = new RectangleF(cx - size / 2f, cy - size / 2f, size, size);
+            var inset = ringRect; inset.Inflate(-thickness / 2f, -thickness / 2f);
+
+            // ΔΙΟΡΘΩΣΗ "το system widget δεν εμφανίζεται σωστά": στο DiskRingControl το ελαφρύ
+            // track (alpha 70) δεν πειράζει γιατί η χρήση δίσκου σπάνια είναι κοντά στο 0% — εδώ
+            // όμως Δίκτυο/GPU είναι συχνά σχεδόν άδεια, οπότε με το ίδιο αχνό track ο δακτύλιος
+            // ουσιαστικά εξαφανίζεται και μένει μόνο μια μικρή "κουκκίδα" από το τόξο. Πιο ορατό
+            // track εδώ ώστε ο πλήρης κύκλος να φαίνεται πάντα, ακόμα και στο 0%.
+            using (var trackPen = new Pen(Color.FromArgb(130, UiTheme.Border), thickness) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawEllipse(trackPen, inset);
+            float sweep = (float)(Math.Clamp(level01, 0, 1) * 360.0);
+            if (sweep > 0.5f)
+                using (var levelPen = new Pen(ringColor, thickness) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                    g.DrawArc(levelPen, inset, -90f, sweep);
+
+            using var valueFont = new Font("Segoe UI", Math.Max(7f, size * 0.20f), FontStyle.Bold);
             using var valueBrush = new SolidBrush(UiTheme.TextPrimary);
+            using var centerFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString(valueText, valueFont, valueBrush, new RectangleF(ringRect.X, ringRect.Y, ringRect.Width, ringRect.Height * (footnote != null ? 0.6f : 1f)), centerFormat);
 
-            g.DrawString(label, labelFont, labelBrush, new PointF(0, top + 2));
-            g.DrawString(valueText, valueFont, valueBrush, new PointF(0, top + 14));
-
-            float barTop = top + rowHeight - 8;
-            var barRect = new RectangleF(0, barTop, Width, 5);
-            using (var trackBrush = new SolidBrush(UiTheme.Border)) g.FillRectangle(trackBrush, barRect);
-            using var fillBrush = new SolidBrush(barColor);
-            g.FillRectangle(fillBrush, barRect.X, barRect.Y, (float)(barRect.Width * Math.Clamp(level, 0, 1)), barRect.Height);
+            if (!string.IsNullOrEmpty(footnote))
+            {
+                using var footFont = new Font("Segoe UI", Math.Max(6f, size * 0.10f));
+                using var footBrush = new SolidBrush(UiTheme.TextSecondary);
+                g.DrawString(footnote, footFont, footBrush, new RectangleF(ringRect.X, cy, ringRect.Width, ringRect.Height * 0.4f), centerFormat);
+            }
         }
     }
 

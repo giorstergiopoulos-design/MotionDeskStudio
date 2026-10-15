@@ -67,7 +67,7 @@ namespace MotionDesk.Widgets
             string path = Path.Combine(UserThemesFolder, $"{safeName}.theme");
 
             var sb = new StringBuilder();
-            sb.AppendLine("; Δημιουργήθηκε από το MotionDesk Studio — IconAtlas/DeskCursors/DeskSounds snapshot");
+            sb.AppendLine("; Δημιουργήθηκε από το Opsis — IconAtlas/DeskCursors/DeskSounds snapshot");
             sb.AppendLine("[Theme]");
             sb.AppendLine($"DisplayName={themeName}");
             sb.AppendLine();
@@ -112,10 +112,10 @@ namespace MotionDesk.Widgets
         // tech-themed φόντο. Ένα αρχείο .theme των Windows μπορεί να αναφέρει μόνο ΣΤΑΤΙΚΗ εικόνα
         // (όχι το ζωντανό canvas engine μας) — αυτή η εικόνα είναι το "στατικό instantiation" του
         // ίδιου circuit-grid μοτίβου με το νέο ζωντανό στυλ "TechGrid" (βλ. wallpaper/index.html),
-        // ώστε η επιφάνεια εργασίας να ταιριάζει οπτικά ακόμη και όταν το MotionDesk δεν τρέχει.
+        // ώστε η επιφάνεια εργασίας να ταιριάζει οπτικά ακόμη και όταν το Opsis δεν τρέχει.
         public static string GenerateTechWallpaperPng()
         {
-            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MotionDeskStudio", "assets");
+            string dir = Path.Combine(Services.AppPaths.AppDataFolder, "assets");
             Directory.CreateDirectory(dir);
             string path = Path.Combine(dir, "tech_grid_wallpaper.png");
 

@@ -19,6 +19,10 @@ namespace MotionDesk.Widgets
 
         public TrayApplicationContext()
         {
+            // Plugin (π.χ. News Crawler): ξεκινούν πριν χτιστεί το μενού ώστε να προσθέσουν τα δικά τους στοιχεία.
+            PluginHost.Instance.NavigationRequested += key => ShowMainWindow("plugin:" + key);
+            PluginHost.Instance.StartAll();
+
             // Δημιουργία Context Menu για το Tray Icon — ομαδοποιημένο σε: παράθυρο, DeskZones,
             // wallpaper, γρήγορα προφίλ, γρήγορες ρυθμίσεις, έξοδος.
             ContextMenuStrip contextMenu = new ContextMenuStrip();
@@ -66,8 +70,17 @@ namespace MotionDesk.Widgets
             };
             contextMenu.Items.Add(startupItem);
 
+            foreach (var pluginMenu in PluginHost.Instance.GetTrayMenuItems())
+            {
+                if (pluginMenu.IsSeparator) { contextMenu.Items.Add(new ToolStripSeparator()); continue; }
+                var invoke = pluginMenu.Invoke;
+                contextMenu.Items.Add(LocalizationManager.CurrentLanguage == "el" ? pluginMenu.TitleEl : pluginMenu.TitleEn, null, (s, e) => { try { invoke(); } catch (Exception) { } });
+            }
+
             contextMenu.Items.Add(new ToolStripSeparator());
             contextMenu.Items.Add(LocalizationManager.T("Common.Exit"), null, (s, e) => {
+                try { WorkspaceProfileService.Save("Last Session"); WorkspaceProfileService.ExitSaveDone = true; } catch { }
+                PluginHost.Instance.StopAll();
                 _hotkeys.Dispose();
                 DesktopIconVisibilityEngine.Instance.Stop();
                 _trayIcon.Visible = false;
@@ -80,18 +93,39 @@ namespace MotionDesk.Widgets
             {
                 Icon = LoadTrayIcon(),
                 ContextMenuStrip = contextMenu,
-                Text = "MotionDesk Studio",
+                Text = "Opsis",
                 Visible = true
             };
 
             _trayIcon.DoubleClick += (s, e) => ShowMainWindow();
 
+            // ---- high-usage alerts + monthly update check
+            _uiContext = System.Threading.SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+            _alertTimer = new System.Windows.Forms.Timer { Interval = 5000 };
+            _alertTimer.Tick += (_, _) => UsageAlertTick();
+            _alertTimer.Start();
+            _trayIcon.BalloonTipClicked += (_, _) => OpenPendingUpdate();
+            _ = CheckForUpdateAsync();
+            // Ζητήθηκε ρητά "οι ενημερώσεις να γίνονται αυτόματα κάθε μήνα" — το παραπάνω
+            // CheckForUpdateAsync() τρέχει ΜΟΝΟ μία φορά, στην εκκίνηση. Το Opsis είναι tray-resident
+            // εφαρμογή που συχνά μένει ανοιχτή για πολύ καιρό χωρίς restart (ειδικά με "Εκκίνηση με τα
+            // Windows" ενεργό) — χωρίς περιοδικό επαναέλεγχο, ένας χρήστης που σπάνια κάνει restart θα
+            // μπορούσε να μείνει χωρίς έλεγχο ενημέρωσης για πολύ περισσότερο από έναν μήνα. Το
+            // UpdateCheckService.CheckIfDueAsync() είναι ήδη φθηνό όταν δεν είναι "due" (απλή σύγκριση
+            // ημερομηνιών, καμία κλήση δικτύου) — ασφαλές να ξανατρέχει περιοδικά σε κάθε μεγάλη
+            // συνεδρία, όχι μόνο στην εκκίνηση.
+            _updateCheckTimer = new System.Windows.Forms.Timer { Interval = (int)TimeSpan.FromHours(6).TotalMilliseconds };
+            _updateCheckTimer.Tick += (_, _) => { _ = CheckForUpdateAsync(); };
+            _updateCheckTimer.Start();
+
             _hotkeys.RegisterCtrlAlt('F', () => DeskFlipEngine.Show());
 
             // Fences-style: διπλό-κλικ σε κενό σημείο της επιφάνειας εργασίας κρύβει/επαναφέρει
             // όλα τα εικονίδια εκτός του Ο Υπολογιστής μου/φάκελος χρήστη/Πίνακας Ελέγχου/Κάδος
-            // Ανακύκλωσης — ζητήθηκε ρητά. Τρέχει σε όλη τη διάρκεια ζωής της εφαρμογής.
-            DesktopIconVisibilityEngine.Instance.Start();
+            // Ανακύκλωσης — ζητήθηκε ρητά. Τρέχει σε όλη τη διάρκεια ζωής της εφαρμογής, εκτός αν ο
+            // χρήστης το απενεργοποίησε ρητά (DeskZones page, "AppSettings.QuickHideDoubleClickEnabled").
+            if (AppSettings.Load().QuickHideDoubleClickEnabled) DesktopIconVisibilityEngine.Instance.Start();
+            AppActivity.Start();
 
             // Restore lightweight persistent preferences before showing the manager.
             var appSettings = AppSettings.Load();
@@ -100,11 +134,19 @@ namespace MotionDesk.Widgets
             WidgetSnapEngine.GridSize = Math.Clamp(appSettings.GridSize, 5, 100);
             _wallpaperEnabled = WallpaperHostEngine.Instance.IsEnabled;
 
+            // Time-of-day schedule (may switch the wallpaper mode before the wallpaper starts)
+            WallpaperHostEngine.Instance.ApplyScheduleNow();
+
             if (appSettings.StartWallpaperWithWindows)
             {
                 WallpaperHostEngine.Instance.Enable();
                 _wallpaperEnabled = true;
             }
+
+            // The clock/date/temperature overlay keeps working over the normal Windows wallpaper when the animated wallpaper is off
+            WallpaperHostEngine.Instance.UpdateOverlayOnly();
+
+            CheckLockScreenFollowsWallpaper();
 
             // "--background": η αυτόματη εκκίνηση με τα Windows (StartupManager.SetStartup) περνάει
             // αυτό το flag — ζητήθηκε ρητά ότι όταν υπάρχουν αποθηκευμένα widgets/DeskContainers, η
@@ -120,7 +162,10 @@ namespace MotionDesk.Widgets
             }
             else
             {
-                ShowMainWindow();
+                // "--page <key>": ανοίγει κατευθείαν σε μια σελίδα (χρήσιμο για δοκιμές και συντομεύσεις), π.χ. --page plugin:OpsisNewsCrawler
+                var cmd = Environment.GetCommandLineArgs();
+                int pageArg = Array.FindIndex(cmd, a => a.Equals("--page", StringComparison.OrdinalIgnoreCase));
+                ShowMainWindow(pageArg >= 0 && pageArg + 1 < cmd.Length ? cmd[pageArg + 1] : null);
             }
         }
 
@@ -145,10 +190,44 @@ namespace MotionDesk.Widgets
             if (page != null) _mainWindow.NavigateTo(page);
         }
 
+        // "Auto-detect failure" για το MD roadmap item "lock screen matches wallpaper, με
+        // self-heal": ΧΩΡΙΣ Scheduled Task (ρητή απόφαση του χρήστη — ένα scheduled task που
+        // ξανατρέχει με highest privileges σε κάθε logon μοιάζει με τεχνική persistence που
+        // χρησιμοποιεί και malware). Αντ' αυτού, σε κάθε κανονική εκκίνηση του Opsis με τα Windows,
+        // αν η ρύθμιση είναι ενεργή αλλά το πραγματικό registry key δεν ταιριάζει πλέον με το
+        // αναμενόμενο αρχείο (π.χ. το επανέφερε ένα Windows update ή το άλλαξε ο χρήστης από το
+        // Settings app), ρωτάμε με pop-up αν θέλει να το ξαναενεργοποιήσει — ποτέ σιωπηλή επανα-ανύψωση.
+        private async void CheckLockScreenFollowsWallpaper()
+        {
+            var settings = AppSettings.Load();
+            if (!settings.LockScreenFollowsWallpaper || string.IsNullOrEmpty(settings.LockScreenSnapshotPath)) return;
+            if (LockScreenEngine.MatchesExpected(settings.LockScreenSnapshotPath)) return;
+            if (!File.Exists(settings.LockScreenSnapshotPath)) return;
+
+            var choice = MessageBox.Show(
+                LocalizationManager.T("Dialog.LockScreenDriftedBody"),
+                LocalizationManager.T("Dialog.LockScreenDriftedTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (choice != DialogResult.Yes)
+            {
+                settings.LockScreenFollowsWallpaper = false;
+                settings.Save();
+                return;
+            }
+
+            string error = string.Empty;
+            string path = settings.LockScreenSnapshotPath;
+            bool ok = await Task.Run(() => LockScreenEngine.TrySetLockScreenImageElevated(path, out error));
+            if (!ok && error != "cancelled")
+            {
+                // Μη κρίσιμο αν αποτύχει ξανά — ο χρήστης το είδε ήδη και το ενέκρινε, απλά δεν
+                // ξαναενοχλούμε σε αυτή τη συνεδρία.
+            }
+        }
+
         private void ApplyProfile(string name)
         {
             WorkspaceProfileService.Load(name);
-            _trayIcon.ShowBalloonTip(1500, "MotionDesk Studio", string.Format(LocalizationManager.T("Tray.ProfileAppliedFormat"), name), ToolTipIcon.Info);
+            _trayIcon.ShowBalloonTip(1500, "Opsis", string.Format(LocalizationManager.T("Tray.ProfileAppliedFormat"), name), ToolTipIcon.Info);
         }
 
         private void ToggleWallpaper()
@@ -166,8 +245,8 @@ namespace MotionDesk.Widgets
         {
             using var dialog = new OpenFileDialog
             {
-                Filter = "Video (*.mp4;*.m4v;*.webm;*.mov;*.ogv;*.ogg;*.avi;*.mkv;*.wmv;*.mpeg;*.mpg;*.m2ts;*.ts)|*.mp4;*.m4v;*.webm;*.mov;*.ogv;*.ogg;*.avi;*.mkv;*.wmv;*.mpeg;*.mpg;*.m2ts;*.ts|Όλα τα αρχεία (*.*)|*.*",
-                Title = "Προσθήκη βίντεο στο Wallpaper Library",
+                Filter = LocalizationManager.T("Filter.Video") + "|" + LocalizationManager.T("Filter.AllFiles"),
+                Title = LocalizationManager.T("Wallpaper.AddVideoTitleTray"),
                 Multiselect = true
             };
 
@@ -187,10 +266,7 @@ namespace MotionDesk.Widgets
             {
                 if (!WmvConversionService.IsFfmpegAvailable)
                 {
-                    var choice = MessageBox.Show(
-                        $"Βρέθηκαν {wmvFiles.Length} αρχείο(α) .wmv. Χρειάζεται αυτόματη μετατροπή σε .mp4 μέσω του δωρεάν εργαλείου FFmpeg, το οποίο δεν εντοπίστηκε.\n\nΆνοιγμα της σελίδας λήψης τώρα;",
-                        "Απαιτείται FFmpeg για μετατροπή .wmv", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                    if (choice == DialogResult.Yes) WmvConversionService.OpenFfmpegDownloadPage();
+WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 }
                 else
                 {
@@ -214,9 +290,66 @@ namespace MotionDesk.Widgets
             _ = WallpaperHostEngine.Instance.RefreshAllAsync();
         }
 
+        private System.Threading.SynchronizationContext _uiContext = null!;
+        private System.Windows.Forms.Timer? _alertTimer;
+        private System.Windows.Forms.Timer? _updateCheckTimer;
+        private int _cpuHighTicks, _ramHighTicks;
+        private DateTime _lastAlertUtc = DateTime.MinValue;
+        private string? _pendingUpdateUrl;
+
+        // Called every 5 s: CPU or memory >= 90% for 12 consecutive ticks (one minute) -> one tray balloon, then a 10-minute pause
+        private void UsageAlertTick()
+        {
+            try
+            {
+                if (!AppSettings.Load().UsageAlertsEnabled) { _cpuHighTicks = _ramHighTicks = 0; return; }
+                var m = SystemMonitorService.Instance.GetSnapshot();
+                double ramPct = m.TotalMemoryMb > 0 ? (m.TotalMemoryMb - m.AvailableMemoryMb) / m.TotalMemoryMb * 100.0 : 0;
+                _cpuHighTicks = m.CpuPercent >= 90 ? _cpuHighTicks + 1 : 0;
+                _ramHighTicks = ramPct >= 90 ? _ramHighTicks + 1 : 0;
+                if (DateTime.UtcNow - _lastAlertUtc < TimeSpan.FromMinutes(10)) return;
+                if (_ramHighTicks >= 12)
+                {
+                    _lastAlertUtc = DateTime.UtcNow; _ramHighTicks = 0;
+                    var top = TopProcessesService.TopByMemory(1).FirstOrDefault();
+                    _trayIcon.ShowBalloonTip(8000, LocalizationManager.T("Alert.Title"), string.Format(LocalizationManager.T("Alert.RamHigh"), top.Name ?? "?"), ToolTipIcon.Warning);
+                }
+                else if (_cpuHighTicks >= 12)
+                {
+                    _lastAlertUtc = DateTime.UtcNow; _cpuHighTicks = 0;
+                    _trayIcon.ShowBalloonTip(8000, LocalizationManager.T("Alert.Title"), LocalizationManager.T("Alert.CpuHigh"), ToolTipIcon.Warning);
+                }
+            }
+            catch (Exception) { /* an alert must never break the tray */ }
+        }
+
+        private async System.Threading.Tasks.Task CheckForUpdateAsync()
+        {
+            try
+            {
+                await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(25));      // do not compete with the startup work
+                var info = await UpdateCheckService.CheckIfDueAsync();
+                if (info == null) return;
+                _uiContext.Post(_ =>
+                {
+                    _pendingUpdateUrl = info.Url;
+                    _trayIcon.ShowBalloonTip(10000, LocalizationManager.T("Update.Title"), string.Format(LocalizationManager.T("Update.Available"), info.Latest.ToString(3)), ToolTipIcon.Info);
+                }, null);
+            }
+            catch (Exception) { /* offline etc. */ }
+        }
+
+        private void OpenPendingUpdate()
+        {
+            var url = _pendingUpdateUrl;
+            if (url == null || !url.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase)) return;
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch (Exception) { }
+            _pendingUpdateUrl = null;
+        }
+
         private void ChooseWallpaperFolder()
         {
-            using var dialog = new FolderBrowserDialog { Description = "Επιλογή φακέλου video library" };
+            using var dialog = new FolderBrowserDialog { Description = LocalizationManager.T("Wallpaper.ChooseFolder") };
             if (dialog.ShowDialog() == DialogResult.OK)
             {
                 int added = WallpaperHostEngine.Instance.AddVideoFolder(dialog.SelectedPath);
@@ -226,7 +359,7 @@ namespace MotionDesk.Widgets
 
         private static Icon LoadTrayIcon()
         {
-            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "MotionDesk.ico");
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "Opsis.ico");
             return File.Exists(path) ? new Icon(path) : SystemIcons.Application;
         }
 
