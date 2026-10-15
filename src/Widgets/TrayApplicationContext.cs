@@ -146,6 +146,8 @@ namespace MotionDesk.Widgets
             // The clock/date/temperature overlay keeps working over the normal Windows wallpaper when the animated wallpaper is off
             WallpaperHostEngine.Instance.UpdateOverlayOnly();
 
+            CheckLockScreenFollowsWallpaper();
+
             // "--background": η αυτόματη εκκίνηση με τα Windows (StartupManager.SetStartup) περνάει
             // αυτό το flag — ζητήθηκε ρητά ότι όταν υπάρχουν αποθηκευμένα widgets/DeskContainers, η
             // εφαρμογή πρέπει να ανοίγει στο παρασκήνιο (μόνο tray icon), όχι με το κύριο παράθυρο
@@ -186,6 +188,40 @@ namespace MotionDesk.Widgets
             }
 
             if (page != null) _mainWindow.NavigateTo(page);
+        }
+
+        // "Auto-detect failure" για το MD roadmap item "lock screen matches wallpaper, με
+        // self-heal": ΧΩΡΙΣ Scheduled Task (ρητή απόφαση του χρήστη — ένα scheduled task που
+        // ξανατρέχει με highest privileges σε κάθε logon μοιάζει με τεχνική persistence που
+        // χρησιμοποιεί και malware). Αντ' αυτού, σε κάθε κανονική εκκίνηση του Opsis με τα Windows,
+        // αν η ρύθμιση είναι ενεργή αλλά το πραγματικό registry key δεν ταιριάζει πλέον με το
+        // αναμενόμενο αρχείο (π.χ. το επανέφερε ένα Windows update ή το άλλαξε ο χρήστης από το
+        // Settings app), ρωτάμε με pop-up αν θέλει να το ξαναενεργοποιήσει — ποτέ σιωπηλή επανα-ανύψωση.
+        private async void CheckLockScreenFollowsWallpaper()
+        {
+            var settings = AppSettings.Load();
+            if (!settings.LockScreenFollowsWallpaper || string.IsNullOrEmpty(settings.LockScreenSnapshotPath)) return;
+            if (LockScreenEngine.MatchesExpected(settings.LockScreenSnapshotPath)) return;
+            if (!File.Exists(settings.LockScreenSnapshotPath)) return;
+
+            var choice = MessageBox.Show(
+                LocalizationManager.T("Dialog.LockScreenDriftedBody"),
+                LocalizationManager.T("Dialog.LockScreenDriftedTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (choice != DialogResult.Yes)
+            {
+                settings.LockScreenFollowsWallpaper = false;
+                settings.Save();
+                return;
+            }
+
+            string error = string.Empty;
+            string path = settings.LockScreenSnapshotPath;
+            bool ok = await Task.Run(() => LockScreenEngine.TrySetLockScreenImageElevated(path, out error));
+            if (!ok && error != "cancelled")
+            {
+                // Μη κρίσιμο αν αποτύχει ξανά — ο χρήστης το είδε ήδη και το ενέκρινε, απλά δεν
+                // ξαναενοχλούμε σε αυτή τη συνεδρία.
+            }
         }
 
         private void ApplyProfile(string name)

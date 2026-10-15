@@ -44,6 +44,14 @@ namespace MotionDesk.Services
         // Φάκελος όπου αποθηκεύονται τα μετατρεπόμενα .wmv->.mp4 (κενό = προεπιλογή στο AppData).
         public string? WmvConversionOutputDir { get; set; }
 
+        // MD roadmap item: η οθόνη κλειδώματος/υποδοχής να μπορεί να γίνει ακριβές στιγμιότυπο του
+        // τρέχοντος ζωντανού wallpaper (waves/βίντεο + overlay), όχι μια τυχαία επιλεγμένη εικόνα.
+        // Το LockScreenSnapshotPath είναι το αρχείο που γράφει το στιγμιότυπο· όταν το
+        // LockScreenFollowsWallpaper είναι true, το Opsis το ξανατραβάει αυτόματα σε κάθε αλλαγή
+        // wallpaper ώστε η οθόνη κλειδώματος να μένει ταιριαστή (βλ. LockScreenEngine, WallpaperHostEngine).
+        public bool LockScreenFollowsWallpaper { get; set; } = false;
+        public string? LockScreenSnapshotPath { get; set; }
+
         // Ανεξάρτητο θέμα για widgets/DeskContainers από αυτό της ίδιας της εφαρμογής — ζητήθηκε
         // ρητά "αν η εφαρμογή είναι σε φωτεινό θέμα, τα widgets/containers να μπορούν είτε να
         // ακολουθούν τα windows είτε να έχουν διαφορετικά χρώματα και από το σύστημα και από την

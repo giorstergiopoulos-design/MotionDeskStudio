@@ -649,6 +649,28 @@ namespace MotionDesk.Widgets
 
         public Task RefreshAsync() => RefreshWebViewAsync();
 
+        // Ακριβές "στιγμιότυπο" του ΠΡΑΓΜΑΤΙΚΑ αποδομένου wallpaper (waves/video + το overlay
+        // ρολογιού κ.λπ.) για χρήση ως εικόνα οθόνης κλειδώματος — όχι ξαναζωγραφισμένο αντίγραφο,
+        // αλλά literal screenshot του WebView2 μέσω της επίσημης CapturePreview API.
+        public async Task<bool> CapturePngAsync(string filePath)
+        {
+            if (_webView?.CoreWebView2 == null) return false;
+            try
+            {
+                await using var stream = new MemoryStream();
+                await _webView.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, stream);
+                stream.Position = 0;
+                await using var file = File.Create(filePath);
+                await stream.CopyToAsync(file);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Wallpaper CapturePngAsync failed: {ex}");
+                return false;
+            }
+        }
+
         // Αυτόματη παύση όταν μια άλλη εφαρμογή είναι πλήρους οθόνης (ζητήθηκε ρητά στο
         // roadmap) — καθαρά εξοικονόμηση CPU/μπαταρίας, αφού το wallpaper έτσι κι αλλιώς δεν
         // είναι ορατό πίσω από ένα fullscreen παράθυρο.
@@ -750,6 +772,7 @@ namespace MotionDesk.Widgets
         public string EffectiveMode(WallpaperSettings settings) => !_enabled && _overlayOnly ? "Desktop" : settings.Mode;
         private bool _pausedForFullscreen;
         private System.Windows.Forms.Timer? _fullscreenCheckTimer;
+        private System.Windows.Forms.Timer? _lockScreenSyncTimer;
         private readonly ExplorerRestartWatcher _explorerWatcher = new();
         private System.Threading.Timer? _displayDebounce;
         private readonly SynchronizationContext _ui;
@@ -879,6 +902,7 @@ namespace MotionDesk.Widgets
                 }
             }
             EnsureFullscreenWatcher();
+            EnsureLockScreenSync();
             if (wasOverlayOnly && !freshlyBuilt) _ = RefreshAllAsync();   // switch the running windows from "Desktop" to the real mode
         }
 
@@ -958,6 +982,33 @@ namespace MotionDesk.Widgets
         // (π.χ. σε λειτουργία Waves) δεν μαθαίνει ΠΟΤΕ ότι το Mode/playlist άλλαξε σε Video —
         // ακριβώς το bug "το .wmv μετατράπηκε επιτυχώς αλλά δεν παίζει το βίντεο".
         public Task RefreshAllAsync() => Task.WhenAll(_windows.Select(w => w.RefreshAsync()));
+
+        // MD roadmap item: ακριβές στιγμιότυπο του τρέχοντος wallpaper (waves/βίντεο + overlay) για
+        // χρήση ως εικόνα οθόνης κλειδώματος — από την οθόνη με το WallpaperWindow που είναι όντως
+        // ορατό αυτή τη στιγμή (Screen.PrimaryScreen όταν υπάρχει, αλλιώς το πρώτο διαθέσιμο).
+        public async Task<bool> CaptureSnapshotAsync(string filePath)
+        {
+            var target = _windows.FirstOrDefault(w => !w.IsDisposed && w.Visible && w.TargetScreen.Primary)
+                      ?? _windows.FirstOrDefault(w => !w.IsDisposed && w.Visible);
+            if (target == null) return false;
+            return await target.CapturePngAsync(filePath);
+        }
+
+        // Κρατά την οθόνη κλειδώματος "ταιριαστή" με το ζωντανό wallpaper ΧΩΡΙΣ κανένα νέο UAC
+        // prompt: το registry key δείχνει ήδη σε αυτό το ΙΔΙΟ αρχείο (ορίστηκε μία φορά elevated) —
+        // ξαναγράφουμε απλώς τα bytes της ίδιας εικόνας, που δεν χρειάζεται δικαιώματα διαχειριστή.
+        private void EnsureLockScreenSync()
+        {
+            if (_lockScreenSyncTimer != null) return;
+            _lockScreenSyncTimer = new System.Windows.Forms.Timer { Interval = 600_000 }; // 10 λεπτά
+            _lockScreenSyncTimer.Tick += async (_, _) =>
+            {
+                var s = AppSettings.Load();
+                if (!s.LockScreenFollowsWallpaper || string.IsNullOrEmpty(s.LockScreenSnapshotPath) || !Active) return;
+                try { await CaptureSnapshotAsync(s.LockScreenSnapshotPath); } catch (Exception) { }
+            };
+            _lockScreenSyncTimer.Start();
+        }
 
         public void SetMode(string mode)
         {

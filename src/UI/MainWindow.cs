@@ -2205,7 +2205,8 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
             AddText(panel, LocalizationManager.T("Personalization.LockScreenIntro"));
             AddText(panel, string.Format(LocalizationManager.T("Personalization.LockScreenEditionNote"), LockScreenEngine.GetWindowsEdition()));
 
-            AddButtonGrid(panel, (LocalizationManager.T("Personalization.SetLockScreenImage"), async (_, _) =>
+            AddButtonGrid(panel,
+            (LocalizationManager.T("Personalization.SetLockScreenImage"), async (_, _) =>
             {
                 string fileName;
                 using (var dlg = new OpenFileDialog { Filter = LocalizationManager.T("Filter.Images"), Title = LocalizationManager.T("Personalization.SetLockScreenImage") })
@@ -2218,7 +2219,43 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
                 string error = string.Empty;
                 bool ok = await Task.Run(() => LockScreenEngine.TrySetLockScreenImageElevated(fileName, out error));
                 if (IsDisposed) return;
+                var settings = AppSettings.Load();
+                settings.LockScreenFollowsWallpaper = false; // χειροκίνητη εικόνα -> σταματά να ακολουθεί το wallpaper
+                settings.Save();
                 if (ok) _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenSuccess");
+                else if (error == "cancelled") _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenCancelled");
+                else _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenFailed");
+            }),
+            // MD roadmap item: αντί για τυχαία επιλεγμένη εικόνα, ακριβές στιγμιότυπο του τρέχοντος
+            // ζωντανού wallpaper (waves/βίντεο + overlay) ως οθόνη κλειδώματος — με "self-heal" μέσω
+            // ενός Scheduled Task (βλ. LockScreenEngine.EnsureSelfHealTask) που το ξαναφαρμόζει αυτόματα
+            // σε κάθε logon αν τα Windows/ένα update επαναφέρουν το registry key.
+            (LocalizationManager.T("Personalization.MatchLockScreenToWallpaper"), async (_, _) =>
+            {
+                if (!WallpaperHostEngine.Instance.IsRunning)
+                {
+                    _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenNeedsWallpaper");
+                    return;
+                }
+                string snapshotPath = Path.Combine(AppPaths.AppDataFolder, "lockscreen_wallpaper.png");
+                bool captured = await WallpaperHostEngine.Instance.CaptureSnapshotAsync(snapshotPath);
+                if (IsDisposed) return;
+                if (!captured)
+                {
+                    _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenCaptureFailed");
+                    return;
+                }
+                string error = string.Empty;
+                bool ok = await Task.Run(() => LockScreenEngine.TrySetLockScreenImageElevated(snapshotPath, out error));
+                if (IsDisposed) return;
+                if (ok)
+                {
+                    var settings = AppSettings.Load();
+                    settings.LockScreenFollowsWallpaper = true;
+                    settings.LockScreenSnapshotPath = snapshotPath;
+                    settings.Save();
+                    _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenSuccess");
+                }
                 else if (error == "cancelled") _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenCancelled");
                 else _statusLabel.Text = LocalizationManager.T("Personalization.LockScreenFailed");
             }));
@@ -2550,7 +2587,7 @@ WmvConversionService.PromptInstallFfmpeg(wmvFiles.Length);
         // έπιασε ζωντανά ("το ιστορικό μένει στην 1.9.0"). Πρόσθεσε ΚΑΙ εδώ τη νέα έκδοση.
         private static readonly (string Version, string Date)[] VersionHistory =
         {
-            ("1.9.6", "2026-10"), ("1.9.5", "2026-10"), ("1.9.4", "2026-10"), ("1.9.3", "2026-10"), ("1.9.2", "2026-10"), ("1.9.1", "2026-10"), ("1.9.0", "2026-10"), ("1.8.9", "2026-10"), ("1.8.8", "2026-10"), ("1.8.7", "2026-10"), ("1.8.6", "2026-10"), ("1.8.5", "2026-10"), ("1.7.8", "2026-10"), ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
+            ("1.9.7", "2026-10"), ("1.9.6", "2026-10"), ("1.9.5", "2026-10"), ("1.9.4", "2026-10"), ("1.9.3", "2026-10"), ("1.9.2", "2026-10"), ("1.9.1", "2026-10"), ("1.9.0", "2026-10"), ("1.8.9", "2026-10"), ("1.8.8", "2026-10"), ("1.8.7", "2026-10"), ("1.8.6", "2026-10"), ("1.8.5", "2026-10"), ("1.7.8", "2026-10"), ("1.7.6", "2026-10"), ("1.7.5", "2026-10"), ("1.6.8", "2026-10"), ("1.6.2", "2026-10"), ("1.6.1", "2026-10"), ("1.6.0", "2026-09"), ("1.5.0", "2026-09"), ("1.4.1", "2026-09"), ("1.4.0", "2026-09"), ("1.3.0", "2026-09"), ("1.2.9", "2026-09"), ("1.2.8", "2026-09"), ("1.2.7", "2026-09"), ("1.2.6", "2026-09"), ("1.2.5", "2026-09"), ("1.2.4", "2026-09"), ("1.2.3", "2026-09"), ("1.2.2", "2026-09"), ("1.2.1", "2026-09"), ("1.2.0", "2026-09"), ("1.1.2", "2026-09"), ("1.1.1", "2026-09"), ("1.1.0", "2026-09"), ("1.0.0", "2026-09")
         };
 
 

@@ -49,6 +49,15 @@ namespace MotionDesk.Widgets
             key?.SetValue("LockScreenImageStatus", 1, RegistryValueKind.DWord);
         }
 
+        // "Auto-detect failure": όχι με Scheduled Task (μοιάζει με persistence mechanism που
+        // χρησιμοποιεί και malware — ρητή απόφαση να ΜΗΝ το κάνουμε έτσι). Αντ' αυτού το ίδιο το
+        // Opsis, στην κανονική του εκκίνηση με τα Windows, ελέγχει αν η τρέχουσα τιμή registry
+        // ταιριάζει ακόμα με το αναμενόμενο αρχείο· αν όχι (π.χ. το επανέφερε ένα Windows update ή
+        // το άλλαξε ο χρήστης από το Settings app), εμφανίζει ένα pop-up με κουμπί στον χρήστη για να
+        // το ενεργοποιήσει ξανά ή όχι — βλ. TrayApplicationContext.CheckLockScreenFollowsWallpaper.
+        public static bool MatchesExpected(string expectedPath) =>
+            string.Equals(GetCurrentLockScreenImagePath(), expectedPath, StringComparison.OrdinalIgnoreCase);
+
         // Καλείται από το κύριο UI — ανοίγει elevated instance της ίδιας exe μόνο για αυτή την
         // ενέργεια (εμφανίζει το πραγματικό UAC prompt των Windows), περιμένει να τελειώσει, μετά
         // διαβάζει πίσω την τιμή για να επιβεβαιώσει αν πέτυχε.
